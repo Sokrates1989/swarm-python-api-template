@@ -1,0 +1,13 @@
+services:
+  setup:
+    build:
+      context: ..
+      dockerfile: interactive-scripts/Dockerfile
+    container_name: swarm-api-setup
+    stdin_open: true    # Enable interactive mode (docker run -i)
+    tty: true           # Allocate a pseudo-TTY (docker run -t)
+    volumes:
+      # Mount project directory
+      - ..:/workspace
+    working_dir: /workspace
+    command: sh -c "chmod +x interactive-scripts/setup.sh && interactive-scripts/setup.sh"
