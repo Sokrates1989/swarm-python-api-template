@@ -178,7 +178,7 @@ echo "----------------------------"
 
 IMAGE_VERIFIED=false
 while [ "$IMAGE_VERIFIED" = false ]; do
-    read -p "Docker image name (e.g., username/api-name): " IMAGE_NAME
+    read -p "Docker image name (e.g., sokrates1989/python-api-template): " IMAGE_NAME
     read -p "Image version [latest]: " IMAGE_VERSION
     IMAGE_VERSION="${IMAGE_VERSION:-latest}"
     

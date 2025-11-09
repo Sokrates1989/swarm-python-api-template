@@ -234,10 +234,10 @@ echo ""
 
 IMAGE_VERIFIED=false
 while [ "$IMAGE_VERIFIED" = false ]; do
-    read -p "Enter Docker image name (e.g., username/api-name): " IMAGE_NAME
+    read -p "Enter Docker image name (e.g., sokrates1989/python-api-template): " IMAGE_NAME
     while [ -z "$IMAGE_NAME" ]; do
         echo "❌ Image name cannot be empty"
-        read -p "Enter Docker image name (e.g., username/api-name): " IMAGE_NAME
+        read -p "Enter Docker image name (e.g., sokrates1989/python-api-template): " IMAGE_NAME
     done
 
     read -p "Enter Docker image version/tag [0.0.1]: " IMAGE_VERSION

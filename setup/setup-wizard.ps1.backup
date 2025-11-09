@@ -170,7 +170,7 @@ Write-Host ""
 $IMAGE_VERIFIED = $false
 while (-not $IMAGE_VERIFIED) {
     do {
-        $IMAGE_NAME = Read-Host "Enter Docker image name (e.g., username/api-name)"
+        $IMAGE_NAME = Read-Host "Enter Docker image name (e.g., sokrates1989/python-api-template)"
         if ([string]::IsNullOrWhiteSpace($IMAGE_NAME)) {
             Write-Host "❌ Image name cannot be empty" -ForegroundColor Red
         }
