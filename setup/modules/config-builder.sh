@@ -147,7 +147,7 @@ update_stack_secrets() {
 
 backup_existing_files() {
     local project_root="$1"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local timestamp=$(date +%Y_%m_%d__%H_%M_%S)
     
     # Create backup directories
     mkdir -p "${project_root}/backup/env"

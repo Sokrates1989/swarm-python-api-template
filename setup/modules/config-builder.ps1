@@ -161,7 +161,7 @@ function Update-StackSecrets {
 function Backup-ExistingFiles {
     param([string]$ProjectRoot)
     
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $timestamp = Get-Date -Format "yyyy_MM_dd__HH_mm_ss"
     
     # Create backup directories
     New-Item -ItemType Directory -Force -Path "$ProjectRoot\backup\env" | Out-Null
