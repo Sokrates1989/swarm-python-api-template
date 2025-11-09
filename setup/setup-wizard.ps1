@@ -447,11 +447,14 @@ Write-Host "------------------------------"
 Write-Host "Enter names for Docker secrets (you'll create these manually)."
 Write-Host ""
 
-$DB_PASSWORD_SECRET = Read-Host "Database password secret name [DB_PASSWORD_$STACK_NAME]"
-if ([string]::IsNullOrWhiteSpace($DB_PASSWORD_SECRET)) { $DB_PASSWORD_SECRET = "DB_PASSWORD_$STACK_NAME" }
+# Convert stack name to uppercase and replace non-alphanumeric chars with underscore
+$STACK_NAME_UPPER = $STACK_NAME.ToUpper() -replace '[^A-Z0-9]', '_'
 
-$ADMIN_API_KEY_SECRET = Read-Host "Admin API key secret name [ADMIN_API_KEY_$STACK_NAME]"
-if ([string]::IsNullOrWhiteSpace($ADMIN_API_KEY_SECRET)) { $ADMIN_API_KEY_SECRET = "ADMIN_API_KEY_$STACK_NAME" }
+$DB_PASSWORD_SECRET = Read-Host "Database password secret name [DB_PASSWORD_$STACK_NAME_UPPER]"
+if ([string]::IsNullOrWhiteSpace($DB_PASSWORD_SECRET)) { $DB_PASSWORD_SECRET = "DB_PASSWORD_$STACK_NAME_UPPER" }
+
+$ADMIN_API_KEY_SECRET = Read-Host "Admin API key secret name [ADMIN_API_KEY_$STACK_NAME_UPPER]"
+if ([string]::IsNullOrWhiteSpace($ADMIN_API_KEY_SECRET)) { $ADMIN_API_KEY_SECRET = "ADMIN_API_KEY_$STACK_NAME_UPPER" }
 
 # Replace secret placeholders in swarm-stack.yml
 (Get-Content "swarm-stack.yml") -replace "XXX_CHANGE_ME_DB_PASSWORD_XXX", $DB_PASSWORD_SECRET | Set-Content "swarm-stack.yml"
