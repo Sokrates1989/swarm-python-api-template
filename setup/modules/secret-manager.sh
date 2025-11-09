@@ -21,16 +21,16 @@ create_docker_secrets() {
         return 0
     fi
     
-    # Detect editor
+    # Detect editor - prefer vi over nano to avoid Ctrl+X exit issues
     local EDITOR=""
-    if command -v nano &> /dev/null; then
-        EDITOR="nano"
+    if command -v vi &> /dev/null; then
+        EDITOR="vi"
     elif command -v vim &> /dev/null; then
         EDITOR="vim"
-    elif command -v vi &> /dev/null; then
-        EDITOR="vi"
+    elif command -v nano &> /dev/null; then
+        EDITOR="nano"
     else
-        echo "❌ No text editor found (nano, vim, or vi required)"
+        echo "❌ No text editor found (vi, vim, or nano required)"
         echo ""
         echo "Please create secrets manually:"
         echo "  echo 'your-password' | docker secret create $db_password_secret -"
