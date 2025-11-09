@@ -79,11 +79,29 @@ create_docker_secrets() {
     # Check if file has content
     if [ -f secret.txt ] && [ -s secret.txt ]; then
         echo "DEBUG: File exists and has content" >&2
-        docker secret create "$db_password_secret" secret.txt 2>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "✅ Created $db_password_secret"
+        
+        # Check if secret already exists
+        if docker secret inspect "$db_password_secret" &>/dev/null; then
+            echo "⚠️  Secret '$db_password_secret' already exists"
+            read -p "Delete and recreate? (y/N): " RECREATE
+            if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+                docker secret rm "$db_password_secret" 2>/dev/null || true
+                docker secret create "$db_password_secret" secret.txt 2>/dev/null
+                if [ $? -eq 0 ]; then
+                    echo "✅ Recreated $db_password_secret"
+                else
+                    echo "❌ Failed to create secret"
+                fi
+            else
+                echo "⏭️  Keeping existing secret"
+            fi
         else
-            echo "⚠️  Secret may already exist: $db_password_secret"
+            docker secret create "$db_password_secret" secret.txt 2>/dev/null
+            if [ $? -eq 0 ]; then
+                echo "✅ Created $db_password_secret"
+            else
+                echo "❌ Failed to create secret"
+            fi
         fi
         rm -f secret.txt
     else
@@ -111,11 +129,29 @@ create_docker_secrets() {
     # Check if file has content
     if [ -f secret.txt ] && [ -s secret.txt ]; then
         echo "DEBUG: File exists and has content" >&2
-        docker secret create "$admin_api_key_secret" secret.txt 2>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "✅ Created $admin_api_key_secret"
+        
+        # Check if secret already exists
+        if docker secret inspect "$admin_api_key_secret" &>/dev/null; then
+            echo "⚠️  Secret '$admin_api_key_secret' already exists"
+            read -p "Delete and recreate? (y/N): " RECREATE
+            if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+                docker secret rm "$admin_api_key_secret" 2>/dev/null || true
+                docker secret create "$admin_api_key_secret" secret.txt 2>/dev/null
+                if [ $? -eq 0 ]; then
+                    echo "✅ Recreated $admin_api_key_secret"
+                else
+                    echo "❌ Failed to create secret"
+                fi
+            else
+                echo "⏭️  Keeping existing secret"
+            fi
         else
-            echo "⚠️  Secret may already exist: $admin_api_key_secret"
+            docker secret create "$admin_api_key_secret" secret.txt 2>/dev/null
+            if [ $? -eq 0 ]; then
+                echo "✅ Created $admin_api_key_secret"
+            else
+                echo "❌ Failed to create secret"
+            fi
         fi
         rm -f secret.txt
     else

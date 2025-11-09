@@ -133,11 +133,15 @@ if ($DeployDatabase) {
 $RedisReplicas = Get-Replicas -ServiceName "Redis" -DefaultCount 1
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "REDIS_REPLICAS" -Value $RedisReplicas
 
-# Secret names
+# Auto-generate secret names from stack name
 Write-Host ""
-$SecretInfo = Get-SecretNames -StackName $StackName
-$DbPasswordSecret = $SecretInfo.DbPassword
-$AdminApiKeySecret = $SecretInfo.AdminApiKey
+$StackNameUpper = $StackName.ToUpper() -replace '[^A-Z0-9]', '_'
+$DbPasswordSecret = "${StackNameUpper}_DB_PASSWORD"
+$AdminApiKeySecret = "${StackNameUpper}_ADMIN_API_KEY"
+
+Write-Host "Secret names (auto-generated):"
+Write-Host "  Database password: $DbPasswordSecret"
+Write-Host "  Admin API key: $AdminApiKeySecret"
 
 Update-StackSecrets -StackFile "$ProjectRoot\swarm-stack.yml" -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret
 

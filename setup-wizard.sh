@@ -139,11 +139,15 @@ fi
 REDIS_REPLICAS=$(prompt_replicas "Redis" 1)
 update_env_values "$PROJECT_ROOT/.env" "REDIS_REPLICAS" "$REDIS_REPLICAS"
 
-# Secret names
+# Auto-generate secret names from stack name
 echo ""
-SECRET_INFO=$(prompt_secret_names "$STACK_NAME")
-DB_PASSWORD_SECRET=$(echo "$SECRET_INFO" | cut -d':' -f1)
-ADMIN_API_KEY_SECRET=$(echo "$SECRET_INFO" | cut -d':' -f2)
+STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+DB_PASSWORD_SECRET="${STACK_NAME_UPPER}_DB_PASSWORD"
+ADMIN_API_KEY_SECRET="${STACK_NAME_UPPER}_ADMIN_API_KEY"
+
+echo "Secret names (auto-generated):"
+echo "  Database password: $DB_PASSWORD_SECRET"
+echo "  Admin API key: $ADMIN_API_KEY_SECRET"
 
 update_stack_secrets "$PROJECT_ROOT/swarm-stack.yml" "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET"
 
