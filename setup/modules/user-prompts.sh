@@ -3,11 +3,11 @@
 # Handles all user input collection
 
 prompt_database_type() {
-    echo "🗄️  Database Configuration"
-    echo "-------------------------"
-    echo "1) PostgreSQL (relational data)"
-    echo "2) Neo4j (graph data)"
-    echo ""
+    echo "🗄️  Database Configuration" >&2
+    echo "-------------------------" >&2
+    echo "1) PostgreSQL (relational data)" >&2
+    echo "2) Neo4j (graph data)" >&2
+    echo "" >&2
     read -p "Your choice (1-2) [1]: " DB_CHOICE
     DB_CHOICE="${DB_CHOICE:-1}"
     
@@ -19,11 +19,11 @@ prompt_database_type() {
 }
 
 prompt_proxy_type() {
-    echo "🌐 Proxy Configuration"
-    echo "---------------------"
-    echo "1) Traefik (automatic HTTPS)"
-    echo "2) No proxy (direct port)"
-    echo ""
+    echo "🌐 Proxy Configuration" >&2
+    echo "---------------------" >&2
+    echo "1) Traefik (automatic HTTPS)" >&2
+    echo "2) No proxy (direct port)" >&2
+    echo "" >&2
     read -p "Your choice (1-2) [1]: " PROXY_CHOICE
     PROXY_CHOICE="${PROXY_CHOICE:-1}"
     
@@ -35,11 +35,11 @@ prompt_proxy_type() {
 }
 
 prompt_database_mode() {
-    echo "📍 Database Mode"
-    echo "---------------"
-    echo "1) Local (deploy in swarm)"
-    echo "2) External (existing server)"
-    echo ""
+    echo "📍 Database Mode" >&2
+    echo "---------------" >&2
+    echo "1) Local (deploy in swarm)" >&2
+    echo "2) External (existing server)" >&2
+    echo "" >&2
     read -p "Your choice (1-2) [1]: " DB_MODE_CHOICE
     DB_MODE_CHOICE="${DB_MODE_CHOICE:-1}"
     
@@ -82,28 +82,28 @@ prompt_docker_image() {
     local image_name=""
     local image_version=""
     
-    echo ""
-    echo "🐳 Docker Image Configuration"
-    echo "----------------------------"
+    echo "" >&2
+    echo "🐳 Docker Image Configuration" >&2
+    echo "----------------------------" >&2
     
     while [ "$image_verified" = false ]; do
         read -p "Docker image name (e.g., sokrates1989/python-api-template): " image_name
         read -p "Image version [latest]: " image_version
         image_version="${image_version:-latest}"
         
-        echo "Verifying image: ${image_name}:${image_version}"
-        docker pull "${image_name}:${image_version}" 2>&1
+        echo "Verifying image: ${image_name}:${image_version}" >&2
+        docker pull "${image_name}:${image_version}" 2>&1 >&2
         
         if [ $? -eq 0 ]; then
-            echo "✅ Image verified"
+            echo "✅ Image verified" >&2
             image_verified=true
         else
-            echo ""
-            echo "❌ Failed to pull image"
-            echo "1) Login to Docker registry"
-            echo "2) Re-enter image info"
-            echo "3) Skip verification"
-            echo "4) Cancel setup"
+            echo "" >&2
+            echo "❌ Failed to pull image" >&2
+            echo "1) Login to Docker registry" >&2
+            echo "2) Re-enter image info" >&2
+            echo "3) Skip verification" >&2
+            echo "4) Cancel setup" >&2
             read -p "Your choice (1-4): " IMAGE_CHOICE
             
             case $IMAGE_CHOICE in
