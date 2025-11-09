@@ -23,13 +23,13 @@ SETUP_ALREADY_DONE=false
 if [ -f .setup-complete ]; then
     SETUP_ALREADY_DONE=true
     echo "⚠️  Setup has already been completed (.setup-complete marker found)."
-elif [ -f .env ] && [ -f docker-compose.yml ]; then
+elif [ -f .env ] && [ -f swarm-stack.yml ]; then
     SETUP_ALREADY_DONE=true
-    echo "⚠️  Setup appears to have been done manually (.env and docker-compose.yml exist)."
+    echo "⚠️  Setup appears to have been done manually (.env and swarm-stack.yml exist)."
 fi
 
 if [ "$SETUP_ALREADY_DONE" = true ]; then
-    read -p "Do you want to run setup again? This will overwrite .env and docker-compose.yml (y/N): " RERUN_SETUP
+    read -p "Do you want to run setup again? This will overwrite .env and swarm-stack.yml (y/N): " RERUN_SETUP
     if [[ ! "$RERUN_SETUP" =~ ^[Yy]$ ]]; then
         echo "Setup cancelled."
         exit 0
@@ -44,10 +44,10 @@ if [ -f .env ]; then
     echo "📋 Backed up existing .env to $BACKUP_FILE"
 fi
 
-if [ -f docker-compose.yml ]; then
-    BACKUP_FILE="docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S)"
-    cp docker-compose.yml "$BACKUP_FILE"
-    echo "📋 Backed up existing docker-compose.yml to $BACKUP_FILE"
+if [ -f swarm-stack.yml ]; then
+    BACKUP_FILE="swarm-stack.yml.backup.$(date +%Y%m%d_%H%M%S)"
+    cp swarm-stack.yml "$BACKUP_FILE"
+    echo "📋 Backed up existing swarm-stack.yml to $BACKUP_FILE"
 fi
 
 echo ""
@@ -495,9 +495,9 @@ DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-DB_PASSWORD_${STACK_NAME}}"
 read -p "Admin API key secret name [ADMIN_API_KEY_${STACK_NAME}]: " ADMIN_API_KEY_SECRET
 ADMIN_API_KEY_SECRET="${ADMIN_API_KEY_SECRET:-ADMIN_API_KEY_${STACK_NAME}}"
 
-# Replace secret placeholders in docker-compose.yml
-sed -i "s|XXX_CHANGE_ME_DB_PASSWORD_XXX|$DB_PASSWORD_SECRET|g" docker-compose.yml
-sed -i "s|XXX_CHANGE_ME_ADMIN_API_KEY_XXX|$ADMIN_API_KEY_SECRET|g" docker-compose.yml
+# Replace secret placeholders in swarm-stack.yml
+sed -i "s|XXX_CHANGE_ME_DB_PASSWORD_XXX|$DB_PASSWORD_SECRET|g" swarm-stack.yml
+sed -i "s|XXX_CHANGE_ME_ADMIN_API_KEY_XXX|$ADMIN_API_KEY_SECRET|g" swarm-stack.yml
 
 echo "✅ Secret names configured"
 echo ""
