@@ -34,10 +34,10 @@ swarm-python-api-template/
 │
 ├── interactive-scripts/           # Setup wizard
 │   ├── docker-compose.setup.yml  # Setup container configuration
-│   └── setup.sh                  # Interactive setup script
+│   └── setup.sh                  # Interactive setup script (executable)
 │
-├── quick-start.sh                # Quick start script (Linux/Mac)
-├── quick-start.ps1               # Quick start script (Windows)
+├── quick-start.sh                # Quick start script (Linux/Mac) (executable)
+├── quick-start.ps1               # Quick start script (Windows) (executable)
 ├── README.md                     # Main documentation
 └── .gitignore                    # Git ignore rules
 
@@ -45,6 +45,11 @@ Generated files (not in repo):
 ├── .env                          # Your environment configuration
 ├── swarm-stack.yml              # Your stack configuration
 └── .setup-complete              # Setup completion marker
+
+Note: Shell scripts (.sh) are marked as executable in git and can be run 
+directly after cloning. If you encounter permission issues, use:
+  - bash quick-start.sh (Linux/Mac/Git Bash)
+  - powershell -ExecutionPolicy Bypass -File .\quick-start.ps1 (Windows)
 ```
 
 ## Configuration Flow

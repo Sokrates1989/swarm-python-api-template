@@ -8,8 +8,9 @@ This repository provides Docker Swarm deployment configuration for the Python AP
 Before starting the deployment, ensure you have:
 
 1. **Docker Swarm initialized** on your server
-2. **A subdomain/domain** pointing to your swarm manager (see [Domain Setup](#domain-setup) below)
-3. **Repository cloned** to your server (see [Clone Repository](#clone-repository) below)
+2. **Bash shell** (Linux/Mac: pre-installed, Windows: use Git Bash or WSL)
+3. **A subdomain/domain** pointing to your swarm manager (see [Domain Setup](#domain-setup) below) - Only required if using Traefik proxy
+4. **Repository cloned** to your server (see [Clone Repository](#clone-repository) below)
 
 ### Domain Setup
 
@@ -65,12 +66,28 @@ Once you have completed the prerequisites above, the easiest way to set up your 
 
 ### Linux/Mac
 ```bash
+# The script is executable after cloning
 ./quick-start.sh
+
+# Alternative: If you get permission errors
+bash quick-start.sh
 ```
 
 ### Windows (PowerShell)
 ```powershell
 .\quick-start.ps1
+
+# Alternative: If execution policy blocks it
+powershell -ExecutionPolicy Bypass -File .\quick-start.ps1
+```
+
+### Windows (Git Bash/WSL)
+```bash
+# Use the Linux script in Git Bash or WSL
+./quick-start.sh
+
+# Alternative
+bash quick-start.sh
 ```
 
 The quick-start script will:
