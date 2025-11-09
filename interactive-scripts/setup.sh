@@ -62,21 +62,45 @@ DB_CHOICE="${DB_CHOICE:-1}"
 case $DB_CHOICE in
     1)
         DB_TYPE="postgresql"
-        ENV_TEMPLATE="setup/.env.postgres.template"
-        COMPOSE_TEMPLATE="setup/docker-compose.postgres.yml.template"
         echo "✅ Selected: PostgreSQL"
         ;;
     2)
         DB_TYPE="neo4j"
-        ENV_TEMPLATE="setup/.env.neo4j.template"
-        COMPOSE_TEMPLATE="setup/docker-compose.neo4j.yml.template"
         echo "✅ Selected: Neo4j"
         ;;
     *)
         DB_TYPE="postgresql"
-        ENV_TEMPLATE="setup/.env.postgres.template"
-        COMPOSE_TEMPLATE="setup/docker-compose.postgres.yml.template"
         echo "⚠️  Invalid choice, defaulting to PostgreSQL"
+        ;;
+esac
+
+echo ""
+
+# =============================================================================
+# PROXY SELECTION
+# =============================================================================
+echo "🌐 Proxy Configuration"
+echo "---------------------"
+echo "Choose your proxy/ingress solution:"
+echo "1) Traefik (recommended for automatic HTTPS with Let's Encrypt)"
+echo "2) No proxy (direct port exposure - you manage your own proxy/load balancer)"
+echo ""
+
+read -p "Your choice (1-2) [1]: " PROXY_CHOICE
+PROXY_CHOICE="${PROXY_CHOICE:-1}"
+
+case $PROXY_CHOICE in
+    1)
+        PROXY_TYPE="traefik"
+        echo "✅ Selected: Traefik"
+        ;;
+    2)
+        PROXY_TYPE="no-proxy"
+        echo "✅ Selected: No proxy (direct port exposure)"
+        ;;
+    *)
+        PROXY_TYPE="traefik"
+        echo "⚠️  Invalid choice, defaulting to Traefik"
         ;;
 esac
 
@@ -113,17 +137,44 @@ esac
 
 echo ""
 
-# Copy templates
-cp "$ENV_TEMPLATE" .env
-cp "$COMPOSE_TEMPLATE" docker-compose.yml
+# Build .env file from modular templates
+echo "⚙️  Building configuration files..."
 
-# If external database, remove database service from docker-compose.yml
-if [ "$DEPLOY_DATABASE" = false ]; then
-    echo "⚙️  Configuring for external database..."
-    # This is a simplified approach - in production you might want more sophisticated editing
-    echo "⚠️  Note: You'll need to manually remove the database service from docker-compose.yml"
-    echo "   or use a compose file without the database service."
+# Start with base configuration
+cat setup/env-templates/.env.base.template > .env
+
+# Add database-specific configuration
+if [ "$DB_TYPE" = "postgresql" ]; then
+    if [ "$DB_MODE" = "local" ]; then
+        cat setup/env-templates/.env.postgres-local.template >> .env
+        DATABASE_MODULE="postgres-local.yml"
+    else
+        cat setup/env-templates/.env.postgres-external.template >> .env
+        DATABASE_MODULE="postgres-external.yml"
+    fi
+else
+    if [ "$DB_MODE" = "local" ]; then
+        cat setup/env-templates/.env.neo4j-local.template >> .env
+        DATABASE_MODULE="neo4j-local.yml"
+    else
+        cat setup/env-templates/.env.neo4j-external.template >> .env
+        DATABASE_MODULE="neo4j-external.yml"
+    fi
 fi
+
+# Add proxy-specific configuration
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    cat setup/env-templates/.env.proxy-traefik.template >> .env
+    PROXY_MODULE="proxy-traefik.yml"
+else
+    cat setup/env-templates/.env.proxy-none.template >> .env
+    PROXY_MODULE="proxy-none.yml"
+fi
+
+# Create swarm-stack.yml from template with correct modules
+cp setup/swarm-stack.yml.template swarm-stack.yml
+sed -i "s|XXX_DATABASE_MODULE_XXX|$DATABASE_MODULE|g" swarm-stack.yml
+sed -i "s|XXX_PROXY_MODULE_XXX|$PROXY_MODULE|g" swarm-stack.yml
 
 echo ""
 
@@ -152,28 +203,42 @@ echo "✅ Image: $IMAGE_NAME:$IMAGE_VERSION"
 echo ""
 
 # =============================================================================
-# DOMAIN CONFIGURATION
+# DOMAIN/PORT CONFIGURATION
 # =============================================================================
-echo "🌐 Domain Configuration"
-echo "----------------------"
-echo "Enter the domain where your API will be accessible."
-echo ""
-echo "⚠️  IMPORTANT: Make sure your domain/subdomain is already created and"
-echo "   points to your swarm manager's IP address before deploying."
-echo ""
-echo "   For domain setup instructions, see README.md (Domain Setup section)."
-echo "   Providers covered: Strato, IONOS, and general DNS configuration."
-echo ""
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    echo "🌐 Domain Configuration"
+    echo "----------------------"
+    echo "Enter the domain where your API will be accessible."
+    echo ""
+    echo "⚠️  IMPORTANT: Make sure your domain/subdomain is already created and"
+    echo "   points to your swarm manager's IP address before deploying."
+    echo ""
+    echo "   For domain setup instructions, see README.md (Domain Setup section)."
+    echo "   Providers covered: Strato, IONOS, and general DNS configuration."
+    echo ""
 
-read -p "API domain (e.g., api.example.com): " API_URL
-while [ -z "$API_URL" ]; do
-    echo "❌ API domain cannot be empty"
     read -p "API domain (e.g., api.example.com): " API_URL
-done
+    while [ -z "$API_URL" ]; do
+        echo "❌ API domain cannot be empty"
+        read -p "API domain (e.g., api.example.com): " API_URL
+    done
 
-sed -i "s|^API_URL=.*|API_URL=$API_URL|" .env
-echo "✅ API will be accessible at: https://$API_URL"
-echo ""
+    sed -i "s|^API_URL=.*|API_URL=$API_URL|" .env
+    echo "✅ API will be accessible at: https://$API_URL"
+    echo ""
+else
+    echo "🔌 Port Configuration"
+    echo "--------------------"
+    echo "Configure the port where your API will be accessible."
+    echo ""
+    
+    read -p "Published port on host [8000]: " PUBLISHED_PORT
+    PUBLISHED_PORT="${PUBLISHED_PORT:-8000}"
+    
+    sed -i "s|^PUBLISHED_PORT=.*|PUBLISHED_PORT=$PUBLISHED_PORT|" .env
+    echo "✅ API will be accessible at: http://<your-server-ip>:$PUBLISHED_PORT"
+    echo ""
+fi
 
 # =============================================================================
 # DATA ROOT CONFIGURATION
@@ -209,11 +274,11 @@ echo "✅ Stack name: $STACK_NAME"
 echo ""
 
 # =============================================================================
-# DATABASE CREDENTIALS (for local mode)
+# DATABASE CREDENTIALS
 # =============================================================================
 if [ "$DEPLOY_DATABASE" = true ]; then
-    echo "🔐 Database Credentials"
-    echo "----------------------"
+    echo "🔐 Database Credentials (Local Database)"
+    echo "---------------------------------------"
     echo "These will be used to create Docker secrets."
     echo ""
     
@@ -244,6 +309,72 @@ if [ "$DEPLOY_DATABASE" = true ]; then
     echo ""
     echo "⚠️  IMPORTANT: You'll need to create Docker secrets for:"
     echo "   - Database password"
+    echo "   - Admin API key"
+    echo ""
+else
+    echo "🔐 External Database Configuration"
+    echo "---------------------------------"
+    echo "Configure connection to your existing database."
+    echo ""
+    
+    if [ "$DB_TYPE" = "postgresql" ]; then
+        read -p "Database host: " DB_HOST
+        while [ -z "$DB_HOST" ]; do
+            echo "❌ Database host cannot be empty"
+            read -p "Database host: " DB_HOST
+        done
+        
+        read -p "Database port [5432]: " DB_PORT
+        DB_PORT="${DB_PORT:-5432}"
+        
+        read -p "Database name [apidb]: " DB_NAME
+        DB_NAME="${DB_NAME:-apidb}"
+        
+        read -p "Database user [apiuser]: " DB_USER
+        DB_USER="${DB_USER:-apiuser}"
+        
+        read -s -p "Database password: " DB_PASSWORD
+        echo ""
+        while [ -z "$DB_PASSWORD" ]; do
+            echo "❌ Database password cannot be empty"
+            read -s -p "Database password: " DB_PASSWORD
+            echo ""
+        done
+        
+        sed -i "s|^DB_HOST=.*|DB_HOST=$DB_HOST|" .env
+        sed -i "s|^DB_PORT=.*|DB_PORT=$DB_PORT|" .env
+        sed -i "s|^DB_NAME=.*|DB_NAME=$DB_NAME|" .env
+        sed -i "s|^DB_USER=.*|DB_USER=$DB_USER|" .env
+        sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
+        
+        echo "✅ PostgreSQL external connection configured"
+    elif [ "$DB_TYPE" = "neo4j" ]; then
+        read -p "Neo4j URL (e.g., bolt://host:7687): " NEO4J_URL
+        while [ -z "$NEO4J_URL" ]; then
+            echo "❌ Neo4j URL cannot be empty"
+            read -p "Neo4j URL (e.g., bolt://host:7687): " NEO4J_URL
+        done
+        
+        read -p "Database user [neo4j]: " DB_USER
+        DB_USER="${DB_USER:-neo4j}"
+        
+        read -s -p "Database password: " DB_PASSWORD
+        echo ""
+        while [ -z "$DB_PASSWORD" ]; do
+            echo "❌ Database password cannot be empty"
+            read -s -p "Database password: " DB_PASSWORD
+            echo ""
+        done
+        
+        sed -i "s|^NEO4J_URL=.*|NEO4J_URL=$NEO4J_URL|" .env
+        sed -i "s|^DB_USER=.*|DB_USER=$DB_USER|" .env
+        sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
+        
+        echo "✅ Neo4j external connection configured"
+    fi
+    
+    echo ""
+    echo "⚠️  IMPORTANT: You'll still need to create Docker secret for:"
     echo "   - Admin API key"
     echo ""
 fi
@@ -307,8 +438,13 @@ echo "📋 Configuration Summary"
 echo "========================"
 echo "Database Type:      $DB_TYPE"
 echo "Database Mode:      $DB_MODE"
+echo "Proxy Type:         $PROXY_TYPE"
 echo "Docker Image:       $IMAGE_NAME:$IMAGE_VERSION"
-echo "API Domain:         $API_URL"
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    echo "API Domain:         $API_URL"
+else
+    echo "Published Port:     $PUBLISHED_PORT"
+fi
 echo "Stack Name:         $STACK_NAME"
 echo "Data Root:          $DATA_ROOT"
 echo "API Replicas:       $API_REPLICAS"
@@ -347,12 +483,19 @@ echo ""
 echo "   # Admin API key secret"
 echo "   echo 'your-admin-api-key' | docker secret create $ADMIN_API_KEY_SECRET -"
 echo ""
-echo "2. Ensure your domain points to the swarm manager:"
-echo "   - Domain: $API_URL"
-echo "   - Should resolve to your swarm manager's IP"
-echo "   - Test with: nslookup $API_URL"
-echo "   - If not set up yet, see README.md (Domain Setup section)"
-echo ""
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    echo "2. Ensure your domain points to the swarm manager:"
+    echo "   - Domain: $API_URL"
+    echo "   - Should resolve to your swarm manager's IP"
+    echo "   - Test with: nslookup $API_URL"
+    echo "   - If not set up yet, see README.md (Domain Setup section)"
+    echo ""
+else
+    echo "2. Ensure port $PUBLISHED_PORT is accessible:"
+    echo "   - Port $PUBLISHED_PORT should be open in your firewall"
+    echo "   - API will be accessible at: http://<your-server-ip>:$PUBLISHED_PORT"
+    echo ""
+fi
 echo "3. Create data directories:"
 echo "   mkdir -p $DATA_ROOT"
 if [ "$DB_TYPE" = "postgresql" ]; then
@@ -364,7 +507,7 @@ fi
 echo "   mkdir -p $DATA_ROOT/redis_data"
 echo ""
 echo "4. Deploy to swarm:"
-echo "   docker stack deploy -c <(docker-compose config) $STACK_NAME"
+echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
 echo ""
 echo "5. Check deployment status:"
 echo "   docker stack services $STACK_NAME"

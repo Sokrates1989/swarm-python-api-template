@@ -77,8 +77,9 @@ The quick-start script will:
 1. Check Docker installation
 2. Run an interactive setup wizard (first time only)
 3. Guide you through database selection (PostgreSQL or Neo4j)
-4. Configure local or external database mode
-5. Help you deploy and manage your swarm stack
+4. Guide you through proxy selection (Traefik or no-proxy)
+5. Configure local or external database mode
+6. Help you deploy and manage your swarm stack
 
 After running the setup wizard, you can use the quick-start script to:
 - Deploy to Docker Swarm
@@ -88,6 +89,22 @@ After running the setup wizard, you can use the quick-start script to:
 - Scale services
 - Create Docker secrets
 
+## Proxy Options
+
+The template supports two proxy configurations:
+
+### 1. Traefik (Recommended)
+- Automatic HTTPS with Let's Encrypt
+- Domain-based routing
+- Requires a domain pointing to your swarm manager
+- Best for production deployments
+
+### 2. No Proxy (Direct Port Exposure)
+- Direct port mapping to host
+- You manage your own reverse proxy/load balancer
+- Useful for custom setups or when using other proxies (nginx, HAProxy, etc.)
+- API accessible via `http://<server-ip>:<port>`
+
 ---
 
 # Manual Setup (Alternative)
@@ -96,27 +113,51 @@ If you prefer to configure everything manually, follow these steps.
 
 **Important:** Make sure you have completed the [Prerequisites](#prerequisites) section above (domain setup and repository cloning) before proceeding.
 
-## Copy templates
+## Modular Configuration
 
-### For PostgreSQL (default)
+This template uses a modular approach with Docker Compose includes. Instead of maintaining multiple complete template files, we combine smaller modules based on your choices:
 
-```bash
-# Copy ".env.postgres.template" to ".env".
-cp setup/.env.postgres.template .env
+- **Base modules**: Common configuration (Redis, networks, secrets)
+- **Database modules**: PostgreSQL or Neo4j, local or external
+- **Proxy modules**: Traefik or direct port exposure
 
-# Copy "docker-compose.postgres.yml.template" to "docker-compose.yml".
-cp setup/docker-compose.postgres.yml.template docker-compose.yml
-```
+The setup wizard automatically combines the right modules for your configuration.
 
-### For Neo4j
+### Manual Configuration
 
-```bash
-# Copy ".env.neo4j.template" to ".env".
-cp setup/.env.neo4j.template .env
+If you prefer manual setup, you'll need to:
 
-# Copy "docker-compose.neo4j.yml.template" to "docker-compose.yml".
-cp setup/docker-compose.neo4j.yml.template docker-compose.yml
-```
+1. **Build your .env file** by combining templates:
+   ```bash
+   # Start with base
+   cat setup/env-templates/.env.base.template > .env
+   
+   # Add database config (choose one)
+   cat setup/env-templates/.env.postgres-local.template >> .env    # PostgreSQL local
+   cat setup/env-templates/.env.postgres-external.template >> .env # PostgreSQL external
+   cat setup/env-templates/.env.neo4j-local.template >> .env       # Neo4j local
+   cat setup/env-templates/.env.neo4j-external.template >> .env    # Neo4j external
+   
+   # Add proxy config (choose one)
+   cat setup/env-templates/.env.proxy-traefik.template >> .env     # Traefik
+   cat setup/env-templates/.env.proxy-none.template >> .env        # No proxy
+   ```
+
+2. **Create swarm-stack.yml** from template:
+   ```bash
+   cp setup/swarm-stack.yml.template swarm-stack.yml
+   
+   # Edit to include your chosen modules
+   # Replace XXX_DATABASE_MODULE_XXX with:
+   #   - postgres-local.yml or postgres-external.yml
+   #   - neo4j-local.yml or neo4j-external.yml
+   # Replace XXX_PROXY_MODULE_XXX with:
+   #   - proxy-traefik.yml or proxy-none.yml
+   ```
+
+3. **Edit configuration values** in `.env`
+
+See `setup/compose-modules/README.md` for details on the modular structure.
 
 ## Create secrets in docker swarm
 
@@ -148,7 +189,9 @@ docker secret create ADMIN_API_KEY_API_XXXXXXXXX secret.txt # Change name
 rm secret.txt
 ```
 
-**Note**: Redis password secret is optional for both configurations.
+**Note**: 
+- Redis password secret is optional for both configurations.
+- For external database setups, you don't need to create a database password secret (password is in `.env`), but you still need the Admin API key secret.
 
 ## Edit configuration
 
@@ -158,13 +201,16 @@ rm secret.txt
 # Edit the variables in .env.
 vi .env
 # Make a note of STACK_NAME, as you need it to replace <STACK_NAME>
+# For Traefik setup: Configure API_URL with your domain
+# For no-proxy setup: Configure PUBLISHED_PORT (default 8000)
+# For external database: Configure DB_HOST, DB_PASSWORD, etc.
 ```
 
-### docker-compose.yml
+### swarm-stack.yml
 
 ```bash
-# Edit the variables in docker-compose.yml.
-vi docker-compose.yml
+# Edit the variables in swarm-stack.yml.
+vi swarm-stack.yml
 
 - Replace all occurrences of XXX_CHANGE_ME_DB_PASSWORD_XXX with the Secret name created before (DB_PASSWORD_API_XXXXXXXXX)
 - Replace all occurrences of XXX_CHANGE_ME_ADMIN_API_KEY_XXX with the Secret name created before (ADMIN_API_KEY_API_XXXXXXXXX)
@@ -175,9 +221,8 @@ vi docker-compose.yml
 # Deploy
 
 ```bash
-# Deploy service on swarm using .env via docker compose.
-# https://github.com/moby/moby/issues/29133.
-docker stack deploy -c <(docker-compose config) <STACK_NAME>
+# Deploy service on swarm using swarm-stack.yml
+docker stack deploy -c swarm-stack.yml <STACK_NAME>
 # WAIT till Readiness is confirmed as described below.
 ```
 
@@ -264,7 +309,7 @@ docker stack rm <STACK_NAME>
 docker stack ps <STACK_NAME>  # Should show "no such stack"
 
 # Re-deploy.
-docker stack deploy -c <(docker-compose config) <STACK_NAME>
+docker stack deploy -c swarm-stack.yml <STACK_NAME>
 ```
 
 # Update API Image
@@ -277,7 +322,7 @@ docker pull <IMAGE_NAME>:<IMAGE_VERSION>
 docker service update --image <IMAGE_NAME>:<IMAGE_VERSION> <STACK_NAME>_api
 
 # Or re-deploy the entire stack
-docker stack deploy -c <(docker-compose config) <STACK_NAME>
+docker stack deploy -c swarm-stack.yml <STACK_NAME>
 ```
 
 # Access Database
@@ -293,7 +338,7 @@ docker exec -it $(docker ps -q -f name=<STACK_NAME>_postgres) psql -U <DB_USER> 
 
 ### Option 2: Deploy pgAdmin (optional)
 
-Add pgAdmin service to docker-compose.yml and re-deploy.
+Add pgAdmin service to swarm-stack.yml and re-deploy.
 
 ## Neo4j Access
 
@@ -306,7 +351,7 @@ docker exec -it $(docker ps -q -f name=<STACK_NAME>_neo4j) cypher-shell -u neo4j
 
 ### Option 2: Neo4j Browser (Web UI)
 
-Neo4j Browser is available at port 7474. You can expose it via Traefik by adding labels to the neo4j service in docker-compose.yml:
+Neo4j Browser is available at port 7474. You can expose it via Traefik by adding labels to the neo4j service in swarm-stack.yml (only for Traefik setup):
 
 ```yaml
 deploy:
@@ -327,7 +372,7 @@ docker service scale <STACK_NAME>_api=3
 
 # Or update .env and re-deploy
 vi .env  # Set API_REPLICAS=3
-docker stack deploy -c <(docker-compose config) <STACK_NAME>
+docker stack deploy -c swarm-stack.yml <STACK_NAME>
 ```
 
 # Monitoring

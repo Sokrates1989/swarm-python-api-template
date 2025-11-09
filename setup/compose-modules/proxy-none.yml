@@ -1,0 +1,10 @@
+# No proxy configuration
+# Direct port exposure to host
+
+services:
+  api:
+    ports:
+      - target: ${PORT}
+        published: ${PUBLISHED_PORT}
+        protocol: tcp
+        mode: host

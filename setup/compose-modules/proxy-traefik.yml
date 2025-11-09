@@ -1,0 +1,26 @@
+# Traefik proxy configuration
+# Adds Traefik labels and network for automatic HTTPS routing
+
+services:
+  api:
+    networks:
+      - ${TRAEFIK_NETWORK_NAME}
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=traefik-public
+        - traefik.docker.network=${TRAEFIK_NETWORK_NAME}
+        - traefik.http.routers.${STACK_NAME}_api.service=${STACK_NAME}_api
+        - traefik.http.services.${STACK_NAME}_api.loadbalancer.server.port=${PORT}
+        - traefik.http.routers.${STACK_NAME}_api.rule=Host(`${API_URL}`)
+        - traefik.http.routers.${STACK_NAME}_api.entrypoints=https,http,web
+        - traefik.http.routers.${STACK_NAME}_api.tls=true
+        - traefik.http.routers.${STACK_NAME}_api.tls.certresolver=le
+        # Autoscaling (works in combination with prometheus, grafana, cadvisor and own autoscaler)
+        - "autoscale=true"
+        - "autoscale.minimum_replicas=1"
+        - "autoscale.maximum_replicas=5"
+
+networks:
+  traefik:
+    external: true

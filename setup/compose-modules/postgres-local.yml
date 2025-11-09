@@ -1,0 +1,37 @@
+# PostgreSQL local database deployment
+# Use this when deploying PostgreSQL in the swarm
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    volumes:
+      - ${DATA_ROOT}/postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    secrets:
+      - "XXX_CHANGE_ME_DB_PASSWORD_XXX"
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX
+    deploy:
+      mode: replicated
+      replicas: ${POSTGRES_REPLICAS}
+      placement:
+        constraints:
+          - node.role == manager
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  api:
+    environment:
+      # Database Configuration
+      DB_TYPE: ${DB_TYPE}
+      DB_MODE: local
+      DATABASE_URL: postgresql://${DB_USER}:$(cat /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX)@postgres:${DB_PORT}/${DB_NAME}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PORT: ${DB_PORT}

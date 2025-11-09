@@ -1,0 +1,26 @@
+# Base configuration for all deployments
+# This file contains common settings
+
+services:
+  redis:
+    image: redis:7-alpine
+    networks:
+      - backend
+    deploy:
+      mode: replicated
+      replicas: ${REDIS_REPLICAS}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  backend:
+    driver: overlay
+
+secrets:
+  "XXX_CHANGE_ME_DB_PASSWORD_XXX":
+    external: true
+  "XXX_CHANGE_ME_ADMIN_API_KEY_XXX":
+    external: true

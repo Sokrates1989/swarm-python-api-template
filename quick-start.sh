@@ -47,9 +47,10 @@ if [ ! -f .setup-complete ]; then
     echo ""
     echo "The setup wizard will help you configure:"
     echo "  - Database type (PostgreSQL or Neo4j)"
+    echo "  - Proxy type (Traefik or no-proxy)"
     echo "  - Database mode (local or external)"
     echo "  - Docker image and version"
-    echo "  - Domain configuration"
+    echo "  - Domain/port configuration"
     echo "  - Swarm stack settings"
     echo ""
     
@@ -62,7 +63,7 @@ if [ ! -f .setup-complete ]; then
     else
         echo ""
         echo "⚠️  Setup wizard skipped."
-        echo "You'll need to manually configure .env and docker-compose.yml"
+        echo "You'll need to manually configure .env and swarm-stack.yml"
         echo "See README.md for manual setup instructions."
         exit 0
     fi
@@ -76,9 +77,9 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-if [ ! -f docker-compose.yml ]; then
-    echo "❌ docker-compose.yml not found!"
-    echo "Please run the setup wizard or create docker-compose.yml manually."
+if [ ! -f swarm-stack.yml ]; then
+    echo "❌ swarm-stack.yml not found!"
+    echo "Please run the setup wizard or create swarm-stack.yml manually."
     exit 1
 fi
 
@@ -124,7 +125,7 @@ case $choice in
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             echo ""
             echo "Deploying stack: $STACK_NAME"
-            docker stack deploy -c <(docker compose config) "$STACK_NAME"
+            docker stack deploy -c swarm-stack.yml "$STACK_NAME"
             echo ""
             echo "✅ Deployment initiated!"
             echo ""

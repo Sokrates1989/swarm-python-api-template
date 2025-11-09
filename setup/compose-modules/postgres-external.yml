@@ -1,0 +1,15 @@
+# PostgreSQL external database configuration
+# Use this when connecting to an existing PostgreSQL server
+
+services:
+  api:
+    environment:
+      # Database Configuration
+      DB_TYPE: ${DB_TYPE}
+      DB_MODE: external
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_PASSWORD: ${DB_PASSWORD}

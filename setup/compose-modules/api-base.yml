@@ -1,0 +1,42 @@
+# Base API service configuration
+# Common settings for all API deployments
+
+services:
+  api:
+    image: ${IMAGE_NAME}:${IMAGE_VERSION}
+    networks:
+      - backend
+    secrets:
+      - "XXX_CHANGE_ME_DB_PASSWORD_XXX"
+      - "XXX_CHANGE_ME_ADMIN_API_KEY_XXX"
+    environment:
+      # Python and Image Info
+      PYTHON_VERSION: ${PYTHON_VERSION}
+      IMAGE_TAG: ${IMAGE_VERSION}
+      
+      # Redis Configuration
+      REDIS_URL: ${REDIS_URL}
+      
+      # API Settings
+      PORT: ${PORT}
+      DEBUG: ${DEBUG}
+      
+      # Security
+      ADMIN_API_KEY_FILE: /run/secrets/XXX_CHANGE_ME_ADMIN_API_KEY_XXX
+    deploy:
+      mode: replicated
+      replicas: ${API_REPLICAS}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health').read()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s

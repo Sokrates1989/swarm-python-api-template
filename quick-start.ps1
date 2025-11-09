@@ -51,9 +51,10 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host ""
     Write-Host "The setup wizard will help you configure:" -ForegroundColor Gray
     Write-Host "  - Database type (PostgreSQL or Neo4j)" -ForegroundColor Gray
+    Write-Host "  - Proxy type (Traefik or no-proxy)" -ForegroundColor Gray
     Write-Host "  - Database mode (local or external)" -ForegroundColor Gray
     Write-Host "  - Docker image and version" -ForegroundColor Gray
-    Write-Host "  - Domain configuration" -ForegroundColor Gray
+    Write-Host "  - Domain/port configuration" -ForegroundColor Gray
     Write-Host "  - Swarm stack settings" -ForegroundColor Gray
     Write-Host ""
     
@@ -66,7 +67,7 @@ if (-not (Test-Path .setup-complete)) {
     } else {
         Write-Host ""
         Write-Host "Setup wizard skipped." -ForegroundColor Yellow
-        Write-Host "You'll need to manually configure .env and docker-compose.yml" -ForegroundColor Yellow
+        Write-Host "You'll need to manually configure .env and swarm-stack.yml" -ForegroundColor Yellow
         Write-Host "See README.md for manual setup instructions." -ForegroundColor Yellow
         exit 0
     }
@@ -80,9 +81,9 @@ if (-not (Test-Path .env)) {
     exit 1
 }
 
-if (-not (Test-Path docker-compose.yml)) {
-    Write-Host "[ERROR] docker-compose.yml not found!" -ForegroundColor Red
-    Write-Host "Please run the setup wizard or create docker-compose.yml manually." -ForegroundColor Yellow
+if (-not (Test-Path swarm-stack.yml)) {
+    Write-Host "[ERROR] swarm-stack.yml not found!" -ForegroundColor Red
+    Write-Host "Please run the setup wizard or create swarm-stack.yml manually." -ForegroundColor Yellow
     exit 1
 }
 
@@ -158,9 +159,8 @@ switch ($choice) {
             Write-Host ""
             Write-Host "Deploying stack: $STACK_NAME" -ForegroundColor Cyan
             
-            # Generate docker-compose config and deploy
-            $composeConfig = docker compose config
-            $composeConfig | docker stack deploy -c - $STACK_NAME
+            # Deploy using swarm-stack.yml
+            docker stack deploy -c swarm-stack.yml $STACK_NAME
             
             Write-Host ""
             Write-Host "Deployment initiated!" -ForegroundColor Green

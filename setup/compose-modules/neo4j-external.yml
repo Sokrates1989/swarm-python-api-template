@@ -1,0 +1,12 @@
+# Neo4j external database configuration
+# Use this when connecting to an existing Neo4j server
+
+services:
+  api:
+    environment:
+      # Database Configuration
+      DB_TYPE: neo4j
+      DB_MODE: external
+      NEO4J_URL: ${NEO4J_URL}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
