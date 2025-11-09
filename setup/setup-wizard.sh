@@ -320,11 +320,7 @@ echo "For multi-node swarms, use a shared filesystem like GlusterFS."
 echo ""
 
 # Use project root as default data root
-if [ -n "$API_URL" ]; then
-    DEFAULT_DATA_ROOT="$PROJECT_ROOT/data/$API_URL"
-else
-    DEFAULT_DATA_ROOT="$PROJECT_ROOT/data"
-fi
+DEFAULT_DATA_ROOT="$PROJECT_ROOT"
 read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
 DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
 

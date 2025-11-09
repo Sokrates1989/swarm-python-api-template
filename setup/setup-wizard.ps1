@@ -293,11 +293,7 @@ Write-Host "For multi-node swarms, use a shared filesystem like GlusterFS."
 Write-Host ""
 
 # Use project root as default data root
-if (-not [string]::IsNullOrWhiteSpace($API_URL)) {
-    $DEFAULT_DATA_ROOT = "$PROJECT_ROOT\data\$API_URL"
-} else {
-    $DEFAULT_DATA_ROOT = "$PROJECT_ROOT\data"
-}
+$DEFAULT_DATA_ROOT = "$PROJECT_ROOT"
 
 $DATA_ROOT = Read-Host "Data root path [$DEFAULT_DATA_ROOT]"
 if ([string]::IsNullOrWhiteSpace($DATA_ROOT)) { $DATA_ROOT = $DEFAULT_DATA_ROOT }
