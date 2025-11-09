@@ -2,6 +2,27 @@
 # Secret manager module
 # Handles Docker secret creation
 
+show_editor_instructions() {
+    local editor="$1"
+    
+    if [ "$editor" = "nano" ]; then
+        echo "Instructions for nano:"
+        echo "  1. Type your secret"
+        echo "  2. Press Ctrl+O to save"
+        echo "  3. Press Enter to confirm filename"
+        echo "  4. Press Ctrl+X to exit"
+    elif [ "$editor" = "vim" ] || [ "$editor" = "vi" ]; then
+        echo "Instructions for vim/vi:"
+        echo "  1. Press 'i' to enter insert mode"
+        echo "  2. Type your secret"
+        echo "  3. Press Esc to exit insert mode"
+        echo "  4. Type ':wq' and press Enter to save and quit"
+    fi
+    echo ""
+    read -p "Press Enter to open editor..." -r
+    echo ""
+}
+
 create_docker_secrets() {
     local db_password_secret="$1"
     local admin_api_key_secret="$2"
@@ -41,22 +62,7 @@ create_docker_secrets() {
     echo ""
     echo "Creating: $db_password_secret"
     echo ""
-    if [ "$EDITOR" = "nano" ]; then
-        echo "Instructions for nano:"
-        echo "  1. Type your secret"
-        echo "  2. Press Ctrl+O to save"
-        echo "  3. Press Enter to confirm filename"
-        echo "  4. Press Ctrl+X to exit"
-    elif [ "$EDITOR" = "vim" ] || [ "$EDITOR" = "vi" ]; then
-        echo "Instructions for vim:"
-        echo "  1. Press 'i' to enter insert mode"
-        echo "  2. Type your secret"
-        echo "  3. Press Esc to exit insert mode"
-        echo "  4. Type ':wq' and press Enter to save and quit"
-    fi
-    echo ""
-    read -p "Press Enter to open editor..." -r
-    echo ""
+    show_editor_instructions "$EDITOR"
     
     # Create empty file
     > secret.txt
@@ -79,22 +85,7 @@ create_docker_secrets() {
     echo ""
     echo "Creating: $admin_api_key_secret"
     echo ""
-    if [ "$EDITOR" = "nano" ]; then
-        echo "Instructions for nano:"
-        echo "  1. Type your secret"
-        echo "  2. Press Ctrl+O to save"
-        echo "  3. Press Enter to confirm filename"
-        echo "  4. Press Ctrl+X to exit"
-    elif [ "$EDITOR" = "vim" ] || [ "$EDITOR" = "vi" ]; then
-        echo "Instructions for vim:"
-        echo "  1. Press 'i' to enter insert mode"
-        echo "  2. Type your secret"
-        echo "  3. Press Esc to exit insert mode"
-        echo "  4. Type ':wq' and press Enter to save and quit"
-    fi
-    echo ""
-    read -p "Press Enter to open editor..." -r
-    echo ""
+    show_editor_instructions "$EDITOR"
     
     # Create empty file
     > secret.txt
