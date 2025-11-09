@@ -485,6 +485,9 @@ if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
     Write-Host "Opening Notepad for database password..."
     Write-Host "Please enter the password, save, and close Notepad."
     Write-Host ""
+    Write-Host "Press any key to open Notepad..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    Write-Host ""
     
     # Create empty file and open in notepad
     "" | Set-Content "secret.txt" -NoNewline
@@ -507,6 +510,9 @@ if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
     Write-Host "--------------------------------"
     Write-Host "Opening Notepad for admin API key..."
     Write-Host "Please enter the API key, save, and close Notepad."
+    Write-Host ""
+    Write-Host "Press any key to open Notepad..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     Write-Host ""
     
     # Create empty file and open in notepad

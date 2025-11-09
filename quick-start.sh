@@ -291,6 +291,9 @@ case $choice in
         echo "Please enter the password, save, and close the editor."
         echo ""
         
+        read -p "Press any key to open editor..." -n 1 -r
+        echo ""
+        
         $EDITOR secret.txt
         docker secret create "${STACK_NAME_UPPER}_DB_PASSWORD" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
@@ -305,6 +308,9 @@ case $choice in
         echo "--------------------------------"
         echo "Opening editor for admin API key..."
         echo "Please enter the API key, save, and close the editor."
+        echo ""
+        
+        read -p "Press any key to open editor..." -n 1 -r
         echo ""
         
         $EDITOR secret.txt
