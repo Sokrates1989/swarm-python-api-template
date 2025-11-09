@@ -272,13 +272,26 @@ case $choice in
         # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
         STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
         
+        # Detect available editor
+        if command -v nano &> /dev/null; then
+            EDITOR="nano"
+        elif command -v vi &> /dev/null; then
+            EDITOR="vi"
+        elif command -v vim &> /dev/null; then
+            EDITOR="vim"
+        else
+            echo "❌ No text editor found (nano, vi, or vim required)"
+            echo "Please install a text editor and try again."
+            exit 1
+        fi
+        
         echo "Creating Database Password Secret..."
         echo "-----------------------------------"
-        echo "Enter the database password (avoid backslashes):"
-        read -s db_password
+        echo "Opening editor for database password..."
+        echo "Please enter the password, save, and close the editor."
         echo ""
         
-        echo "$db_password" > secret.txt
+        $EDITOR secret.txt
         docker secret create "DB_PASSWORD_${STACK_NAME_UPPER}" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
             echo "✅ Secret DB_PASSWORD_${STACK_NAME_UPPER} created successfully"
@@ -290,11 +303,11 @@ case $choice in
         
         echo "Creating Admin API Key Secret..."
         echo "--------------------------------"
-        echo "Enter the admin API key (avoid backslashes):"
-        read -s admin_key
+        echo "Opening editor for admin API key..."
+        echo "Please enter the API key, save, and close the editor."
         echo ""
         
-        echo "$admin_key" > secret.txt
+        $EDITOR secret.txt
         docker secret create "ADMIN_API_KEY_${STACK_NAME_UPPER}" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
             echo "✅ Secret ADMIN_API_KEY_${STACK_NAME_UPPER} created successfully"

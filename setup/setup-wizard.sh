@@ -557,11 +557,24 @@ if [[ ! "$CREATE_SECRETS" =~ ^[Nn]$ ]]; then
     echo ""
     echo "Creating Database Password Secret..."
     echo "-----------------------------------"
-    echo "Enter the database password (avoid backslashes):"
-    read -s DB_PASSWORD_VALUE
+    echo "Opening editor for database password..."
+    echo "Please enter the password, save, and close the editor."
     echo ""
     
-    echo "$DB_PASSWORD_VALUE" > secret.txt
+    # Detect available editor
+    if command -v nano &> /dev/null; then
+        EDITOR="nano"
+    elif command -v vi &> /dev/null; then
+        EDITOR="vi"
+    elif command -v vim &> /dev/null; then
+        EDITOR="vim"
+    else
+        echo "❌ No text editor found (nano, vi, or vim required)"
+        echo "Please install a text editor and try again."
+        exit 1
+    fi
+    
+    $EDITOR secret.txt
     docker secret create "$DB_PASSWORD_SECRET" secret.txt 2>/dev/null
     if [ $? -eq 0 ]; then
         echo "✅ Secret $DB_PASSWORD_SECRET created successfully"
@@ -573,11 +586,11 @@ if [[ ! "$CREATE_SECRETS" =~ ^[Nn]$ ]]; then
     
     echo "Creating Admin API Key Secret..."
     echo "--------------------------------"
-    echo "Enter the admin API key (avoid backslashes):"
-    read -s ADMIN_API_KEY_VALUE
+    echo "Opening editor for admin API key..."
+    echo "Please enter the API key, save, and close the editor."
     echo ""
     
-    echo "$ADMIN_API_KEY_VALUE" > secret.txt
+    $EDITOR secret.txt
     docker secret create "$ADMIN_API_KEY_SECRET" secret.txt 2>/dev/null
     if [ $? -eq 0 ]; then
         echo "✅ Secret $ADMIN_API_KEY_SECRET created successfully"

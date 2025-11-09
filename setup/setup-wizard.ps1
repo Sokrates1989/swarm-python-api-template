@@ -482,12 +482,14 @@ if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
     Write-Host ""
     Write-Host "Creating Database Password Secret..." -ForegroundColor Cyan
     Write-Host "-----------------------------------"
-    Write-Host "Enter the database password (avoid backslashes):"
-    $DB_PASSWORD_VALUE = Read-Host -AsSecureString
-    $DB_PASSWORD_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DB_PASSWORD_VALUE))
+    Write-Host "Opening Notepad for database password..."
+    Write-Host "Please enter the password, save, and close Notepad."
     Write-Host ""
     
-    $DB_PASSWORD_PLAIN | Set-Content "secret.txt" -NoNewline
+    # Create empty file and open in notepad
+    "" | Set-Content "secret.txt" -NoNewline
+    notepad secret.txt | Out-Null
+    
     try {
         docker secret create $DB_PASSWORD_SECRET secret.txt 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -503,12 +505,14 @@ if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
     
     Write-Host "Creating Admin API Key Secret..." -ForegroundColor Cyan
     Write-Host "--------------------------------"
-    Write-Host "Enter the admin API key (avoid backslashes):"
-    $ADMIN_API_KEY_VALUE = Read-Host -AsSecureString
-    $ADMIN_API_KEY_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($ADMIN_API_KEY_VALUE))
+    Write-Host "Opening Notepad for admin API key..."
+    Write-Host "Please enter the API key, save, and close Notepad."
     Write-Host ""
     
-    $ADMIN_API_KEY_PLAIN | Set-Content "secret.txt" -NoNewline
+    # Create empty file and open in notepad
+    "" | Set-Content "secret.txt" -NoNewline
+    notepad secret.txt | Out-Null
+    
     try {
         docker secret create $ADMIN_API_KEY_SECRET secret.txt 2>$null
         if ($LASTEXITCODE -eq 0) {

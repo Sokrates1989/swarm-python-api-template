@@ -311,12 +311,13 @@ switch ($choice) {
         
         Write-Host "Creating Database Password Secret..." -ForegroundColor Cyan
         Write-Host "-----------------------------------"
-        Write-Host "Enter the database password (avoid backslashes):"
-        $dbPassword = Read-Host -AsSecureString
-        $dbPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($dbPassword))
+        Write-Host "Opening Notepad for database password..."
+        Write-Host "Please enter the password, save, and close Notepad."
         Write-Host ""
         
-        $dbPasswordPlain | Set-Content "secret.txt" -NoNewline
+        "" | Set-Content "secret.txt" -NoNewline
+        notepad secret.txt | Out-Null
+        
         try {
             docker secret create "DB_PASSWORD_${STACK_NAME_UPPER}" secret.txt 2>$null
             if ($LASTEXITCODE -eq 0) {
@@ -332,12 +333,13 @@ switch ($choice) {
         
         Write-Host "Creating Admin API Key Secret..." -ForegroundColor Cyan
         Write-Host "--------------------------------"
-        Write-Host "Enter the admin API key (avoid backslashes):"
-        $adminKey = Read-Host -AsSecureString
-        $adminKeyPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($adminKey))
+        Write-Host "Opening Notepad for admin API key..."
+        Write-Host "Please enter the API key, save, and close Notepad."
         Write-Host ""
         
-        $adminKeyPlain | Set-Content "secret.txt" -NoNewline
+        "" | Set-Content "secret.txt" -NoNewline
+        notepad secret.txt | Out-Null
+        
         try {
             docker secret create "ADMIN_API_KEY_${STACK_NAME_UPPER}" secret.txt 2>$null
             if ($LASTEXITCODE -eq 0) {
