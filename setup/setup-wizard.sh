@@ -240,8 +240,8 @@ while [ "$IMAGE_VERIFIED" = false ]; do
         read -p "Enter Docker image name (e.g., sokrates1989/python-api-template): " IMAGE_NAME
     done
 
-    read -p "Enter Docker image version/tag [0.0.2]: " IMAGE_VERSION
-    IMAGE_VERSION="${IMAGE_VERSION:-0.0.2}"
+    read -p "Enter Docker image version/tag [0.0.3]: " IMAGE_VERSION
+    IMAGE_VERSION="${IMAGE_VERSION:-0.0.3}"
 
     echo ""
     echo "🔍 Verifying Docker image: $IMAGE_NAME:$IMAGE_VERSION"

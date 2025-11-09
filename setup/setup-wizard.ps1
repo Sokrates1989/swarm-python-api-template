@@ -223,8 +223,8 @@ while (-not $IMAGE_VERIFIED) {
         }
     } while ([string]::IsNullOrWhiteSpace($IMAGE_NAME))
 
-    $IMAGE_VERSION = Read-Host "Enter Docker image version/tag [0.0.2]"
-    if ([string]::IsNullOrWhiteSpace($IMAGE_VERSION)) { $IMAGE_VERSION = "0.0.2" }
+    $IMAGE_VERSION = Read-Host "Enter Docker image version/tag [0.0.3]"
+    if ([string]::IsNullOrWhiteSpace($IMAGE_VERSION)) { $IMAGE_VERSION = "0.0.3" }
 
     Write-Host ""
     Write-Host "🔍 Verifying Docker image: ${IMAGE_NAME}:${IMAGE_VERSION}" -ForegroundColor Cyan
