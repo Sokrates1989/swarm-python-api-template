@@ -44,26 +44,56 @@ check_deployment_health() {
     echo "🏥 Health Check"
     echo "==============="
     echo ""
-    echo "Waiting for services to start (10 seconds)..."
-    sleep 10
     
-    # Check service replicas
-    echo ""
-    echo "Checking service replicas..."
-    echo ""
-    docker stack services "$stack_name"
-    echo ""
-    
-    # Get service status
-    local all_healthy=true
+    # Define services to check
     local services=("api" "redis")
-    
     if [ "$db_type" = "postgresql" ]; then
         services+=("postgres")
     elif [ "$db_type" = "neo4j" ]; then
         services+=("neo4j")
     fi
     
+    # Wait for services to become healthy (max 3 minutes)
+    local max_wait=180  # 3 minutes
+    local check_interval=5
+    local elapsed=0
+    local all_healthy=false
+    
+    echo "Waiting for all services to become healthy (max 3 minutes)..."
+    echo ""
+    
+    while [ $elapsed -lt $max_wait ] && [ "$all_healthy" = false ]; do
+        all_healthy=true
+        
+        for service in "${services[@]}"; do
+            local service_name="${stack_name}_${service}"
+            local replicas=$(docker service ls --filter "name=${service_name}" --format "{{.Replicas}}" 2>/dev/null)
+            
+            if [[ "$replicas" =~ ^([0-9]+)/([0-9]+) ]]; then
+                local current="${BASH_REMATCH[1]}"
+                local desired="${BASH_REMATCH[2]}"
+                
+                if [ "$current" != "$desired" ]; then
+                    all_healthy=false
+                    echo "[${elapsed}s] ⏳ Service $service: $replicas (waiting...)"
+                fi
+            fi
+        done
+        
+        if [ "$all_healthy" = false ]; then
+            sleep $check_interval
+            elapsed=$((elapsed + check_interval))
+        fi
+    done
+    
+    # Final status check
+    echo ""
+    echo "Final service status:"
+    echo ""
+    docker stack services "$stack_name"
+    echo ""
+    
+    # Check each service
     for service in "${services[@]}"; do
         local service_name="${stack_name}_${service}"
         local replicas=$(docker service ls --filter "name=${service_name}" --format "{{.Replicas}}")
@@ -73,9 +103,7 @@ check_deployment_health() {
             local desired="${BASH_REMATCH[2]}"
             
             if [ "$current" != "$desired" ]; then
-                echo "⚠️  Service $service has unequal replicas: $replicas"
-                all_healthy=false
-                
+                echo "❌ Service $service has unequal replicas: $replicas"
                 echo "   Checking service tasks..."
                 docker service ps "$service_name" --no-trunc
                 echo ""
@@ -87,18 +115,9 @@ check_deployment_health() {
     
     if [ "$all_healthy" = false ]; then
         echo ""
-        echo "❌ Some services have issues. Check the output above for details."
+        echo "⚠️  Some services did not become healthy within 3 minutes."
         echo ""
-        read -p "Continue with log checks anyway? (y/N): " CONTINUE_LOGS
-        if [[ ! "$CONTINUE_LOGS" =~ ^[Yy]$ ]]; then
-            return 1
-        fi
     fi
-    
-    # Wait for services to fully initialize
-    echo ""
-    echo "Waiting for services to initialize (30 seconds)..."
-    sleep 30
     
     # Check logs
     echo ""
