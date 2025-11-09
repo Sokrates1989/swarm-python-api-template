@@ -34,7 +34,7 @@ deploy_stack() {
     
     echo ""
     echo "Deploying stack..."
-    docker stack deploy -c "$stack_file" "$stack_name"
+    docker stack deploy -c <(docker-compose -f "$stack_file" config) "$stack_name"
     
     if [ $? -ne 0 ]; then
         echo "❌ Deployment failed"

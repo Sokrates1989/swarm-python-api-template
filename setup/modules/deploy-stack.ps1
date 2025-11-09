@@ -40,7 +40,7 @@ function Invoke-StackDeploy {
     
     Write-Host ""
     Write-Host "Deploying stack..."
-    docker stack deploy -c $StackFile $StackName
+    docker stack deploy -c <(docker-compose -f $StackFile config) $StackName
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Deployment failed" -ForegroundColor Red
