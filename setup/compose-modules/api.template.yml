@@ -1,6 +1,5 @@
 # API service template
 # Placeholders will be replaced during build
-
   api:
     image: ${IMAGE_NAME}:${IMAGE_VERSION}
     networks:

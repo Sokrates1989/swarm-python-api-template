@@ -1,7 +1,7 @@
       labels:
         - traefik.enable=true
         - traefik.constraint-label=traefik-public
-        - traefik.docker.network=${TRAEFIK_NETWORK_NAME}
+        - traefik.docker.network=traefik
         - traefik.http.routers.${STACK_NAME}_api.service=${STACK_NAME}_api
         - traefik.http.services.${STACK_NAME}_api.loadbalancer.server.port=${PORT}
         - traefik.http.routers.${STACK_NAME}_api.rule=Host(`${API_URL}`)

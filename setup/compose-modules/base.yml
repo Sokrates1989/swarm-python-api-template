@@ -1,7 +1,6 @@
 # Base configuration for all deployments
 # This file contains common settings
 # NOTE: Only contains 'services:' section. Networks and secrets are in footer.yml
-
 services:
   redis:
     image: redis:7-alpine

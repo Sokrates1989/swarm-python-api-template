@@ -1,7 +1,6 @@
 # Base API service configuration
 # Common settings for all API deployments
 # NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
-
   api:
     image: ${IMAGE_NAME}:${IMAGE_VERSION}
     networks:

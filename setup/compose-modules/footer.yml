@@ -1,7 +1,6 @@
 # Footer configuration
 # This file closes the services section and adds networks and secrets
 # Always concatenated last
-
 networks:
   backend:
     driver: overlay

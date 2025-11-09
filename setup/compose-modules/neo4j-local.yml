@@ -1,7 +1,6 @@
 # Neo4j local database deployment
 # Use this when deploying Neo4j in the swarm
 # NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
-
   neo4j:
     image: neo4j:5-community
     volumes:

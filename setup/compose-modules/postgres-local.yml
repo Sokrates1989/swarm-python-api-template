@@ -1,7 +1,6 @@
 # PostgreSQL local database deployment
 # Use this when deploying PostgreSQL in the swarm
 # NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
-
   postgres:
     image: postgres:16-alpine
     volumes:
