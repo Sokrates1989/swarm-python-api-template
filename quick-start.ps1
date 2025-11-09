@@ -42,9 +42,16 @@ try {
 Write-Host "Docker is installed and running" -ForegroundColor Green
 Write-Host ""
 
-# Check if initial setup is needed
-if (-not (Test-Path .setup-complete)) {
-    Write-Host " First-time setup detected!" -ForegroundColor Cyan
+# Check if initial setup is needed (same logic as setup wizard)
+$SETUP_DONE = $false
+if (Test-Path ".setup-complete") {
+    $SETUP_DONE = $true
+} elseif ((Test-Path ".env") -and (Test-Path "swarm-stack.yml")) {
+    $SETUP_DONE = $true
+}
+
+if (-not $SETUP_DONE) {
+    Write-Host "🚀 First-time setup detected!" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "This appears to be your first time setting up this deployment." -ForegroundColor Yellow
     Write-Host "Would you like to run the interactive setup wizard?" -ForegroundColor Yellow

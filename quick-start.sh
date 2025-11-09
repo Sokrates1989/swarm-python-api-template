@@ -38,8 +38,15 @@ fi
 echo "✅ Docker is installed and running"
 echo ""
 
-# Check if initial setup is needed
-if [ ! -f .setup-complete ]; then
+# Check if initial setup is needed (same logic as setup wizard)
+SETUP_DONE=false
+if [ -f .setup-complete ]; then
+    SETUP_DONE=true
+elif [ -f .env ] && [ -f swarm-stack.yml ]; then
+    SETUP_DONE=true
+fi
+
+if [ "$SETUP_DONE" = false ]; then
     echo "🚀 First-time setup detected!"
     echo ""
     echo "This appears to be your first time setting up this deployment."
