@@ -66,10 +66,19 @@ create_docker_secrets() {
     
     # Create empty file
     > secret.txt
-    $EDITOR secret.txt || true
+    
+    # Run editor and capture exit code
+    set +e  # Temporarily disable exit on error
+    $EDITOR secret.txt
+    local editor_exit_code=$?
+    set -e  # Re-enable exit on error
+    
+    echo "DEBUG: Editor exited with code: $editor_exit_code" >&2
+    echo "DEBUG: Checking if secret.txt exists and has content..." >&2
     
     # Check if file has content
     if [ -f secret.txt ] && [ -s secret.txt ]; then
+        echo "DEBUG: File exists and has content" >&2
         docker secret create "$db_password_secret" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
             echo "✅ Created $db_password_secret"
@@ -89,10 +98,19 @@ create_docker_secrets() {
     
     # Create empty file
     > secret.txt
-    $EDITOR secret.txt || true
+    
+    # Run editor and capture exit code
+    set +e  # Temporarily disable exit on error
+    $EDITOR secret.txt
+    local editor_exit_code=$?
+    set -e  # Re-enable exit on error
+    
+    echo "DEBUG: Editor exited with code: $editor_exit_code" >&2
+    echo "DEBUG: Checking if secret.txt exists and has content..." >&2
     
     # Check if file has content
     if [ -f secret.txt ] && [ -s secret.txt ]; then
+        echo "DEBUG: File exists and has content" >&2
         docker secret create "$admin_api_key_secret" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
             echo "✅ Created $admin_api_key_secret"
