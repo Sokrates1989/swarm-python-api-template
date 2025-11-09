@@ -421,7 +421,7 @@ else
         echo "✅ PostgreSQL external connection configured"
     elif [ "$DB_TYPE" = "neo4j" ]; then
         read -p "Neo4j URL (e.g., bolt://host:7687): " NEO4J_URL
-        while [ -z "$NEO4J_URL" ]; then
+        while [ -z "$NEO4J_URL" ]; do
             echo "❌ Neo4j URL cannot be empty"
             read -p "Neo4j URL (e.g., bolt://host:7687): " NEO4J_URL
         done
