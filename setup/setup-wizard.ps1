@@ -3,14 +3,16 @@
 
 $ErrorActionPreference = "Stop"
 
-# Get the directory where this script is located
+# Get the directory where this script is located (setup/)
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $SCRIPT_DIR
+# Get the project root directory (parent of setup/)
+$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
+Set-Location $PROJECT_ROOT
 
 Write-Host "🚀 Swarm Python API Template - Initial Setup" -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Working directory: $SCRIPT_DIR"
+Write-Host "Working directory: $PROJECT_ROOT"
 Write-Host ""
 
 # Check if setup is already complete
@@ -290,11 +292,11 @@ Write-Host "Enter the path where persistent data will be stored."
 Write-Host "For multi-node swarms, use a shared filesystem like GlusterFS."
 Write-Host ""
 
-# Use current directory as default data root
+# Use project root as default data root
 if (-not [string]::IsNullOrWhiteSpace($API_URL)) {
-    $DEFAULT_DATA_ROOT = "$SCRIPT_DIR\data\$API_URL"
+    $DEFAULT_DATA_ROOT = "$PROJECT_ROOT\data\$API_URL"
 } else {
-    $DEFAULT_DATA_ROOT = "$SCRIPT_DIR\data"
+    $DEFAULT_DATA_ROOT = "$PROJECT_ROOT\data"
 }
 
 $DATA_ROOT = Read-Host "Data root path [$DEFAULT_DATA_ROOT]"

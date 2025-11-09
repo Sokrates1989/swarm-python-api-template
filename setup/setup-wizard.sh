@@ -5,14 +5,16 @@
 
 set -e
 
-# Get the directory where this script is located
+# Get the directory where this script is located (setup/)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+# Get the project root directory (parent of setup/)
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
 
 echo "🚀 Swarm Python API Template - Initial Setup"
 echo "=============================================="
 echo ""
-echo "Working directory: $SCRIPT_DIR"
+echo "Working directory: $PROJECT_ROOT"
 echo ""
 
 # Check if setup is already complete (either via .setup-complete or manual setup)
@@ -317,11 +319,11 @@ echo "Enter the path where persistent data will be stored."
 echo "For multi-node swarms, use a shared filesystem like GlusterFS."
 echo ""
 
-# Use current directory as default data root
+# Use project root as default data root
 if [ -n "$API_URL" ]; then
-    DEFAULT_DATA_ROOT="$SCRIPT_DIR/data/$API_URL"
+    DEFAULT_DATA_ROOT="$PROJECT_ROOT/data/$API_URL"
 else
-    DEFAULT_DATA_ROOT="$SCRIPT_DIR/data"
+    DEFAULT_DATA_ROOT="$PROJECT_ROOT/data"
 fi
 read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
 DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
