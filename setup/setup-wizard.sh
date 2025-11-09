@@ -492,11 +492,11 @@ echo ""
 # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
 STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
 
-read -p "Database password secret name [DB_PASSWORD_${STACK_NAME_UPPER}]: " DB_PASSWORD_SECRET
-DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-DB_PASSWORD_${STACK_NAME_UPPER}}"
+read -p "Database password secret name [${STACK_NAME_UPPER}_DB_PASSWORD]: " DB_PASSWORD_SECRET
+DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-${STACK_NAME_UPPER}_DB_PASSWORD}"
 
-read -p "Admin API key secret name [ADMIN_API_KEY_${STACK_NAME_UPPER}]: " ADMIN_API_KEY_SECRET
-ADMIN_API_KEY_SECRET="${ADMIN_API_KEY_SECRET:-ADMIN_API_KEY_${STACK_NAME_UPPER}}"
+read -p "Admin API key secret name [${STACK_NAME_UPPER}_ADMIN_API_KEY]: " ADMIN_API_KEY_SECRET
+ADMIN_API_KEY_SECRET="${ADMIN_API_KEY_SECRET:-${STACK_NAME_UPPER}_ADMIN_API_KEY}"
 
 # Replace secret placeholders in swarm-stack.yml
 sed -i "s|XXX_CHANGE_ME_DB_PASSWORD_XXX|$DB_PASSWORD_SECRET|g" swarm-stack.yml

@@ -450,11 +450,11 @@ Write-Host ""
 # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
 $STACK_NAME_UPPER = $STACK_NAME.ToUpper() -replace '[^A-Z0-9]', '_'
 
-$DB_PASSWORD_SECRET = Read-Host "Database password secret name [DB_PASSWORD_$STACK_NAME_UPPER]"
-if ([string]::IsNullOrWhiteSpace($DB_PASSWORD_SECRET)) { $DB_PASSWORD_SECRET = "DB_PASSWORD_$STACK_NAME_UPPER" }
+$DB_PASSWORD_SECRET = Read-Host "Database password secret name [${STACK_NAME_UPPER}_DB_PASSWORD]"
+if ([string]::IsNullOrWhiteSpace($DB_PASSWORD_SECRET)) { $DB_PASSWORD_SECRET = "${STACK_NAME_UPPER}_DB_PASSWORD" }
 
-$ADMIN_API_KEY_SECRET = Read-Host "Admin API key secret name [ADMIN_API_KEY_$STACK_NAME_UPPER]"
-if ([string]::IsNullOrWhiteSpace($ADMIN_API_KEY_SECRET)) { $ADMIN_API_KEY_SECRET = "ADMIN_API_KEY_$STACK_NAME_UPPER" }
+$ADMIN_API_KEY_SECRET = Read-Host "Admin API key secret name [${STACK_NAME_UPPER}_ADMIN_API_KEY]"
+if ([string]::IsNullOrWhiteSpace($ADMIN_API_KEY_SECRET)) { $ADMIN_API_KEY_SECRET = "${STACK_NAME_UPPER}_ADMIN_API_KEY" }
 
 # Replace secret placeholders in swarm-stack.yml
 (Get-Content "swarm-stack.yml") -replace "XXX_CHANGE_ME_DB_PASSWORD_XXX", $DB_PASSWORD_SECRET | Set-Content "swarm-stack.yml"

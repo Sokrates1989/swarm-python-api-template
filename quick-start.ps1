@@ -319,14 +319,14 @@ switch ($choice) {
         notepad secret.txt | Out-Null
         
         try {
-            docker secret create "DB_PASSWORD_${STACK_NAME_UPPER}" secret.txt 2>$null
+            docker secret create "${STACK_NAME_UPPER}_DB_PASSWORD" secret.txt 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Secret DB_PASSWORD_${STACK_NAME_UPPER} created successfully" -ForegroundColor Green
+                Write-Host "✅ Secret ${STACK_NAME_UPPER}_DB_PASSWORD created successfully" -ForegroundColor Green
             } else {
-                Write-Host "⚠️  Secret DB_PASSWORD_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+                Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_DB_PASSWORD may already exist" -ForegroundColor Yellow
             }
         } catch {
-            Write-Host "⚠️  Secret DB_PASSWORD_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+            Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_DB_PASSWORD may already exist" -ForegroundColor Yellow
         }
         Remove-Item "secret.txt" -ErrorAction SilentlyContinue
         Write-Host ""
@@ -341,14 +341,14 @@ switch ($choice) {
         notepad secret.txt | Out-Null
         
         try {
-            docker secret create "ADMIN_API_KEY_${STACK_NAME_UPPER}" secret.txt 2>$null
+            docker secret create "${STACK_NAME_UPPER}_ADMIN_API_KEY" secret.txt 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Secret ADMIN_API_KEY_${STACK_NAME_UPPER} created successfully" -ForegroundColor Green
+                Write-Host "✅ Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY created successfully" -ForegroundColor Green
             } else {
-                Write-Host "⚠️  Secret ADMIN_API_KEY_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+                Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY may already exist" -ForegroundColor Yellow
             }
         } catch {
-            Write-Host "⚠️  Secret ADMIN_API_KEY_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+            Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY may already exist" -ForegroundColor Yellow
         }
         Remove-Item "secret.txt" -ErrorAction SilentlyContinue
         Write-Host ""

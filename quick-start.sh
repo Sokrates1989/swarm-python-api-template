@@ -292,11 +292,11 @@ case $choice in
         echo ""
         
         $EDITOR secret.txt
-        docker secret create "DB_PASSWORD_${STACK_NAME_UPPER}" secret.txt 2>/dev/null
+        docker secret create "${STACK_NAME_UPPER}_DB_PASSWORD" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
-            echo "✅ Secret DB_PASSWORD_${STACK_NAME_UPPER} created successfully"
+            echo "✅ Secret ${STACK_NAME_UPPER}_DB_PASSWORD created successfully"
         else
-            echo "⚠️  Secret DB_PASSWORD_${STACK_NAME_UPPER} may already exist"
+            echo "⚠️  Secret ${STACK_NAME_UPPER}_DB_PASSWORD may already exist"
         fi
         rm -f secret.txt
         echo ""
@@ -308,11 +308,11 @@ case $choice in
         echo ""
         
         $EDITOR secret.txt
-        docker secret create "ADMIN_API_KEY_${STACK_NAME_UPPER}" secret.txt 2>/dev/null
+        docker secret create "${STACK_NAME_UPPER}_ADMIN_API_KEY" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
-            echo "✅ Secret ADMIN_API_KEY_${STACK_NAME_UPPER} created successfully"
+            echo "✅ Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY created successfully"
         else
-            echo "⚠️  Secret ADMIN_API_KEY_${STACK_NAME_UPPER} may already exist"
+            echo "⚠️  Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY may already exist"
         fi
         rm -f secret.txt
         echo ""
