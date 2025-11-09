@@ -42,16 +42,16 @@ create_docker_secrets() {
         return 0
     fi
     
-    # Detect editor - prefer vi over nano to avoid Ctrl+X exit issues
+    # Detect editor
     local EDITOR=""
-    if command -v vi &> /dev/null; then
-        EDITOR="vi"
+    if command -v nano &> /dev/null; then
+        EDITOR="nano"
     elif command -v vim &> /dev/null; then
         EDITOR="vim"
-    elif command -v nano &> /dev/null; then
-        EDITOR="nano"
+    elif command -v vi &> /dev/null; then
+        EDITOR="vi"
     else
-        echo "❌ No text editor found (vi, vim, or nano required)"
+        echo "❌ No text editor found (nano, vim, or vi required)"
         echo ""
         echo "Please create secrets manually:"
         echo "  echo 'your-password' | docker secret create $db_password_secret -"
@@ -70,16 +70,10 @@ create_docker_secrets() {
     # Run editor and capture exit code
     set +e  # Temporarily disable exit on error
     $EDITOR secret.txt
-    local editor_exit_code=$?
     set -e  # Re-enable exit on error
-    
-    echo "DEBUG: Editor exited with code: $editor_exit_code" >&2
-    echo "DEBUG: Checking if secret.txt exists and has content..." >&2
     
     # Check if file has content
     if [ -f secret.txt ] && [ -s secret.txt ]; then
-        echo "DEBUG: File exists and has content" >&2
-        
         # Check if secret already exists
         if docker secret inspect "$db_password_secret" &>/dev/null; then
             echo "⚠️  Secret '$db_password_secret' already exists"
@@ -120,16 +114,10 @@ create_docker_secrets() {
     # Run editor and capture exit code
     set +e  # Temporarily disable exit on error
     $EDITOR secret.txt
-    local editor_exit_code=$?
     set -e  # Re-enable exit on error
-    
-    echo "DEBUG: Editor exited with code: $editor_exit_code" >&2
-    echo "DEBUG: Checking if secret.txt exists and has content..." >&2
     
     # Check if file has content
     if [ -f secret.txt ] && [ -s secret.txt ]; then
-        echo "DEBUG: File exists and has content" >&2
-        
         # Check if secret already exists
         if docker secret inspect "$admin_api_key_secret" &>/dev/null; then
             echo "⚠️  Secret '$admin_api_key_secret' already exists"
