@@ -62,7 +62,13 @@ function New-StackFile {
     $apiContent = Get-Content $tempApi -Raw
     
     # Inject database environment snippet
-    $dbEnvSnippet = "$ProjectRoot\setup\compose-modules\snippets\db-${DbType}-${DbMode}.env.yml"
+    # Map postgresql -> postgres for file names
+    $dbFileName = $DbType
+    if ($DbType -eq "postgresql") {
+        $dbFileName = "postgres"
+    }
+    
+    $dbEnvSnippet = "$ProjectRoot\setup\compose-modules\snippets\db-${dbFileName}-${DbMode}.env.yml"
     if (Test-Path $dbEnvSnippet) {
         $dbEnvContent = Get-Content $dbEnvSnippet -Raw
         $apiContent = $apiContent -replace '###DATABASE_ENV###', $dbEnvContent
@@ -110,7 +116,12 @@ function New-StackFile {
     
     # Add database service if local deployment
     if ($DbMode -eq "local") {
-        $stackContent += Get-Content "$ProjectRoot\setup\compose-modules\${DbType}-local.yml" -Raw
+        # Map postgresql -> postgres for file names
+        $dbFileName = $DbType
+        if ($DbType -eq "postgresql") {
+            $dbFileName = "postgres"
+        }
+        $stackContent += Get-Content "$ProjectRoot\setup\compose-modules\${dbFileName}-local.yml" -Raw
     }
     
     # Add footer (networks and secrets)

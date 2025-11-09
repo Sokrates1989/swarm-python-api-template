@@ -54,7 +54,13 @@ build_stack_file() {
     cp "${project_root}/setup/compose-modules/api.template.yml" "$temp_api"
     
     # Inject database environment snippet
-    local db_env_snippet="${project_root}/setup/compose-modules/snippets/db-${db_type}-${db_mode}.env.yml"
+    # Map postgresql -> postgres for file names
+    local db_file_name="$db_type"
+    if [ "$db_type" = "postgresql" ]; then
+        db_file_name="postgres"
+    fi
+    
+    local db_env_snippet="${project_root}/setup/compose-modules/snippets/db-${db_file_name}-${db_mode}.env.yml"
     if [ -f "$db_env_snippet" ]; then
         sed -i "/###DATABASE_ENV###/r $db_env_snippet" "$temp_api"
         sed -i '/###DATABASE_ENV###/d' "$temp_api"
@@ -89,7 +95,12 @@ build_stack_file() {
     
     # Add database service if local deployment
     if [ "$db_mode" = "local" ]; then
-        cat "${project_root}/setup/compose-modules/${db_type}-local.yml" >> "${project_root}/swarm-stack.yml"
+        # Map postgresql -> postgres for file names
+        local db_file_name="$db_type"
+        if [ "$db_type" = "postgresql" ]; then
+            db_file_name="postgres"
+        fi
+        cat "${project_root}/setup/compose-modules/${db_file_name}-local.yml" >> "${project_root}/swarm-stack.yml"
     fi
     
     # Add footer (networks and secrets)
