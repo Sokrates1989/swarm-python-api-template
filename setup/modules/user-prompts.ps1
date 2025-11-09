@@ -96,7 +96,10 @@ function Get-DockerImage {
     $imageVersion = ""
     
     while (-not $imageVerified) {
-        $imageName = Read-Host "Docker image name (e.g., sokrates1989/python-api-template)"
+        $imageName = Read-Host "Docker image name [sokrates1989/python-api-template]"
+        if ([string]::IsNullOrWhiteSpace($imageName)) {
+            $imageName = "sokrates1989/python-api-template"
+        }
         $imageVersion = Read-Host "Image version [latest]"
         if ([string]::IsNullOrWhiteSpace($imageVersion)) {
             $imageVersion = "latest"

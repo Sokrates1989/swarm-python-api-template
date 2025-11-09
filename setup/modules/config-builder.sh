@@ -114,13 +114,17 @@ update_env_values() {
     local key="$2"
     local value="$3"
     
+    # Escape special characters in value for sed
+    local escaped_value=$(printf '%s\n' "$value" | sed 's:[\\/&]:\\&:g;$!s/$/\\/')
+    escaped_value=${escaped_value%\\}
+    
     # Use different sed syntax based on OS
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "s|^${key}=.*|${key}=${value}|" "$env_file"
+        sed -i '' "s|^${key}=.*|${key}=${escaped_value}|" "$env_file"
     else
         # Linux
-        sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
+        sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$env_file"
     fi
 }
 

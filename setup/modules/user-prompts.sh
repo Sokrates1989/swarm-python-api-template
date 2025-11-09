@@ -87,7 +87,8 @@ prompt_docker_image() {
     echo "----------------------------" >&2
     
     while [ "$image_verified" = false ]; do
-        read -p "Docker image name (e.g., sokrates1989/python-api-template): " image_name
+        read -p "Docker image name [sokrates1989/python-api-template]: " image_name
+        image_name="${image_name:-sokrates1989/python-api-template}"
         read -p "Image version [latest]: " image_version
         image_version="${image_version:-latest}"
         
