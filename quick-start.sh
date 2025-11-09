@@ -269,21 +269,42 @@ case $choice in
         echo "This will help you create the required Docker secrets."
         echo ""
         
-        # Read secret names from docker-compose.yml
-        echo "Enter the database password:"
+        # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
+        STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+        
+        echo "Creating Database Password Secret..."
+        echo "-----------------------------------"
+        echo "Enter the database password (avoid backslashes):"
         read -s db_password
         echo ""
         
-        echo "Enter the admin API key:"
+        echo "$db_password" > secret.txt
+        docker secret create "DB_PASSWORD_${STACK_NAME_UPPER}" secret.txt 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "✅ Secret DB_PASSWORD_${STACK_NAME_UPPER} created successfully"
+        else
+            echo "⚠️  Secret DB_PASSWORD_${STACK_NAME_UPPER} may already exist"
+        fi
+        rm -f secret.txt
+        echo ""
+        
+        echo "Creating Admin API Key Secret..."
+        echo "--------------------------------"
+        echo "Enter the admin API key (avoid backslashes):"
         read -s admin_key
         echo ""
         
-        echo "Creating secrets..."
-        echo "$db_password" | docker secret create "DB_PASSWORD_${STACK_NAME}" - 2>/dev/null || echo "⚠️  Secret may already exist"
-        echo "$admin_key" | docker secret create "ADMIN_API_KEY_${STACK_NAME}" - 2>/dev/null || echo "⚠️  Secret may already exist"
-        
+        echo "$admin_key" > secret.txt
+        docker secret create "ADMIN_API_KEY_${STACK_NAME_UPPER}" secret.txt 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "✅ Secret ADMIN_API_KEY_${STACK_NAME_UPPER} created successfully"
+        else
+            echo "⚠️  Secret ADMIN_API_KEY_${STACK_NAME_UPPER} may already exist"
+        fi
+        rm -f secret.txt
         echo ""
-        echo "✅ Secrets created (or already exist)"
+        
+        echo "✅ Secrets created!"
         echo ""
         echo "List secrets with: docker secret ls"
         ;;

@@ -301,34 +301,57 @@ switch ($choice) {
         .\setup\setup-wizard.ps1
     }
     "8" {
-        Write-Host "Create Docker Secrets" -ForegroundColor Cyan
+        Write-Host "🔑 Create Docker Secrets" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "This will help you create the required Docker secrets." -ForegroundColor Yellow
         Write-Host ""
         
-        $dbPassword = Read-Host "Enter the database password" -AsSecureString
+        # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
+        $STACK_NAME_UPPER = $STACK_NAME.ToUpper() -replace '[^A-Z0-9]', '_'
+        
+        Write-Host "Creating Database Password Secret..." -ForegroundColor Cyan
+        Write-Host "-----------------------------------"
+        Write-Host "Enter the database password (avoid backslashes):"
+        $dbPassword = Read-Host -AsSecureString
         $dbPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($dbPassword))
+        Write-Host ""
         
-        $adminKey = Read-Host "Enter the admin API key" -AsSecureString
+        $dbPasswordPlain | Set-Content "secret.txt" -NoNewline
+        try {
+            docker secret create "DB_PASSWORD_${STACK_NAME_UPPER}" secret.txt 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Secret DB_PASSWORD_${STACK_NAME_UPPER} created successfully" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  Secret DB_PASSWORD_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "⚠️  Secret DB_PASSWORD_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+        }
+        Remove-Item "secret.txt" -ErrorAction SilentlyContinue
+        Write-Host ""
+        
+        Write-Host "Creating Admin API Key Secret..." -ForegroundColor Cyan
+        Write-Host "--------------------------------"
+        Write-Host "Enter the admin API key (avoid backslashes):"
+        $adminKey = Read-Host -AsSecureString
         $adminKeyPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($adminKey))
-        
         Write-Host ""
-        Write-Host "Creating secrets..." -ForegroundColor Cyan
         
+        $adminKeyPlain | Set-Content "secret.txt" -NoNewline
         try {
-            $dbPasswordPlain | docker secret create "DB_PASSWORD_${STACK_NAME}" - 2>&1 | Out-Null
+            docker secret create "ADMIN_API_KEY_${STACK_NAME_UPPER}" secret.txt 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Secret ADMIN_API_KEY_${STACK_NAME_UPPER} created successfully" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  Secret ADMIN_API_KEY_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
+            }
         } catch {
-            Write-Host "Secret may already exist: DB_PASSWORD_${STACK_NAME}" -ForegroundColor Yellow
+            Write-Host "⚠️  Secret ADMIN_API_KEY_${STACK_NAME_UPPER} may already exist" -ForegroundColor Yellow
         }
-        
-        try {
-            $adminKeyPlain | docker secret create "ADMIN_API_KEY_${STACK_NAME}" - 2>&1 | Out-Null
-        } catch {
-            Write-Host "Secret may already exist: ADMIN_API_KEY_${STACK_NAME}" -ForegroundColor Yellow
-        }
-        
+        Remove-Item "secret.txt" -ErrorAction SilentlyContinue
         Write-Host ""
-        Write-Host "Secrets created (or already exist)" -ForegroundColor Green
+        
+        Write-Host "✅ Secrets created!" -ForegroundColor Green
         Write-Host ""
         Write-Host "List secrets with: docker secret ls" -ForegroundColor Yellow
     }

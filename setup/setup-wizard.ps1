@@ -465,51 +465,122 @@ Write-Host ""
 
 # Mark setup as complete
 "" | Set-Content ".setup-complete"
-
-# Summary
-Write-Host "=" -NoNewline -ForegroundColor Green
-Write-Host "=" * 60 -ForegroundColor Green
-Write-Host "✅ Setup Complete!" -ForegroundColor Green
-Write-Host "=" * 60 -ForegroundColor Green
+Write-Host "✅ Setup complete! Configuration saved." -ForegroundColor Green
 Write-Host ""
-Write-Host "Configuration Summary:" -ForegroundColor Cyan
-Write-Host "  Database:     $DB_TYPE ($DB_MODE)"
-Write-Host "  Proxy:        $PROXY_TYPE"
-Write-Host "  Stack Name:   $STACK_NAME"
-Write-Host "  Image:        ${IMAGE_NAME}:${IMAGE_VERSION}"
-if ($PROXY_TYPE -eq "traefik") {
-    Write-Host "  Domain:       $API_URL"
+
+# =============================================================================
+# CREATE DOCKER SECRETS
+# =============================================================================
+Write-Host "🔑 Create Docker Secrets" -ForegroundColor Cyan
+Write-Host "=======================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Let's create the required Docker secrets now."
+Write-Host ""
+
+$CREATE_SECRETS = Read-Host "Create secrets now? (Y/n)"
+if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
+    Write-Host ""
+    Write-Host "Creating Database Password Secret..." -ForegroundColor Cyan
+    Write-Host "-----------------------------------"
+    Write-Host "Enter the database password (avoid backslashes):"
+    $DB_PASSWORD_VALUE = Read-Host -AsSecureString
+    $DB_PASSWORD_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DB_PASSWORD_VALUE))
+    Write-Host ""
+    
+    $DB_PASSWORD_PLAIN | Set-Content "secret.txt" -NoNewline
+    try {
+        docker secret create $DB_PASSWORD_SECRET secret.txt 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Secret $DB_PASSWORD_SECRET created successfully" -ForegroundColor Green
+        } else {
+            Write-Host "⚠️  Secret $DB_PASSWORD_SECRET may already exist" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "⚠️  Secret $DB_PASSWORD_SECRET may already exist" -ForegroundColor Yellow
+    }
+    Remove-Item "secret.txt" -ErrorAction SilentlyContinue
+    Write-Host ""
+    
+    Write-Host "Creating Admin API Key Secret..." -ForegroundColor Cyan
+    Write-Host "--------------------------------"
+    Write-Host "Enter the admin API key (avoid backslashes):"
+    $ADMIN_API_KEY_VALUE = Read-Host -AsSecureString
+    $ADMIN_API_KEY_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($ADMIN_API_KEY_VALUE))
+    Write-Host ""
+    
+    $ADMIN_API_KEY_PLAIN | Set-Content "secret.txt" -NoNewline
+    try {
+        docker secret create $ADMIN_API_KEY_SECRET secret.txt 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Secret $ADMIN_API_KEY_SECRET created successfully" -ForegroundColor Green
+        } else {
+            Write-Host "⚠️  Secret $ADMIN_API_KEY_SECRET may already exist" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "⚠️  Secret $ADMIN_API_KEY_SECRET may already exist" -ForegroundColor Yellow
+    }
+    Remove-Item "secret.txt" -ErrorAction SilentlyContinue
+    Write-Host ""
+    
+    Write-Host "✅ Secrets created!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "List secrets with: docker secret ls"
+    Write-Host ""
 } else {
-    Write-Host "  Port:         $PUBLISHED_PORT"
+    Write-Host ""
+    Write-Host "⚠️  Skipped secret creation. You can create them manually:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "   # Database password secret"
+    Write-Host "   notepad secret.txt  # Insert password (avoid backslashes) and save"
+    Write-Host "   docker secret create $DB_PASSWORD_SECRET secret.txt"
+    Write-Host "   del secret.txt"
+    Write-Host ""
+    Write-Host "   # Admin API key secret"
+    Write-Host "   notepad secret.txt  # Insert API key (avoid backslashes) and save"
+    Write-Host "   docker secret create $ADMIN_API_KEY_SECRET secret.txt"
+    Write-Host "   del secret.txt"
+    Write-Host ""
 }
-Write-Host "  Data Root:    $DATA_ROOT"
+
+# =============================================================================
+# NEXT STEPS
+# =============================================================================
+Write-Host "🎉 Next Steps:" -ForegroundColor Cyan
+Write-Host "=============="
 Write-Host ""
 
-# Next Steps
-Write-Host "Next Steps:" -ForegroundColor Cyan
+if ($PROXY_TYPE -eq "traefik") {
+    Write-Host "1. Ensure your domain points to the swarm manager:"
+    Write-Host "   - Domain: $API_URL"
+    Write-Host "   - Should resolve to your swarm manager's IP"
+    Write-Host "   - Test with: nslookup $API_URL"
+    Write-Host "   - If not set up yet, see README.md (Domain Setup section)"
+    Write-Host ""
+} else {
+    Write-Host "1. Ensure port $PUBLISHED_PORT is accessible:"
+    Write-Host "   - Port $PUBLISHED_PORT should be open in your firewall"
+    Write-Host "   - API will be accessible at: http://<your-server-ip>:$PUBLISHED_PORT"
+    Write-Host ""
+}
+
+Write-Host "2. Create data directories:"
+Write-Host "   mkdir -p $DATA_ROOT"
+if ($DB_TYPE -eq "postgresql") {
+    Write-Host "   mkdir -p $DATA_ROOT/postgres_data"
+} elseif ($DB_TYPE -eq "neo4j") {
+    Write-Host "   mkdir -p $DATA_ROOT/neo4j_data"
+    Write-Host "   mkdir -p $DATA_ROOT/neo4j_logs"
+}
+Write-Host "   mkdir -p $DATA_ROOT/redis_data"
 Write-Host ""
-Write-Host "1. Create Docker secrets:" -ForegroundColor Yellow
-Write-Host "   docker secret create $DB_PASSWORD_SECRET <password-file>"
-Write-Host "   docker secret create $ADMIN_API_KEY_SECRET <api-key-file>"
-Write-Host ""
-Write-Host "2. Deploy to Docker Swarm:" -ForegroundColor Yellow
+
+Write-Host "3. Deploy to swarm:"
 Write-Host "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
 Write-Host ""
-Write-Host "3. Check deployment status:" -ForegroundColor Yellow
+
+Write-Host "4. Check deployment status:"
 Write-Host "   docker stack services $STACK_NAME"
 Write-Host ""
-Write-Host "4. View logs:" -ForegroundColor Yellow
-Write-Host "   docker service logs -f ${STACK_NAME}_api"
-Write-Host ""
 
-if ($PROXY_TYPE -eq "traefik") {
-    Write-Host "5. Access your API:" -ForegroundColor Yellow
-    Write-Host "   https://${API_URL}"
-} else {
-    Write-Host "5. Access your API:" -ForegroundColor Yellow
-    Write-Host "   http://<your-server-ip>:${PUBLISHED_PORT}"
-}
-
-Write-Host ""
 Write-Host "For more information, see README.md" -ForegroundColor Cyan
 Write-Host ""

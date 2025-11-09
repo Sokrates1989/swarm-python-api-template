@@ -544,33 +544,89 @@ echo "✅ Setup complete! Configuration saved."
 echo ""
 
 # =============================================================================
+# CREATE DOCKER SECRETS
+# =============================================================================
+echo "🔑 Create Docker Secrets"
+echo "======================="
+echo ""
+echo "Let's create the required Docker secrets now."
+echo ""
+
+read -p "Create secrets now? (Y/n): " CREATE_SECRETS
+if [[ ! "$CREATE_SECRETS" =~ ^[Nn]$ ]]; then
+    echo ""
+    echo "Creating Database Password Secret..."
+    echo "-----------------------------------"
+    echo "Enter the database password (avoid backslashes):"
+    read -s DB_PASSWORD_VALUE
+    echo ""
+    
+    echo "$DB_PASSWORD_VALUE" > secret.txt
+    docker secret create "$DB_PASSWORD_SECRET" secret.txt 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo "✅ Secret $DB_PASSWORD_SECRET created successfully"
+    else
+        echo "⚠️  Secret $DB_PASSWORD_SECRET may already exist"
+    fi
+    rm -f secret.txt
+    echo ""
+    
+    echo "Creating Admin API Key Secret..."
+    echo "--------------------------------"
+    echo "Enter the admin API key (avoid backslashes):"
+    read -s ADMIN_API_KEY_VALUE
+    echo ""
+    
+    echo "$ADMIN_API_KEY_VALUE" > secret.txt
+    docker secret create "$ADMIN_API_KEY_SECRET" secret.txt 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo "✅ Secret $ADMIN_API_KEY_SECRET created successfully"
+    else
+        echo "⚠️  Secret $ADMIN_API_KEY_SECRET may already exist"
+    fi
+    rm -f secret.txt
+    echo ""
+    
+    echo "✅ Secrets created!"
+    echo ""
+    echo "List secrets with: docker secret ls"
+    echo ""
+else
+    echo ""
+    echo "⚠️  Skipped secret creation. You can create them manually:"
+    echo ""
+    echo "   # Database password secret"
+    echo "   vi secret.txt  # Insert password (avoid backslashes) and save"
+    echo "   docker secret create $DB_PASSWORD_SECRET secret.txt"
+    echo "   rm secret.txt"
+    echo ""
+    echo "   # Admin API key secret"
+    echo "   vi secret.txt  # Insert API key (avoid backslashes) and save"
+    echo "   docker secret create $ADMIN_API_KEY_SECRET secret.txt"
+    echo "   rm secret.txt"
+    echo ""
+fi
+
+# =============================================================================
 # NEXT STEPS
 # =============================================================================
 echo "🎉 Next Steps:"
 echo "=============="
 echo ""
-echo "1. Create Docker secrets on your swarm manager:"
-echo ""
-echo "   # Database password secret"
-echo "   echo 'your-db-password' | docker secret create $DB_PASSWORD_SECRET -"
-echo ""
-echo "   # Admin API key secret"
-echo "   echo 'your-admin-api-key' | docker secret create $ADMIN_API_KEY_SECRET -"
-echo ""
 if [ "$PROXY_TYPE" = "traefik" ]; then
-    echo "2. Ensure your domain points to the swarm manager:"
+    echo "1. Ensure your domain points to the swarm manager:"
     echo "   - Domain: $API_URL"
     echo "   - Should resolve to your swarm manager's IP"
     echo "   - Test with: nslookup $API_URL"
     echo "   - If not set up yet, see README.md (Domain Setup section)"
     echo ""
 else
-    echo "2. Ensure port $PUBLISHED_PORT is accessible:"
+    echo "1. Ensure port $PUBLISHED_PORT is accessible:"
     echo "   - Port $PUBLISHED_PORT should be open in your firewall"
     echo "   - API will be accessible at: http://<your-server-ip>:$PUBLISHED_PORT"
     echo ""
 fi
-echo "3. Create data directories:"
+echo "2. Create data directories:"
 echo "   mkdir -p $DATA_ROOT"
 if [ "$DB_TYPE" = "postgresql" ]; then
     echo "   mkdir -p $DATA_ROOT/postgres_data"
@@ -580,10 +636,10 @@ elif [ "$DB_TYPE" = "neo4j" ]; then
 fi
 echo "   mkdir -p $DATA_ROOT/redis_data"
 echo ""
-echo "4. Deploy to swarm:"
+echo "3. Deploy to swarm:"
 echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
 echo ""
-echo "5. Check deployment status:"
+echo "4. Check deployment status:"
 echo "   docker stack services $STACK_NAME"
 echo ""
 echo "For more information, see README.md"
