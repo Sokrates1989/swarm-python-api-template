@@ -62,49 +62,51 @@ git clone https://github.com/Sokrates1989/swarm-python-api-template.git .
 
 ## Quick Start (Recommended)
 
-Once you have completed the prerequisites above, the easiest way to set up your deployment is using the quick-start scripts:
+Once you have completed the prerequisites above, the easiest way to set up your deployment is using the interactive setup wizard:
 
 ### Linux/Mac
 ```bash
-# The script is executable after cloning
-./quick-start.sh
+# Make the script executable
+chmod +x setup-wizard.sh
 
-# Alternative: If you get permission errors
-bash quick-start.sh
+# Run the setup wizard
+./setup-wizard.sh
 ```
 
 ### Windows (PowerShell)
 ```powershell
-.\quick-start.ps1
+# Run the setup wizard
+.\setup-wizard.ps1
 
 # Alternative: If execution policy blocks it
-powershell -ExecutionPolicy Bypass -File .\quick-start.ps1
+powershell -ExecutionPolicy Bypass -File .\setup-wizard.ps1
 ```
 
-### Windows (Git Bash/WSL)
-```bash
-# Use the Linux script in Git Bash or WSL
-./quick-start.sh
-
-# Alternative
-bash quick-start.sh
-```
-
-The quick-start script will:
-1. Check Docker installation
-2. Run an interactive setup wizard (first time only)
-3. Guide you through database selection (PostgreSQL or Neo4j)
+The setup wizard will:
+1. Check for existing setup and create backups
+2. Guide you through database selection (PostgreSQL or Neo4j)
+3. Guide you through database mode (local or external)
 4. Guide you through proxy selection (Traefik or no-proxy)
-5. Configure local or external database mode
-6. Help you deploy and manage your swarm stack
+5. Build configuration files (`.env` and `swarm-stack.yml`)
+6. Collect deployment parameters (stack name, image, replicas, etc.)
+7. Guide you through Docker secret creation
+8. Verify network configuration (for Traefik)
+9. Create required data directories
+10. Deploy the stack to Docker Swarm
+11. Perform health checks on deployed services
 
-After running the setup wizard, you can use the quick-start script to:
-- Deploy to Docker Swarm
-- Check deployment status
-- View service logs
-- Update API images
-- Scale services
-- Create Docker secrets
+### Modular Architecture
+
+The new setup wizard uses a **modular architecture** for better maintainability:
+
+- **`setup/modules/user-prompts`** - Handles all user input
+- **`setup/modules/config-builder`** - Builds configuration files
+- **`setup/modules/network-check`** - Verifies DNS for Traefik
+- **`setup/modules/data-dirs`** - Creates data directories
+- **`setup/modules/secret-manager`** - Manages Docker secrets
+- **`setup/modules/deploy-stack`** - Deploys and health checks
+
+See `setup/modules/README.md` for detailed module documentation.
 
 ## Proxy Options
 

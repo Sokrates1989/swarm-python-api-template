@@ -6,22 +6,31 @@
 swarm-python-api-template/
 ├── docs/                           # Documentation
 │   ├── ARCHITECTURE.md            # Modular architecture explanation
+│   ├── MODULAR_SETUP_SUMMARY.md   # Setup system implementation summary
 │   ├── PROXY_SETUP.md             # Proxy configuration guide
 │   └── STRUCTURE.md               # This file
 │
-├── setup/                          # Configuration templates and setup wizards
+├── setup/                          # Configuration templates and modular components
 │   ├── compose-modules/           # Modular Docker Compose files
-│   │   ├── README.md             # Module documentation
-│   │   ├── base.yml              # Common services (Redis, networks)
-│   │   ├── api-base.yml          # Base API configuration
+│   │   ├── README.md             # Compose modules documentation
+│   │   ├── base.yml              # Base structure (services: + Redis)
+│   │   ├── api.template.yml      # API service template with placeholders
+│   │   ├── footer.yml            # Networks and secrets definitions
 │   │   ├── postgres-local.yml    # PostgreSQL local deployment
-│   │   ├── postgres-external.yml # PostgreSQL external connection
 │   │   ├── neo4j-local.yml       # Neo4j local deployment
-│   │   ├── neo4j-external.yml    # Neo4j external connection
-│   │   ├── proxy-traefik.yml     # Traefik proxy configuration
-│   │   └── proxy-none.yml        # Direct port exposure
+│   │   ├── proxy-traefik.yml     # Traefik proxy configuration (deprecated)
+│   │   ├── proxy-none.yml        # Direct port exposure (deprecated)
+│   │   └── snippets/             # Configuration snippets for injection
+│   │       ├── db-postgresql-local.env.yml
+│   │       ├── db-postgresql-external.env.yml
+│   │       ├── db-neo4j-local.env.yml
+│   │       ├── db-neo4j-external.env.yml
+│   │       ├── proxy-traefik.network.yml
+│   │       ├── proxy-traefik.labels.yml
+│   │       └── proxy-none.ports.yml
 │   │
 │   ├── env-templates/             # Environment variable templates
+│   │   ├── README.md                        # Environment templates documentation
 │   │   ├── .env.base.template              # Base configuration
 │   │   ├── .env.postgres-local.template    # PostgreSQL local settings
 │   │   ├── .env.postgres-external.template # PostgreSQL external settings
@@ -30,15 +39,27 @@ swarm-python-api-template/
 │   │   ├── .env.proxy-traefik.template     # Traefik settings
 │   │   └── .env.proxy-none.template        # No-proxy settings
 │   │
-│   ├── setup-wizard.sh            # Interactive setup script (Linux/Mac) (executable)
-│   ├── setup-wizard.ps1           # Interactive setup script (Windows) (executable)
-│   ├── swarm-stack.yml.template   # Main stack template (uses includes)
+│   ├── modules/                   # Reusable script modules
+│   │   ├── README.md             # Module documentation
+│   │   ├── config-builder.sh     # Configuration file builders (Bash)
+│   │   ├── config-builder.ps1    # Configuration file builders (PowerShell)
+│   │   ├── data-dirs.sh          # Data directory creation (Bash)
+│   │   ├── data-dirs.ps1         # Data directory creation (PowerShell)
+│   │   ├── deploy-stack.sh       # Stack deployment & health checks (Bash)
+│   │   ├── deploy-stack.ps1      # Stack deployment & health checks (PowerShell)
+│   │   ├── network-check.sh      # DNS verification (Bash)
+│   │   ├── network-check.ps1     # DNS verification (PowerShell)
+│   │   ├── secret-manager.sh     # Docker secret management (Bash)
+│   │   ├── secret-manager.ps1    # Docker secret management (PowerShell)
+│   │   ├── user-prompts.sh       # User input collection (Bash)
+│   │   └── user-prompts.ps1      # User input collection (PowerShell)
+│   │
 │   └── README.md                  # Setup directory documentation
 │
-├── quick-start.sh               # Quick start script (Linux/Mac) (executable)
-├── quick-start.ps1              # Quick start script (Windows) (executable)
-├── README.md                     # Main documentation
-└── .gitignore                    # Git ignore rules
+├── setup-wizard.sh                # Main setup wizard (Linux/Mac) (executable)
+├── setup-wizard.ps1               # Main setup wizard (Windows) (executable)
+├── README.md                      # Main documentation
+└── .gitignore                     # Git ignore rules
 
 Generated files (not in repo):
 ├── .env                          # Your environment configuration
@@ -47,9 +68,9 @@ Generated files (not in repo):
 
 Note: Shell scripts (.sh) and PowerShell scripts (.ps1) are marked as executable 
 in git and can be run directly after cloning. If you encounter permission issues, use:
-  - bash quick-start.sh or bash setup/setup-wizard.sh (Linux/Mac/Git Bash)
-  - powershell -ExecutionPolicy Bypass -File .\quick-start.ps1 (Windows)
-  - powershell -ExecutionPolicy Bypass -File .\setup\setup-wizard.ps1 (Windows)
+  - chmod +x setup-wizard.sh && ./setup-wizard.sh (Linux/Mac)
+  - bash setup-wizard.sh (Linux/Mac/Git Bash)
+  - powershell -ExecutionPolicy Bypass -File .\setup-wizard.ps1 (Windows)
 ```
 
 ## Configuration Flow
@@ -57,7 +78,7 @@ in git and can be run directly after cloning. If you encounter permission issues
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    User Runs Setup Wizard                    │
-│         (./quick-start.sh or ./setup/setup-wizard.sh)        │
+│            (./setup-wizard.sh or .\setup-wizard.ps1)         │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
@@ -68,52 +89,90 @@ in git and can be run directly after cloning. If you encounter permission issues
 │  │  PostgreSQL  │  │   Traefik    │  │    Local     │      │
 │  │  or Neo4j    │  │  or None     │  │  or External │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
+│                                                               │
+│  Modules used: user-prompts.sh/.ps1                          │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Setup Script Builds Configuration               │
+│              Config Builder Builds Configuration             │
 │                                                               │
-│  1. Concatenate .env templates:                              │
+│  1. Build .env (concatenate templates):                      │
 │     .env.base.template                                       │
 │     + .env.{database}-{mode}.template                        │
 │     + .env.proxy-{type}.template                             │
 │     = .env                                                   │
 │                                                               │
-│  2. Create swarm-stack.yml:                                  │
-│     Copy swarm-stack.yml.template                            │
-│     Replace XXX_DATABASE_MODULE_XXX                          │
-│     Replace XXX_PROXY_MODULE_XXX                             │
+│  2. Build swarm-stack.yml (template injection):              │
+│     base.yml (services: + Redis)                             │
+│     + api.template.yml with injected snippets:               │
+│       - db-{database}-{mode}.env.yml                         │
+│       - proxy-{type}.network.yml (if Traefik)                │
+│       - proxy-{type}.labels/ports.yml                        │
+│     + {database}-local.yml (if local mode)                   │
+│     + footer.yml (networks: + secrets:)                      │
 │     = swarm-stack.yml                                        │
+│                                                               │
+│  Modules used: config-builder.sh/.ps1                        │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  User Provides Values                        │
-│  • Image name/version                                        │
-│  • Domain (Traefik) or Port (No proxy)                      │
-│  • Data root path                                            │
 │  • Stack name                                                │
-│  • Database credentials                                      │
-│  • Replica counts                                            │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Generated Configuration Files                   │
+│  • Data root path                                            │
+│  • Image name/version (with verification)                    │
+│  • Domain (Traefik) or Port (No proxy)                      │
+│  • Replica counts (API, DB, Redis)                          │
+│  • Secret names                                              │
 │                                                               │
-│  .env                    swarm-stack.yml                     │
-│  ├─ Base settings        include:                            │
-│  ├─ DB settings            - compose-modules/base.yml        │
-│  └─ Proxy settings         - compose-modules/api-base.yml   │
-│                            - compose-modules/{db}-{mode}.yml │
-│                            - compose-modules/proxy-{type}.yml│
+│  Modules used: user-prompts.sh/.ps1                          │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    User Deploys Stack                        │
-│         docker stack deploy -c swarm-stack.yml <NAME>        │
+│                  Secret Manager Creates Secrets              │
+│  • Database password secret (if local DB)                    │
+│  • Admin API key secret                                      │
+│                                                               │
+│  Modules used: secret-manager.sh/.ps1                        │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Network Check Verifies DNS (Traefik)            │
+│  • Resolve domain to IP                                      │
+│  • Confirm IP matches swarm manager                          │
+│                                                               │
+│  Modules used: network-check.sh/.ps1                         │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Data Dirs Creates Directories                   │
+│  • Data root directory                                       │
+│  • Database-specific directories                             │
+│  • Redis data directory                                      │
+│                                                               │
+│  Modules used: data-dirs.sh/.ps1                             │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Deploy Stack Deploys & Verifies                 │
+│  • Deploy to Docker Swarm                                    │
+│  • Check service replicas                                    │
+│  • Inspect service logs                                      │
+│  • Test API health endpoint                                  │
+│                                                               │
+│  Modules used: deploy-stack.sh/.ps1                          │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Deployment Complete!                      │
+│  Configuration files: .env, swarm-stack.yml                  │
+│  Stack deployed: <STACK_NAME>                                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -127,16 +186,19 @@ User Choices:
 ├─ Proxy: Traefik
 └─ Mode: Local
 
-Generated .env:
+Generated .env (concatenated):
 ├─ .env.base.template
 ├─ .env.postgres-local.template
 └─ .env.proxy-traefik.template
 
-Generated swarm-stack.yml includes:
-├─ compose-modules/base.yml
-├─ compose-modules/api-base.yml
-├─ compose-modules/postgres-local.yml
-└─ compose-modules/proxy-traefik.yml
+Generated swarm-stack.yml (template injection):
+├─ base.yml (services: + Redis)
+├─ api.template.yml with injected snippets:
+│   ├─ db-postgresql-local.env.yml (environment variables)
+│   ├─ proxy-traefik.network.yml (traefik network)
+│   └─ proxy-traefik.labels.yml (Traefik labels)
+├─ postgres-local.yml (PostgreSQL service)
+└─ footer.yml (networks: + secrets:)
 
 Deployed Services:
 ├─ api (with Traefik labels)
@@ -160,16 +222,17 @@ User Choices:
 ├─ Proxy: None
 └─ Mode: External
 
-Generated .env:
+Generated .env (concatenated):
 ├─ .env.base.template
 ├─ .env.neo4j-external.template
 └─ .env.proxy-none.template
 
-Generated swarm-stack.yml includes:
-├─ compose-modules/base.yml
-├─ compose-modules/api-base.yml
-├─ compose-modules/neo4j-external.yml
-└─ compose-modules/proxy-none.yml
+Generated swarm-stack.yml (template injection):
+├─ base.yml (services: + Redis)
+├─ api.template.yml with injected snippets:
+│   ├─ db-neo4j-external.env.yml (environment variables)
+│   └─ proxy-none.ports.yml (port mapping)
+└─ footer.yml (networks: + secrets:)
 
 Deployed Services:
 ├─ api (with port exposure)
@@ -187,69 +250,123 @@ External Dependencies:
 
 ## File Size Comparison
 
-### Monolithic Approach (Old)
+### Old Monolithic Wizards
 ```
-4 database variations × 2 proxy types = 8 complete files
-Each file: ~115 lines
-Total: ~920 lines of mostly duplicated code
-```
-
-### Modular Approach (New)
-```
-8 small module files: ~200 lines total
-7 env templates: ~150 lines total
-1 main template: 7 lines
-Total: ~357 lines with no duplication
+setup/setup-wizard.sh: ~24KB (monolithic)
+setup/setup-wizard.ps1: ~27KB (monolithic)
+Total: ~51KB with duplicated logic
 ```
 
-**Reduction: 61% less code, 100% less duplication**
+### New Modular System
+```
+Main Wizards:
+├─ setup-wizard.sh: ~5KB (orchestrator)
+└─ setup-wizard.ps1: ~5KB (orchestrator)
+
+Modules (6 pairs, Bash + PowerShell):
+├─ user-prompts: ~3KB each
+├─ config-builder: ~4KB each
+├─ network-check: ~2KB each
+├─ data-dirs: ~3KB each
+├─ secret-manager: ~3KB each
+└─ deploy-stack: ~5KB each
+
+Total: ~50KB with no duplication, modular structure
+```
+
+**Benefits:**
+- 80% reduction in main wizard size
+- 100% elimination of code duplication
+- 6 focused, reusable modules
+- Cross-platform feature parity
 
 ## Adding New Options
 
-### To Add a New Database Type:
+### To Add a New Database Type (e.g., MongoDB):
 
-1. Create 2 module files in `setup/compose-modules/`:
-   - `{database}-local.yml`
-   - `{database}-external.yml`
+1. **Create compose module files** in `setup/compose-modules/`:
+   - `mongodb-local.yml` (MongoDB service definition)
 
-2. Create 2 env templates in `setup/`:
-   - `.env.{database}-local.template`
-   - `.env.{database}-external.template`
+2. **Create snippet files** in `setup/compose-modules/snippets/`:
+   - `db-mongodb-local.env.yml` (environment variables for local)
+   - `db-mongodb-external.env.yml` (environment variables for external)
 
-3. Update `setup.sh` to include new option
+3. **Create env templates** in `setup/env-templates/`:
+   - `.env.mongodb-local.template`
+   - `.env.mongodb-external.template`
 
-**Result**: Support for new database with 4 small files
+4. **Update user-prompts module**:
+   - Add MongoDB option in `prompt_database_type()` / `Get-DatabaseType`
 
-### To Add a New Proxy Type:
+5. **Update config-builder module**:
+   - Add MongoDB case in `build_env_file()` / `New-EnvFile`
+   - Add MongoDB case in `build_stack_file()` / `New-StackFile`
 
-1. Create 1 module file in `setup/compose-modules/`:
-   - `proxy-{type}.yml`
+**Result**: Support for new database with 5 small files + 2 module updates
 
-2. Create 1 env template in `setup/`:
-   - `.env.proxy-{type}.template`
+### To Add a New Proxy Type (e.g., nginx):
 
-3. Update `setup.sh` to include new option
+1. **Create snippet files** in `setup/compose-modules/snippets/`:
+   - `proxy-nginx.network.yml` (if needed)
+   - `proxy-nginx.labels.yml` or `proxy-nginx.ports.yml`
 
-**Result**: Support for new proxy with 2 small files
+2. **Create env template** in `setup/env-templates/`:
+   - `.env.proxy-nginx.template`
+
+3. **Update user-prompts module**:
+   - Add nginx option in `prompt_proxy_type()` / `Get-ProxyType`
+
+4. **Update config-builder module**:
+   - Add nginx case in `build_env_file()` / `New-EnvFile`
+   - Add nginx case in `build_stack_file()` / `New-StackFile`
+
+**Result**: Support for new proxy with 2-3 small files + 2 module updates
 
 ## Key Benefits
 
-1. **Maintainability**: Update one module, affect all combinations
-2. **Clarity**: Each file has a single, clear purpose
-3. **Extensibility**: Easy to add new options
-4. **No Duplication**: Each configuration defined once
+### Modular Architecture
+1. **Maintainability**: Each module has single responsibility
+2. **Clarity**: Clear separation of concerns
+3. **Extensibility**: Easy to add new database/proxy types
+4. **No Duplication**: Shared logic in reusable modules
 5. **Testability**: Test individual modules independently
-6. **Documentation**: Smaller files are easier to understand
+6. **Cross-platform**: Feature parity between Bash and PowerShell
+
+### Template Injection System
+1. **Single Source of Truth**: API configuration in one template
+2. **No Duplicate Keys**: Proper YAML structure
+3. **Flexible**: Snippets can be mixed and matched
+4. **Maintainable**: Change once, affects all combinations
 
 ## Quick Reference
+
+### Configuration Files
 
 | Need to... | Edit this file... |
 |------------|------------------|
 | Change Redis version | `setup/compose-modules/base.yml` |
-| Change API base config | `setup/compose-modules/api-base.yml` |
-| Change PostgreSQL settings | `setup/compose-modules/postgres-*.yml` |
-| Change Neo4j settings | `setup/compose-modules/neo4j-*.yml` |
-| Change Traefik labels | `setup/compose-modules/proxy-traefik.yml` |
-| Change port exposure | `setup/compose-modules/proxy-none.yml` |
-| Add new database type | Create new modules + update setup.sh |
-| Add new proxy type | Create new modules + update setup.sh |
+| Change API base config | `setup/compose-modules/api.template.yml` |
+| Change PostgreSQL settings | `setup/compose-modules/postgres-local.yml` |
+| Change Neo4j settings | `setup/compose-modules/neo4j-local.yml` |
+| Change Traefik labels | `setup/compose-modules/snippets/proxy-traefik.labels.yml` |
+| Change port exposure | `setup/compose-modules/snippets/proxy-none.ports.yml` |
+| Change DB environment vars | `setup/compose-modules/snippets/db-*.env.yml` |
+
+### Setup Modules
+
+| Need to... | Edit this module... |
+|------------|---------------------|
+| Change user prompts | `setup/modules/user-prompts.sh/.ps1` |
+| Change config building | `setup/modules/config-builder.sh/.ps1` |
+| Change DNS verification | `setup/modules/network-check.sh/.ps1` |
+| Change directory creation | `setup/modules/data-dirs.sh/.ps1` |
+| Change secret handling | `setup/modules/secret-manager.sh/.ps1` |
+| Change deployment logic | `setup/modules/deploy-stack.sh/.ps1` |
+
+### Adding New Features
+
+| Want to add... | Steps... |
+|----------------|----------|
+| New database type | Create snippets + env templates + update user-prompts & config-builder |
+| New proxy type | Create snippets + env template + update user-prompts & config-builder |
+| New setup step | Create new module pair (Bash + PowerShell) + import in wizards |
