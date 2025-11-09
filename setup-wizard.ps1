@@ -74,10 +74,21 @@ Write-Host ""
 
 $DeployDatabase = ($DbMode -eq "local")
 
+# Get Traefik network if needed (before building stack file)
+if ($ProxyType -eq "traefik") {
+    $TraefikNetwork = Get-TraefikNetwork
+}
+
 # Build configuration files
 Write-Host "⚙️  Building configuration files..." -ForegroundColor Cyan
 New-EnvFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot
 New-StackFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot
+
+# Replace Traefik network placeholder if using Traefik
+if ($ProxyType -eq "traefik") {
+    Update-StackNetwork -StackFile "$ProjectRoot\swarm-stack.yml" -TraefikNetwork $TraefikNetwork
+}
+
 Write-Host ""
 
 # Collect deployment parameters
@@ -89,7 +100,6 @@ $StackName = Get-StackName
 $DataRoot = Get-DataRoot (Get-Location).Path
 
 if ($ProxyType -eq "traefik") {
-    $TraefikNetwork = Get-TraefikNetwork
     $ApiUrl = Get-ApiDomain
 } else {
     $PublishedPort = Get-PublishedPort

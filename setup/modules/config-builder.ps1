@@ -158,6 +158,17 @@ function Update-StackSecrets {
     Set-Content -Path $StackFile -Value $content -NoNewline
 }
 
+function Update-StackNetwork {
+    param(
+        [string]$StackFile,
+        [string]$TraefikNetwork
+    )
+    
+    $content = Get-Content $StackFile -Raw
+    $content = $content -replace 'XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX', $TraefikNetwork
+    Set-Content -Path $StackFile -Value $content -NoNewline
+}
+
 function Backup-ExistingFiles {
     param([string]$ProjectRoot)
     
@@ -180,4 +191,4 @@ function Backup-ExistingFiles {
     }
 }
 
-Export-ModuleMember -Function New-EnvFile, New-StackFile, Update-EnvValue, Update-StackSecrets, Backup-ExistingFiles
+Export-ModuleMember -Function New-EnvFile, New-StackFile, Update-EnvValue, Update-StackSecrets, Update-StackNetwork, Backup-ExistingFiles

@@ -3,7 +3,7 @@
 # NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
   api:
     networks:
-      - ${TRAEFIK_NETWORK}
+      - XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX
     deploy:
       labels:
         - traefik.enable=true

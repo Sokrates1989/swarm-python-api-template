@@ -20,19 +20,6 @@ deploy_stack() {
     fi
     
     echo ""
-    echo "Loading environment variables from .env..."
-    
-    # Export all variables from .env file
-    if [ -f "$env_file" ]; then
-        set -a  # automatically export all variables
-        source "$env_file"
-        set +a
-        echo "✅ Environment variables loaded"
-    else
-        echo "⚠️  Warning: .env file not found at $env_file"
-    fi
-    
-    echo ""
     echo "Deploying stack..."
     docker stack deploy -c <(docker-compose -f "$stack_file" config) "$stack_name"
     

@@ -80,10 +80,21 @@ else
     DEPLOY_DATABASE=false
 fi
 
+# Get Traefik network if needed (before building stack file)
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    TRAEFIK_NETWORK=$(prompt_traefik_network)
+fi
+
 # Build configuration files
 echo "⚙️  Building configuration files..."
 build_env_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT"
 build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT"
+
+# Replace Traefik network placeholder if using Traefik
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    update_stack_network "$PROJECT_ROOT/swarm-stack.yml" "$TRAEFIK_NETWORK"
+fi
+
 echo ""
 
 # Collect deployment parameters
@@ -95,7 +106,6 @@ STACK_NAME=$(prompt_stack_name)
 DATA_ROOT=$(prompt_data_root "$(pwd)")
 
 if [ "$PROXY_TYPE" = "traefik" ]; then
-    TRAEFIK_NETWORK=$(prompt_traefik_network)
     API_URL=$(prompt_api_domain)
 else
     PUBLISHED_PORT=$(prompt_published_port)

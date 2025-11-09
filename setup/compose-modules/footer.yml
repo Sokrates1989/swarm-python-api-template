@@ -4,7 +4,7 @@
 networks:
   backend:
     driver: overlay
-  ${TRAEFIK_NETWORK}:
+  XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX:
     external: true
 
 secrets:

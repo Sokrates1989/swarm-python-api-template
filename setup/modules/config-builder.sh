@@ -145,6 +145,20 @@ update_stack_secrets() {
     fi
 }
 
+update_stack_network() {
+    local stack_file="$1"
+    local traefik_network="$2"
+    
+    # Use different sed syntax based on OS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s|XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX|$traefik_network|g" "$stack_file"
+    else
+        # Linux
+        sed -i "s|XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX|$traefik_network|g" "$stack_file"
+    fi
+}
+
 backup_existing_files() {
     local project_root="$1"
     local timestamp=$(date +%Y_%m_%d__%H_%M_%S)
