@@ -3,9 +3,65 @@ Python API Template for Docker Swarm
 
 This repository provides Docker Swarm deployment configuration for the Python API Template.
 
+## Prerequisites
+
+Before starting the deployment, ensure you have:
+
+1. **Docker Swarm initialized** on your server
+2. **A subdomain/domain** pointing to your swarm manager (see [Domain Setup](#domain-setup) below)
+3. **Repository cloned** to your server (see [Clone Repository](#clone-repository) below)
+
+### Domain Setup
+
+You need to create a subdomain (e.g., `api.example.com`) that points to your Docker Swarm manager's IP address.
+
+#### For Strato Customers
+
+1. Log in to your Strato account at [https://www.strato.de](https://www.strato.de)
+2. Navigate to **Domains** → Select your domain
+3. Click on **Domain Settings** → **Subdomain Management**
+4. Click **Create New Subdomain**
+5. Enter your subdomain name (e.g., `api`)
+6. Set the **A Record** to point to your server's IP address
+7. Save the settings
+8. Wait 15-60 minutes for DNS propagation
+
+#### For IONOS Customers
+
+1. Log in to your IONOS account at [https://www.ionos.com](https://www.ionos.com)
+2. Go to **Domains & SSL** → Select your domain
+3. Click on **DNS Settings** or **Manage DNS**
+4. Click **Add Record**
+5. Select **A Record**
+6. Enter your subdomain (e.g., `api`)
+7. Enter your server's IP address
+8. Set TTL to 3600 (or leave default)
+9. Save the record
+10. Wait 15-60 minutes for DNS propagation
+
+**Note:** DNS propagation can take anywhere from a few minutes to 24 hours, but typically completes within an hour.
+
+### Clone Repository
+
+Choose an appropriate location on your server to clone the repository. For multi-node swarms, use a shared filesystem like GlusterFS.
+
+```bash
+# Recommended: Use shared storage for multi-node swarms
+mkdir -p /gluster_storage/swarm/python-api-template
+cd /gluster_storage/swarm/python-api-template
+
+# Clone the repository
+git clone https://github.com/Sokrates1989/swarm-python-api-template.git .
+
+# Alternative: For single-node setups, you can use any directory
+# mkdir -p /opt/swarm/python-api-template
+# cd /opt/swarm/python-api-template
+# git clone https://github.com/Sokrates1989/swarm-python-api-template.git .
+```
+
 ## Quick Start (Recommended)
 
-The easiest way to set up your deployment is using the quick-start scripts:
+Once you have completed the prerequisites above, the easiest way to set up your deployment is using the quick-start scripts:
 
 ### Linux/Mac
 ```bash
@@ -36,27 +92,9 @@ After running the setup wizard, you can use the quick-start script to:
 
 # Manual Setup (Alternative)
 
-If you prefer to configure everything manually, follow these steps:
+If you prefer to configure everything manually, follow these steps.
 
-# First Setup
-
-### Domains and subdomains
-
-```text
-Make sure that domains and subdomains exist and point to manager of swarm.
-
-Example for api.example.com:
- - api.example.com
-```
-
-## Setup repo at desired location
-
-```bash
-# Choose location on server (glusterfs when using multiple nodes is recommended).
-mkdir -p /gluster_storage/swarm/python-api-template/<DOMAINNAME>
-cd /gluster_storage/swarm/python-api-template/<DOMAINNAME>
-git clone https://github.com/Sokrates1989/swarm-python-api-template.git .
-```
+**Important:** Make sure you have completed the [Prerequisites](#prerequisites) section above (domain setup and repository cloning) before proceeding.
 
 ## Copy templates
 
