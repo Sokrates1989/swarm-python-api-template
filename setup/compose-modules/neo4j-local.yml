@@ -1,7 +1,7 @@
 # Neo4j local database deployment
 # Use this when deploying Neo4j in the swarm
+# NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
 
-services:
   neo4j:
     image: neo4j:5-community
     volumes:
@@ -35,12 +35,3 @@ services:
       timeout: 3s
       retries: 3
       start_period: 30s
-
-  api:
-    environment:
-      # Database Configuration
-      DB_TYPE: neo4j
-      DB_MODE: local
-      NEO4J_URL: bolt://neo4j:7687
-      DB_USER: neo4j
-      DB_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX

@@ -1,5 +1,6 @@
 # Base configuration for all deployments
 # This file contains common settings
+# NOTE: Only contains 'services:' section. Networks and secrets are in footer.yml
 
 services:
   redis:
@@ -14,13 +15,3 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-
-networks:
-  backend:
-    driver: overlay
-
-secrets:
-  "XXX_CHANGE_ME_DB_PASSWORD_XXX":
-    external: true
-  "XXX_CHANGE_ME_ADMIN_API_KEY_XXX":
-    external: true

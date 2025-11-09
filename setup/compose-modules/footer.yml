@@ -1,0 +1,15 @@
+# Footer configuration
+# This file closes the services section and adds networks and secrets
+# Always concatenated last
+
+networks:
+  backend:
+    driver: overlay
+  traefik:
+    external: true
+
+secrets:
+  "XXX_CHANGE_ME_DB_PASSWORD_XXX":
+    external: true
+  "XXX_CHANGE_ME_ADMIN_API_KEY_XXX":
+    external: true

@@ -154,11 +154,58 @@ if ($PROXY_TYPE -eq "traefik") {
     $PROXY_MODULE = "proxy-none.yml"
 }
 
-# Create swarm-stack.yml from template with correct modules
-Copy-Item "setup\swarm-stack.yml.template" "swarm-stack.yml"
-(Get-Content "swarm-stack.yml") -replace "XXX_DATABASE_MODULE_XXX", $DATABASE_MODULE | Set-Content "swarm-stack.yml"
-(Get-Content "swarm-stack.yml") -replace "XXX_PROXY_MODULE_XXX", $PROXY_MODULE | Set-Content "swarm-stack.yml"
+# Build swarm-stack.yml from modules with template injection
+Write-Host "Building swarm-stack.yml..."
 
+# Start with base (services: and redis)
+Get-Content "setup\compose-modules\base.yml" | Set-Content "swarm-stack.yml"
+
+# Build API service from template with snippet injection
+Get-Content "setup\compose-modules\api.template.yml" | Set-Content "swarm-stack.tmp.yml"
+
+# Inject database environment snippet
+$DB_SNIPPET = "setup\compose-modules\snippets\db-$DB_TYPE-$DB_MODE.env.yml"
+$content = Get-Content "swarm-stack.tmp.yml" -Raw
+$snippet = Get-Content $DB_SNIPPET -Raw
+$content = $content -replace '###DATABASE_ENV###', $snippet
+Set-Content "swarm-stack.tmp.yml" $content
+
+# Inject proxy network snippet (or remove placeholder)
+$content = Get-Content "swarm-stack.tmp.yml" -Raw
+if ($PROXY_TYPE -eq "traefik") {
+    $networkSnippet = Get-Content "setup\compose-modules\snippets\proxy-traefik.network.yml" -Raw
+    $content = $content -replace '###PROXY_NETWORK###', $networkSnippet
+} else {
+    $content = $content -replace '###PROXY_NETWORK###\r?\n?', ''
+}
+Set-Content "swarm-stack.tmp.yml" $content
+
+# Inject proxy ports or labels
+$content = Get-Content "swarm-stack.tmp.yml" -Raw
+if ($PROXY_TYPE -eq "traefik") {
+    $labelsSnippet = Get-Content "setup\compose-modules\snippets\proxy-traefik.labels.yml" -Raw
+    $content = $content -replace '###PROXY_LABELS###', $labelsSnippet
+    $content = $content -replace '###PROXY_PORTS###\r?\n?', ''
+} else {
+    $portsSnippet = Get-Content "setup\compose-modules\snippets\proxy-none.ports.yml" -Raw
+    $content = $content -replace '###PROXY_PORTS###', $portsSnippet
+    $content = $content -replace '###PROXY_LABELS###\r?\n?', ''
+}
+Set-Content "swarm-stack.tmp.yml" $content
+
+# Append API service to stack
+Get-Content "swarm-stack.tmp.yml" | Add-Content "swarm-stack.yml"
+Remove-Item "swarm-stack.tmp.yml" -ErrorAction SilentlyContinue
+
+# Add database service if local
+if ($DEPLOY_DATABASE) {
+    Get-Content "setup\compose-modules\$DATABASE_MODULE" | Add-Content "swarm-stack.yml"
+}
+
+# Add footer (networks and secrets)
+Get-Content "setup\compose-modules\footer.yml" | Add-Content "swarm-stack.yml"
+
+Write-Host "✅ swarm-stack.yml created" -ForegroundColor Green
 Write-Host ""
 
 # Docker Image Configuration
@@ -485,7 +532,7 @@ if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
     Write-Host "Opening Notepad for database password..."
     Write-Host "Please enter the password, save, and close Notepad."
     Write-Host ""
-    Write-Host "Press any key to open Notepad..." -ForegroundColor Yellow
+    Write-Host "Press any key to enter secret for $DB_PASSWORD_SECRET..." -ForegroundColor Yellow
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     Write-Host ""
     
@@ -511,7 +558,7 @@ if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
     Write-Host "Opening Notepad for admin API key..."
     Write-Host "Please enter the API key, save, and close Notepad."
     Write-Host ""
-    Write-Host "Press any key to open Notepad..." -ForegroundColor Yellow
+    Write-Host "Press any key to enter secret for $ADMIN_API_KEY_SECRET..." -ForegroundColor Yellow
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     Write-Host ""
     
@@ -585,7 +632,14 @@ Write-Host "   mkdir -p $DATA_ROOT/redis_data"
 Write-Host ""
 
 Write-Host "3. Deploy to swarm:"
-Write-Host "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
+Write-Host "   # First generate the merged config:"
+Write-Host "   docker-compose -f swarm-stack.yml config > merged-stack.yml"
+Write-Host ""
+Write-Host "   # Then deploy:"
+Write-Host "   docker stack deploy -c merged-stack.yml $STACK_NAME"
+Write-Host ""
+Write-Host "   # Or as one-liner (Linux/WSL):"
+Write-Host "   docker stack deploy -c <(docker-compose -f swarm-stack.yml config) $STACK_NAME"
 Write-Host ""
 
 Write-Host "4. Check deployment status:"

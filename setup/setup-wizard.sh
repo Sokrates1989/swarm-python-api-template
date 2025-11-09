@@ -179,11 +179,49 @@ else
     PROXY_MODULE="proxy-none.yml"
 fi
 
-# Create swarm-stack.yml from template with correct modules
-cp setup/swarm-stack.yml.template swarm-stack.yml
-sed -i "s|XXX_DATABASE_MODULE_XXX|$DATABASE_MODULE|g" swarm-stack.yml
-sed -i "s|XXX_PROXY_MODULE_XXX|$PROXY_MODULE|g" swarm-stack.yml
+# Build swarm-stack.yml from modules with template injection
+echo "Building swarm-stack.yml..."
 
+# Start with base (services: and redis)
+cat setup/compose-modules/base.yml > swarm-stack.yml
+
+# Build API service from template with snippet injection
+cp setup/compose-modules/api.template.yml swarm-stack.tmp.yml
+
+# Inject database environment snippet
+DB_SNIPPET="setup/compose-modules/snippets/db-${DB_TYPE}-${DB_MODE}.env.yml"
+sed -i "/###DATABASE_ENV###/r $DB_SNIPPET" swarm-stack.tmp.yml
+sed -i '/###DATABASE_ENV###/d' swarm-stack.tmp.yml
+
+# Inject proxy network snippet (or remove placeholder)
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    sed -i "/###PROXY_NETWORK###/r setup/compose-modules/snippets/proxy-traefik.network.yml" swarm-stack.tmp.yml
+fi
+sed -i '/###PROXY_NETWORK###/d' swarm-stack.tmp.yml
+
+# Inject proxy ports or labels
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    sed -i "/###PROXY_LABELS###/r setup/compose-modules/snippets/proxy-traefik.labels.yml" swarm-stack.tmp.yml
+    sed -i '/###PROXY_PORTS###/d' swarm-stack.tmp.yml
+else
+    sed -i "/###PROXY_PORTS###/r setup/compose-modules/snippets/proxy-none.ports.yml" swarm-stack.tmp.yml
+    sed -i '/###PROXY_LABELS###/d' swarm-stack.tmp.yml
+fi
+sed -i '/###PROXY_LABELS###/d' swarm-stack.tmp.yml
+
+# Append API service to stack
+cat swarm-stack.tmp.yml >> swarm-stack.yml
+rm -f swarm-stack.tmp.yml
+
+# Add database service if local
+if [ "$DEPLOY_DATABASE" = true ]; then
+    cat "setup/compose-modules/$DATABASE_MODULE" >> swarm-stack.yml
+fi
+
+# Add footer (networks and secrets)
+cat setup/compose-modules/footer.yml >> swarm-stack.yml
+
+echo "✅ swarm-stack.yml created"
 echo ""
 
 # =============================================================================
@@ -574,7 +612,7 @@ if [[ ! "$CREATE_SECRETS" =~ ^[Nn]$ ]]; then
         exit 1
     fi
     
-    read -p "Press any key to open editor..." -n 1 -r
+    read -p "Press any key to enter secret for $DB_PASSWORD_SECRET..." -n 1 -r
     echo ""
     
     $EDITOR secret.txt
@@ -593,7 +631,7 @@ if [[ ! "$CREATE_SECRETS" =~ ^[Nn]$ ]]; then
     echo "Please enter the API key, save, and close the editor."
     echo ""
     
-    read -p "Press any key to open editor..." -n 1 -r
+    read -p "Press any key to enter secret for $ADMIN_API_KEY_SECRET..." -n 1 -r
     echo ""
     
     $EDITOR secret.txt
@@ -656,7 +694,10 @@ fi
 echo "   mkdir -p $DATA_ROOT/redis_data"
 echo ""
 echo "3. Deploy to swarm:"
-echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
+echo "   docker stack deploy -c <(docker-compose -f swarm-stack.yml config) $STACK_NAME"
+echo ""
+echo "   Or if using docker compose plugin:"
+echo "   docker stack deploy -c <(docker compose -f swarm-stack.yml config) $STACK_NAME"
 echo ""
 echo "4. Check deployment status:"
 echo "   docker stack services $STACK_NAME"

@@ -1,68 +1,116 @@
 # Compose Modules
 
-This directory contains modular Docker Compose files that are combined to create your final swarm stack configuration.
+This directory contains modular Docker Compose files and snippets that are combined to create your final swarm stack configuration.
 
 ## Module Structure
 
-### Base Modules (Always Included)
+### Core Files
 
-- **`base.yml`** - Common services (Redis) and base configuration
-- **`api-base.yml`** - Base API service configuration
+- **`base.yml`** - Base structure with `services:` key and Redis service
+- **`api.template.yml`** - API service template with placeholder markers
+- **`footer.yml`** - Networks and secrets definitions (always last)
 
-### Database Modules (Choose One)
+### Database Service Modules (For Local Deployment)
 
-#### Local Database (Database deployed in swarm)
-- **`postgres-local.yml`** - PostgreSQL database service + API database config
-- **`neo4j-local.yml`** - Neo4j database service + API database config
+- **`postgres-local.yml`** - PostgreSQL database service definition
+- **`neo4j-local.yml`** - Neo4j database service definition
+- **`postgres-external.yml`** - Empty (external databases don't need service definitions)
+- **`neo4j-external.yml`** - Empty (external databases don't need service definitions)
 
-#### External Database (Connect to existing database)
-- **`postgres-external.yml`** - API configuration for external PostgreSQL
-- **`neo4j-external.yml`** - API configuration for external Neo4j
+### Snippets Directory
 
-### Proxy Modules (Choose One)
+Small, focused configuration snippets that get injected into the API template:
 
-- **`proxy-traefik.yml`** - Traefik labels and network for automatic HTTPS
-- **`proxy-none.yml`** - Direct port exposure (no proxy)
+#### Database Environment Snippets (`snippets/`)
+- **`db-postgresql-local.env.yml`** - PostgreSQL local connection environment variables
+- **`db-postgresql-external.env.yml`** - PostgreSQL external connection environment variables
+- **`db-neo4j-local.env.yml`** - Neo4j local connection environment variables
+- **`db-neo4j-external.env.yml`** - Neo4j external connection environment variables
+
+#### Proxy Configuration Snippets (`snippets/`)
+- **`proxy-traefik.network.yml`** - Traefik network addition for API service
+- **`proxy-traefik.labels.yml`** - Traefik deployment labels for automatic HTTPS
+- **`proxy-none.ports.yml`** - Direct port mapping (no proxy)
 
 ## How It Works
 
-The setup wizard combines these modules based on your choices:
+The setup wizard uses a **template injection** approach:
 
-```yaml
-# Example: PostgreSQL local + Traefik
-include:
-  - compose-modules/base.yml
-  - compose-modules/api-base.yml
-  - compose-modules/postgres-local.yml
-  - compose-modules/proxy-traefik.yml
+1. **Start with base structure**
+   ```bash
+   cat base.yml > swarm-stack.yml
+   # Contains: services: + redis service
+   ```
+
+2. **Build API service from template**
+   ```bash
+   cp api.template.yml temp.yml
+   # Inject database environment snippet into ###DATABASE_ENV###
+   # Inject proxy network into ###PROXY_NETWORK### (if Traefik)
+   # Inject proxy config into ###PROXY_PORTS### or ###PROXY_LABELS###
+   cat temp.yml >> swarm-stack.yml
+   ```
+
+3. **Add database service (if local)**
+   ```bash
+   cat postgres-local.yml >> swarm-stack.yml  # Only if local deployment
+   ```
+
+4. **Close with footer**
+   ```bash
+   cat footer.yml >> swarm-stack.yml
+   # Contains: networks: + secrets:
+   ```
+
+### Example: PostgreSQL Local + Traefik
+
 ```
-
-```yaml
-# Example: Neo4j external + No proxy
-include:
-  - compose-modules/base.yml
-  - compose-modules/api-base.yml
-  - compose-modules/neo4j-external.yml
-  - compose-modules/proxy-none.yml
+base.yml (services: + redis)
+  + api.template.yml with:
+    - db-postgresql-local.env.yml injected
+    - proxy-traefik.network.yml injected
+    - proxy-traefik.labels.yml injected
+  + postgres-local.yml (postgres service)
+  + footer.yml (networks: + secrets:)
+= Valid swarm-stack.yml
 ```
 
 ## Benefits
 
-1. **No Redundancy** - Each configuration option is defined once
-2. **Easy Maintenance** - Update one file to affect all combinations
-3. **Clear Separation** - Database, proxy, and base configs are separate
-4. **Flexible** - Easy to add new database types or proxy options
+1. **Single Source of Truth** - API configuration in one template file
+2. **No Duplicate Keys** - Proper YAML structure with single `services:`, `networks:`, `secrets:` keys
+3. **Easy Maintenance** - Change API once, affects all configurations
+4. **Small Snippets** - Focused, reusable configuration pieces
+5. **Flexible** - Easy to add new database types or proxy options
 
 ## Adding New Modules
 
-To add a new database type (e.g., MongoDB):
+### To add a new database type (e.g., MongoDB):
 
-1. Create `mongodb-local.yml` and `mongodb-external.yml`
-2. Update `setup.sh` to include MongoDB as an option
-3. Add corresponding `.env` templates
+1. Create database environment snippets:
+   - `snippets/db-mongodb-local.env.yml`
+   - `snippets/db-mongodb-external.env.yml`
 
-To add a new proxy type (e.g., nginx):
+2. Create database service module:
+   - `mongodb-local.yml` (with MongoDB service definition)
+   - `mongodb-external.yml` (empty file)
 
-1. Create `proxy-nginx.yml`
-2. Update `setup.sh` to include nginx as an option
+3. Update setup wizard scripts to include MongoDB as an option
+
+4. Add corresponding `.env` templates in `setup/env-templates/`
+
+### To add a new proxy type (e.g., nginx):
+
+1. Create proxy snippets:
+   - `snippets/proxy-nginx.network.yml` (if needed)
+   - `snippets/proxy-nginx.labels.yml` or `snippets/proxy-nginx.ports.yml`
+
+2. Update setup wizard scripts to include nginx as an option
+
 3. Add corresponding `.env` template
+
+## File Naming Convention
+
+- **Modules**: `{type}-{mode}.yml` (e.g., `postgres-local.yml`)
+- **Snippets**: `{category}-{type}-{mode}.{section}.yml` (e.g., `db-postgresql-local.env.yml`)
+- **Template**: `{service}.template.yml` (e.g., `api.template.yml`)

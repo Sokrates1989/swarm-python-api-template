@@ -314,7 +314,7 @@ switch ($choice) {
         Write-Host "Opening Notepad for database password..."
         Write-Host "Please enter the password, save, and close Notepad."
         Write-Host ""
-        Write-Host "Press any key to open Notepad..." -ForegroundColor Yellow
+        Write-Host "Press any key to enter secret for ${STACK_NAME_UPPER}_DB_PASSWORD..." -ForegroundColor Yellow
         $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         Write-Host ""
         
@@ -339,7 +339,7 @@ switch ($choice) {
         Write-Host "Opening Notepad for admin API key..."
         Write-Host "Please enter the API key, save, and close Notepad."
         Write-Host ""
-        Write-Host "Press any key to open Notepad..." -ForegroundColor Yellow
+        Write-Host "Press any key to enter secret for ${STACK_NAME_UPPER}_ADMIN_API_KEY..." -ForegroundColor Yellow
         $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         Write-Host ""
         

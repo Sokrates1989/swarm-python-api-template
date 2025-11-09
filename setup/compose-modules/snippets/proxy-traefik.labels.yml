@@ -1,11 +1,3 @@
-# Traefik proxy configuration
-# Adds Traefik labels and network for automatic HTTPS routing
-# NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
-
-  api:
-    networks:
-      - ${TRAEFIK_NETWORK_NAME}
-    deploy:
       labels:
         - traefik.enable=true
         - traefik.constraint-label=traefik-public
@@ -16,7 +8,6 @@
         - traefik.http.routers.${STACK_NAME}_api.entrypoints=https,http,web
         - traefik.http.routers.${STACK_NAME}_api.tls=true
         - traefik.http.routers.${STACK_NAME}_api.tls.certresolver=le
-        # Autoscaling (works in combination with prometheus, grafana, cadvisor and own autoscaler)
         - "autoscale=true"
         - "autoscale.minimum_replicas=1"
         - "autoscale.maximum_replicas=5"
