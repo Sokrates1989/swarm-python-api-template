@@ -40,12 +40,30 @@ create_docker_secrets() {
     
     echo ""
     echo "Creating: $db_password_secret"
-    echo "Press any key to open editor..."
-    read -n 1 -r
     echo ""
-    $EDITOR secret.txt
+    if [ "$EDITOR" = "nano" ]; then
+        echo "Instructions for nano:"
+        echo "  1. Type your secret"
+        echo "  2. Press Ctrl+O to save"
+        echo "  3. Press Enter to confirm filename"
+        echo "  4. Press Ctrl+X to exit"
+    elif [ "$EDITOR" = "vim" ] || [ "$EDITOR" = "vi" ]; then
+        echo "Instructions for vim:"
+        echo "  1. Press 'i' to enter insert mode"
+        echo "  2. Type your secret"
+        echo "  3. Press Esc to exit insert mode"
+        echo "  4. Type ':wq' and press Enter to save and quit"
+    fi
+    echo ""
+    read -p "Press Enter to open editor..." -r
+    echo ""
     
-    if [ -f secret.txt ]; then
+    # Create empty file
+    > secret.txt
+    $EDITOR secret.txt || true
+    
+    # Check if file has content
+    if [ -f secret.txt ] && [ -s secret.txt ]; then
         docker secret create "$db_password_secret" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
             echo "✅ Created $db_password_secret"
@@ -54,17 +72,36 @@ create_docker_secrets() {
         fi
         rm -f secret.txt
     else
-        echo "⚠️  Secret file not created, skipping"
+        echo "⚠️  Secret file is empty or not saved, skipping"
+        rm -f secret.txt
     fi
     
     echo ""
     echo "Creating: $admin_api_key_secret"
-    echo "Press any key to open editor..."
-    read -n 1 -r
     echo ""
-    $EDITOR secret.txt
+    if [ "$EDITOR" = "nano" ]; then
+        echo "Instructions for nano:"
+        echo "  1. Type your secret"
+        echo "  2. Press Ctrl+O to save"
+        echo "  3. Press Enter to confirm filename"
+        echo "  4. Press Ctrl+X to exit"
+    elif [ "$EDITOR" = "vim" ] || [ "$EDITOR" = "vi" ]; then
+        echo "Instructions for vim:"
+        echo "  1. Press 'i' to enter insert mode"
+        echo "  2. Type your secret"
+        echo "  3. Press Esc to exit insert mode"
+        echo "  4. Type ':wq' and press Enter to save and quit"
+    fi
+    echo ""
+    read -p "Press Enter to open editor..." -r
+    echo ""
     
-    if [ -f secret.txt ]; then
+    # Create empty file
+    > secret.txt
+    $EDITOR secret.txt || true
+    
+    # Check if file has content
+    if [ -f secret.txt ] && [ -s secret.txt ]; then
         docker secret create "$admin_api_key_secret" secret.txt 2>/dev/null
         if [ $? -eq 0 ]; then
             echo "✅ Created $admin_api_key_secret"
@@ -73,7 +110,8 @@ create_docker_secrets() {
         fi
         rm -f secret.txt
     else
-        echo "⚠️  Secret file not created, skipping"
+        echo "⚠️  Secret file is empty or not saved, skipping"
+        rm -f secret.txt
     fi
     
     echo ""
