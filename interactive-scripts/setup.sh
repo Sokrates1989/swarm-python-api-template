@@ -9,9 +9,18 @@ echo "🚀 Swarm Python API Template - Initial Setup"
 echo "=============================================="
 echo ""
 
-# Check if setup is already complete
+# Check if setup is already complete (either via .setup-complete or manual setup)
+SETUP_ALREADY_DONE=false
+
 if [ -f .setup-complete ]; then
-    echo "⚠️  Setup has already been completed."
+    SETUP_ALREADY_DONE=true
+    echo "⚠️  Setup has already been completed (.setup-complete marker found)."
+elif [ -f .env ] && [ -f docker-compose.yml ]; then
+    SETUP_ALREADY_DONE=true
+    echo "⚠️  Setup appears to have been done manually (.env and docker-compose.yml exist)."
+fi
+
+if [ "$SETUP_ALREADY_DONE" = true ]; then
     read -p "Do you want to run setup again? This will overwrite .env and docker-compose.yml (y/N): " RERUN_SETUP
     if [[ ! "$RERUN_SETUP" =~ ^[Yy]$ ]]; then
         echo "Setup cancelled."
@@ -148,6 +157,12 @@ echo ""
 echo "🌐 Domain Configuration"
 echo "----------------------"
 echo "Enter the domain where your API will be accessible."
+echo ""
+echo "⚠️  IMPORTANT: Make sure your domain/subdomain is already created and"
+echo "   points to your swarm manager's IP address before deploying."
+echo ""
+echo "   For domain setup instructions, see README.md (Domain Setup section)."
+echo "   Providers covered: Strato, IONOS, and general DNS configuration."
 echo ""
 
 read -p "API domain (e.g., api.example.com): " API_URL
@@ -333,7 +348,10 @@ echo "   # Admin API key secret"
 echo "   echo 'your-admin-api-key' | docker secret create $ADMIN_API_KEY_SECRET -"
 echo ""
 echo "2. Ensure your domain points to the swarm manager:"
-echo "   - $API_URL"
+echo "   - Domain: $API_URL"
+echo "   - Should resolve to your swarm manager's IP"
+echo "   - Test with: nslookup $API_URL"
+echo "   - If not set up yet, see README.md (Domain Setup section)"
 echo ""
 echo "3. Create data directories:"
 echo "   mkdir -p $DATA_ROOT"
