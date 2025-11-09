@@ -89,6 +89,7 @@ $StackName = Get-StackName
 $DataRoot = Get-DataRoot (Get-Location).Path
 
 if ($ProxyType -eq "traefik") {
+    $TraefikNetwork = Get-TraefikNetwork
     $ApiUrl = Get-ApiDomain
 } else {
     $PublishedPort = Get-PublishedPort
@@ -110,6 +111,7 @@ Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "IMAGE_NAME" -Value $ImageName
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "IMAGE_VERSION" -Value $ImageVersion
 
 if ($ProxyType -eq "traefik") {
+    Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "TRAEFIK_NETWORK" -Value $TraefikNetwork
     Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "API_URL" -Value $ApiUrl
 } else {
     Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "PUBLISHED_PORT" -Value $PublishedPort
@@ -120,7 +122,7 @@ Write-Host ""
 $ApiReplicas = Get-Replicas -ServiceName "API" -DefaultCount 1
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "API_REPLICAS" -Value $ApiReplicas
 
-if ($DeployDatabase) {
+if ($DbMode -eq "local") {
     $DbReplicas = Get-Replicas -ServiceName "Database" -DefaultCount 1
     
     if ($DbType -eq "postgresql") {

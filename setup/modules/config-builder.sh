@@ -147,16 +147,21 @@ update_stack_secrets() {
 
 backup_existing_files() {
     local project_root="$1"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    
+    # Create backup directories
+    mkdir -p "${project_root}/backup/env"
+    mkdir -p "${project_root}/backup/swarm-stack-yml"
     
     if [ -f "${project_root}/.env" ]; then
-        local backup_file="${project_root}/.env.backup.$(date +%Y%m%d_%H%M%S)"
+        local backup_file="${project_root}/backup/env/.env.${timestamp}"
         cp "${project_root}/.env" "$backup_file"
-        echo "📋 Backed up .env to $backup_file"
+        echo "📋 Backed up .env to backup/env/.env.${timestamp}"
     fi
     
     if [ -f "${project_root}/swarm-stack.yml" ]; then
-        local backup_file="${project_root}/swarm-stack.yml.backup.$(date +%Y%m%d_%H%M%S)"
+        local backup_file="${project_root}/backup/swarm-stack-yml/swarm-stack.yml.${timestamp}"
         cp "${project_root}/swarm-stack.yml" "$backup_file"
-        echo "📋 Backed up swarm-stack.yml to $backup_file"
+        echo "📋 Backed up swarm-stack.yml to backup/swarm-stack-yml/swarm-stack.yml.${timestamp}"
     fi
 }

@@ -61,6 +61,95 @@ prompt_data_root() {
     echo "${DATA_ROOT:-$default_path}"
 }
 
+prompt_traefik_network() {
+    local network_name=""
+    local network_selected=false
+    
+    while [ "$network_selected" = false ]; do
+        echo "" >&2
+        echo "🌐 Available Docker Networks (overlay)" >&2
+        echo "------------------------------------" >&2
+        
+        # Get overlay networks
+        local networks=($(docker network ls --filter driver=overlay --format "{{.Name}}" 2>/dev/null))
+        
+        if [ ${#networks[@]} -eq 0 ]; then
+            echo "❌ No overlay networks found" >&2
+            echo "" >&2
+            echo "1) Create 'traefik' network now" >&2
+            echo "2) Enter custom network name" >&2
+            echo "3) Cancel setup" >&2
+            read -p "Your choice (1-3): " CHOICE
+            
+            case $CHOICE in
+                1)
+                    docker network create --driver=overlay traefik
+                    if [ $? -eq 0 ]; then
+                        echo "✅ Created network 'traefik'" >&2
+                        network_name="traefik"
+                        network_selected=true
+                    else
+                        echo "❌ Failed to create network" >&2
+                    fi
+                    ;;
+                2)
+                    read -p "Network name: " network_name
+                    if [ -n "$network_name" ]; then
+                        network_selected=true
+                    fi
+                    ;;
+                3) return 1 ;;
+            esac
+        else
+            # Display networks with numbers
+            local i=1
+            for net in "${networks[@]}"; do
+                echo "$i) $net" >&2
+                ((i++))
+            done
+            echo "" >&2
+            echo "0) Create new network" >&2
+            echo "" >&2
+            
+            read -p "Select network (number or name) [1]: " SELECTION
+            SELECTION="${SELECTION:-1}"
+            
+            # Check if it's a number
+            if [[ "$SELECTION" =~ ^[0-9]+$ ]]; then
+                if [ "$SELECTION" -eq 0 ]; then
+                    read -p "New network name: " network_name
+                    if [ -n "$network_name" ]; then
+                        docker network create --driver=overlay "$network_name"
+                        if [ $? -eq 0 ]; then
+                            echo "✅ Created network '$network_name'" >&2
+                            network_selected=true
+                        else
+                            echo "❌ Failed to create network" >&2
+                        fi
+                    fi
+                elif [ "$SELECTION" -ge 1 ] && [ "$SELECTION" -le ${#networks[@]} ]; then
+                    network_name="${networks[$((SELECTION-1))]}"
+                    echo "✅ Selected: $network_name" >&2
+                    network_selected=true
+                else
+                    echo "❌ Invalid selection" >&2
+                fi
+            else
+                # Treat as network name
+                if docker network inspect "$SELECTION" &>/dev/null; then
+                    network_name="$SELECTION"
+                    echo "✅ Selected: $network_name" >&2
+                    network_selected=true
+                else
+                    echo "❌ Network '$SELECTION' not found" >&2
+                fi
+            fi
+        fi
+    done
+    
+    echo "$network_name"
+}
+
 prompt_api_domain() {
     local api_url=""
     while [ -z "$api_url" ]; do
@@ -93,7 +182,7 @@ prompt_docker_image() {
         image_version="${image_version:-latest}"
         
         echo "Verifying image: ${image_name}:${image_version}" >&2
-        docker pull "${image_name}:${image_version}" 2>&1 >&2
+        docker pull "${image_name}:${image_version}" >/dev/null 2>&1
         
         if [ $? -eq 0 ]; then
             echo "✅ Image verified" >&2

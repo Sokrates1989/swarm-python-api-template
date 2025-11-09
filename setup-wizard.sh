@@ -95,6 +95,7 @@ STACK_NAME=$(prompt_stack_name)
 DATA_ROOT=$(prompt_data_root "$(pwd)")
 
 if [ "$PROXY_TYPE" = "traefik" ]; then
+    TRAEFIK_NETWORK=$(prompt_traefik_network)
     API_URL=$(prompt_api_domain)
 else
     PUBLISHED_PORT=$(prompt_published_port)
@@ -116,6 +117,7 @@ update_env_values "$PROJECT_ROOT/.env" "IMAGE_NAME" "$IMAGE_NAME"
 update_env_values "$PROJECT_ROOT/.env" "IMAGE_VERSION" "$IMAGE_VERSION"
 
 if [ "$PROXY_TYPE" = "traefik" ]; then
+    update_env_values "$PROJECT_ROOT/.env" "TRAEFIK_NETWORK" "$TRAEFIK_NETWORK"
     update_env_values "$PROJECT_ROOT/.env" "API_URL" "$API_URL"
 else
     update_env_values "$PROJECT_ROOT/.env" "PUBLISHED_PORT" "$PUBLISHED_PORT"
@@ -126,7 +128,7 @@ echo ""
 API_REPLICAS=$(prompt_replicas "API" 1)
 update_env_values "$PROJECT_ROOT/.env" "API_REPLICAS" "$API_REPLICAS"
 
-if [ "$DEPLOY_DATABASE" = true ]; then
+if [ "$DB_MODE" = "local" ]; then
     DB_REPLICAS=$(prompt_replicas "Database" 1)
     
     if [ "$DB_TYPE" = "postgresql" ]; then

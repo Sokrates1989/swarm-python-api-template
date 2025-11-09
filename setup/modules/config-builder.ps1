@@ -161,18 +161,22 @@ function Update-StackSecrets {
 function Backup-ExistingFiles {
     param([string]$ProjectRoot)
     
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    
+    # Create backup directories
+    New-Item -ItemType Directory -Force -Path "$ProjectRoot\backup\env" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$ProjectRoot\backup\swarm-stack-yml" | Out-Null
+    
     if (Test-Path "$ProjectRoot\.env") {
-        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $backupFile = "$ProjectRoot\.env.backup.$timestamp"
+        $backupFile = "$ProjectRoot\backup\env\.env.$timestamp"
         Copy-Item "$ProjectRoot\.env" $backupFile
-        Write-Host "📋 Backed up .env to $backupFile"
+        Write-Host "📋 Backed up .env to backup\env\.env.$timestamp"
     }
     
     if (Test-Path "$ProjectRoot\swarm-stack.yml") {
-        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $backupFile = "$ProjectRoot\swarm-stack.yml.backup.$timestamp"
+        $backupFile = "$ProjectRoot\backup\swarm-stack-yml\swarm-stack.yml.$timestamp"
         Copy-Item "$ProjectRoot\swarm-stack.yml" $backupFile
-        Write-Host "📋 Backed up swarm-stack.yml to $backupFile"
+        Write-Host "📋 Backed up swarm-stack.yml to backup\swarm-stack-yml\swarm-stack.yml.$timestamp"
     }
 }
 

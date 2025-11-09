@@ -67,6 +67,99 @@ function Get-DataRoot {
     return $DataRoot
 }
 
+function Get-TraefikNetwork {
+    $networkSelected = $false
+    $networkName = ""
+    
+    while (-not $networkSelected) {
+        Write-Host ""
+        Write-Host "🌐 Available Docker Networks (overlay)" -ForegroundColor Cyan
+        Write-Host "------------------------------------"
+        
+        # Get overlay networks
+        $networks = docker network ls --filter driver=overlay --format "{{.Name}}" 2>$null | Where-Object { $_ }
+        
+        if ($null -eq $networks -or $networks.Count -eq 0) {
+            Write-Host "❌ No overlay networks found" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "1) Create 'traefik' network now"
+            Write-Host "2) Enter custom network name"
+            Write-Host "3) Cancel setup"
+            $choice = Read-Host "Your choice (1-3)"
+            
+            switch ($choice) {
+                "1" {
+                    docker network create --driver=overlay traefik
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "✅ Created network 'traefik'" -ForegroundColor Green
+                        $networkName = "traefik"
+                        $networkSelected = $true
+                    } else {
+                        Write-Host "❌ Failed to create network" -ForegroundColor Red
+                    }
+                }
+                "2" {
+                    $networkName = Read-Host "Network name"
+                    if (-not [string]::IsNullOrWhiteSpace($networkName)) {
+                        $networkSelected = $true
+                    }
+                }
+                "3" { return $null }
+            }
+        } else {
+            # Display networks with numbers
+            $i = 1
+            foreach ($net in $networks) {
+                Write-Host "$i) $net"
+                $i++
+            }
+            Write-Host ""
+            Write-Host "0) Create new network"
+            Write-Host ""
+            
+            $selection = Read-Host "Select network (number or name) [1]"
+            if ([string]::IsNullOrWhiteSpace($selection)) {
+                $selection = "1"
+            }
+            
+            # Check if it's a number
+            $selectionNum = 0
+            if ([int]::TryParse($selection, [ref]$selectionNum)) {
+                if ($selectionNum -eq 0) {
+                    $networkName = Read-Host "New network name"
+                    if (-not [string]::IsNullOrWhiteSpace($networkName)) {
+                        docker network create --driver=overlay $networkName
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "✅ Created network '$networkName'" -ForegroundColor Green
+                            $networkSelected = $true
+                        } else {
+                            Write-Host "❌ Failed to create network" -ForegroundColor Red
+                        }
+                    }
+                } elseif ($selectionNum -ge 1 -and $selectionNum -le $networks.Count) {
+                    $networkName = $networks[$selectionNum - 1]
+                    Write-Host "✅ Selected: $networkName" -ForegroundColor Green
+                    $networkSelected = $true
+                } else {
+                    Write-Host "❌ Invalid selection" -ForegroundColor Red
+                }
+            } else {
+                # Treat as network name
+                $network = docker network inspect $selection 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $networkName = $selection
+                    Write-Host "✅ Selected: $networkName" -ForegroundColor Green
+                    $networkSelected = $true
+                } else {
+                    Write-Host "❌ Network '$selection' not found" -ForegroundColor Red
+                }
+            }
+        }
+    }
+    
+    return $networkName
+}
+
 function Get-ApiDomain {
     $ApiUrl = ""
     while ([string]::IsNullOrWhiteSpace($ApiUrl)) {

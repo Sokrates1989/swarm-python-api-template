@@ -4,7 +4,7 @@
 networks:
   backend:
     driver: overlay
-  traefik:
+  ${TRAEFIK_NETWORK}:
     external: true
 
 secrets:

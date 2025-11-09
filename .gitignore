@@ -8,6 +8,9 @@ redis_data/*
 .env
 docker-compose.yml
 
+# Ignore backup folders
+backup/
+
 # Keep .gitkeep files to ensure empty folders are created
 !postgres_data/.gitkeep
 !neo4j_data/.gitkeep
