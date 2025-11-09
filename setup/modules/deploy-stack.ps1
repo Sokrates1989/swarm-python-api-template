@@ -6,6 +6,8 @@ function Invoke-StackDeploy {
         [string]$StackFile
     )
     
+    $EnvFile = Join-Path (Split-Path $StackFile -Parent) ".env"
+    
     Write-Host "🚀 Deploying Stack" -ForegroundColor Cyan
     Write-Host "=================="
     Write-Host ""
@@ -17,6 +19,23 @@ function Invoke-StackDeploy {
     if ($ConfirmDeploy -eq "n" -or $ConfirmDeploy -eq "N") {
         Write-Host "Deployment cancelled."
         return $false
+    }
+    
+    Write-Host ""
+    Write-Host "Loading environment variables from .env..."
+    
+    # Load and export all variables from .env file
+    if (Test-Path $EnvFile) {
+        Get-Content $EnvFile | ForEach-Object {
+            if ($_ -match '^([^#][^=]+)=(.*)$') {
+                $name = $matches[1].Trim()
+                $value = $matches[2].Trim()
+                [Environment]::SetEnvironmentVariable($name, $value, "Process")
+            }
+        }
+        Write-Host "✅ Environment variables loaded" -ForegroundColor Green
+    } else {
+        Write-Host "⚠️  Warning: .env file not found at $EnvFile" -ForegroundColor Yellow
     }
     
     Write-Host ""

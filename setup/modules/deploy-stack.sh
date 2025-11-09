@@ -4,6 +4,7 @@
 deploy_stack() {
     local stack_name="$1"
     local stack_file="$2"
+    local env_file="${stack_file%/*}/.env"
     
     echo "🚀 Deploying Stack"
     echo "=================="
@@ -16,6 +17,19 @@ deploy_stack() {
     if [[ "$CONFIRM_DEPLOY" =~ ^[Nn]$ ]]; then
         echo "Deployment cancelled."
         return 1
+    fi
+    
+    echo ""
+    echo "Loading environment variables from .env..."
+    
+    # Export all variables from .env file
+    if [ -f "$env_file" ]; then
+        set -a  # automatically export all variables
+        source "$env_file"
+        set +a
+        echo "✅ Environment variables loaded"
+    else
+        echo "⚠️  Warning: .env file not found at $env_file"
     fi
     
     echo ""
