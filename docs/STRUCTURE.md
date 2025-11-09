@@ -9,7 +9,7 @@ swarm-python-api-template/
 │   ├── PROXY_SETUP.md             # Proxy configuration guide
 │   └── STRUCTURE.md               # This file
 │
-├── setup/                          # Configuration templates
+├── setup/                          # Configuration templates and setup wizards
 │   ├── compose-modules/           # Modular Docker Compose files
 │   │   ├── README.md             # Module documentation
 │   │   ├── base.yml              # Common services (Redis, networks)
@@ -30,14 +30,13 @@ swarm-python-api-template/
 │   │   ├── .env.proxy-traefik.template     # Traefik settings
 │   │   └── .env.proxy-none.template        # No-proxy settings
 │   │
-│   └── swarm-stack.yml.template  # Main stack template (uses includes)
+│   ├── setup-wizard.sh            # Interactive setup script (Linux/Mac) (executable)
+│   ├── setup-wizard.ps1           # Interactive setup script (Windows) (executable)
+│   ├── swarm-stack.yml.template   # Main stack template (uses includes)
+│   └── README.md                  # Setup directory documentation
 │
-├── interactive-scripts/           # Setup wizard
-│   ├── docker-compose.setup.yml  # Setup container configuration
-│   └── setup.sh                  # Interactive setup script (executable)
-│
-├── quick-start.sh                # Quick start script (Linux/Mac) (executable)
-├── quick-start.ps1               # Quick start script (Windows) (executable)
+├── quick-start.sh               # Quick start script (Linux/Mac) (executable)
+├── quick-start.ps1              # Quick start script (Windows) (executable)
 ├── README.md                     # Main documentation
 └── .gitignore                    # Git ignore rules
 
@@ -46,10 +45,11 @@ Generated files (not in repo):
 ├── swarm-stack.yml              # Your stack configuration
 └── .setup-complete              # Setup completion marker
 
-Note: Shell scripts (.sh) are marked as executable in git and can be run 
-directly after cloning. If you encounter permission issues, use:
-  - bash quick-start.sh (Linux/Mac/Git Bash)
+Note: Shell scripts (.sh) and PowerShell scripts (.ps1) are marked as executable 
+in git and can be run directly after cloning. If you encounter permission issues, use:
+  - bash quick-start.sh or bash setup/setup-wizard.sh (Linux/Mac/Git Bash)
   - powershell -ExecutionPolicy Bypass -File .\quick-start.ps1 (Windows)
+  - powershell -ExecutionPolicy Bypass -File .\setup\setup-wizard.ps1 (Windows)
 ```
 
 ## Configuration Flow
@@ -57,7 +57,7 @@ directly after cloning. If you encounter permission issues, use:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    User Runs Setup Wizard                    │
-│                  (./quick-start.sh or setup.sh)              │
+│         (./quick-start.sh or ./setup/setup-wizard.sh)        │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼

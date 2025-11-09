@@ -62,7 +62,7 @@ if (-not (Test-Path .setup-complete)) {
     if ($runSetup -ne "n" -and $runSetup -ne "N") {
         Write-Host ""
         Write-Host "Starting setup wizard..." -ForegroundColor Cyan
-        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        .\setup\setup-wizard.ps1
         Write-Host ""
     } else {
         Write-Host ""
@@ -291,7 +291,7 @@ switch ($choice) {
     "7" {
         Write-Host "Re-running setup wizard..." -ForegroundColor Cyan
         Write-Host ""
-        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        .\setup\setup-wizard.ps1
     }
     "8" {
         Write-Host "Create Docker Secrets" -ForegroundColor Cyan

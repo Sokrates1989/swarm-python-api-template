@@ -5,8 +5,14 @@
 
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
 echo "🚀 Swarm Python API Template - Initial Setup"
 echo "=============================================="
+echo ""
+echo "Working directory: $SCRIPT_DIR"
 echo ""
 
 # Check if setup is already complete (either via .setup-complete or manual setup)
@@ -186,20 +192,82 @@ echo "------------------------------"
 echo "This should match the image built from your main python-api-template."
 echo ""
 
-read -p "Enter Docker image name (e.g., username/api-name): " IMAGE_NAME
-while [ -z "$IMAGE_NAME" ]; do
-    echo "❌ Image name cannot be empty"
+IMAGE_VERIFIED=false
+while [ "$IMAGE_VERIFIED" = false ]; do
     read -p "Enter Docker image name (e.g., username/api-name): " IMAGE_NAME
+    while [ -z "$IMAGE_NAME" ]; do
+        echo "❌ Image name cannot be empty"
+        read -p "Enter Docker image name (e.g., username/api-name): " IMAGE_NAME
+    done
+
+    read -p "Enter Docker image version/tag [0.0.1]: " IMAGE_VERSION
+    IMAGE_VERSION="${IMAGE_VERSION:-0.0.1}"
+
+    echo ""
+    echo "🔍 Verifying Docker image: $IMAGE_NAME:$IMAGE_VERSION"
+    
+    if docker pull "$IMAGE_NAME:$IMAGE_VERSION" > /dev/null 2>&1; then
+        echo "✅ Image successfully pulled and verified"
+        IMAGE_VERIFIED=true
+    else
+        echo "❌ Could not pull image $IMAGE_NAME:$IMAGE_VERSION"
+        echo ""
+        echo "This might be because:"
+        echo "  1) The image doesn't exist yet (you need to build and push it)"
+        echo "  2) You're not logged in to the registry"
+        echo "  3) The image name or version is incorrect"
+        echo ""
+        echo "What would you like to do?"
+        echo "1) Login to Docker registry"
+        echo "2) Re-enter image name/version"
+        echo "3) Skip verification and continue anyway"
+        echo "4) Cancel setup"
+        echo ""
+        read -p "Your choice (1-4): " IMAGE_CHOICE
+        
+        case $IMAGE_CHOICE in
+            1)
+                echo ""
+                echo "🔐 Docker Registry Login"
+                echo "----------------------"
+                echo "For Docker Hub: docker login"
+                echo "For other registries: docker login <registry-url>"
+                echo ""
+                read -p "Enter registry URL (press Enter for Docker Hub): " REGISTRY_URL
+                if [ -z "$REGISTRY_URL" ]; then
+                    docker login
+                else
+                    docker login "$REGISTRY_URL"
+                fi
+                echo ""
+                echo "Retrying image pull..."
+                ;;
+            2)
+                echo ""
+                echo "Re-entering image details..."
+                echo ""
+                ;;
+            3)
+                echo ""
+                echo "⚠️  Skipping image verification"
+                IMAGE_VERIFIED=true
+                ;;
+            4)
+                echo "Setup cancelled."
+                exit 1
+                ;;
+            *)
+                echo "Invalid choice, please try again."
+                echo ""
+                ;;
+        esac
+    fi
 done
 
-read -p "Enter image version [0.0.1]: " IMAGE_VERSION
-IMAGE_VERSION="${IMAGE_VERSION:-0.0.1}"
-
-# Update .env with image configuration
 sed -i "s|^IMAGE_NAME=.*|IMAGE_NAME=$IMAGE_NAME|" .env
 sed -i "s|^IMAGE_VERSION=.*|IMAGE_VERSION=$IMAGE_VERSION|" .env
 
-echo "✅ Image: $IMAGE_NAME:$IMAGE_VERSION"
+echo "✅ Image configured: $IMAGE_NAME:$IMAGE_VERSION"
 echo ""
 
 # =============================================================================
@@ -249,7 +317,12 @@ echo "Enter the path where persistent data will be stored."
 echo "For multi-node swarms, use a shared filesystem like GlusterFS."
 echo ""
 
-DEFAULT_DATA_ROOT="/gluster_storage/swarm/python-api-template/$API_URL"
+# Use current directory as default data root
+if [ -n "$API_URL" ]; then
+    DEFAULT_DATA_ROOT="$SCRIPT_DIR/data/$API_URL"
+else
+    DEFAULT_DATA_ROOT="$SCRIPT_DIR/data"
+fi
 read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
 DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
 

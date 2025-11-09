@@ -58,13 +58,14 @@ if [ ! -f .setup-complete ]; then
     if [[ ! "$runSetup" =~ ^[Nn]$ ]]; then
         echo ""
         echo "Starting setup wizard..."
-        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        ./setup/setup-wizard.sh
         echo ""
     else
         echo ""
         echo "⚠️  Setup wizard skipped."
         echo "You'll need to manually configure .env and swarm-stack.yml"
         echo "See README.md for manual setup instructions."
+        echo ""
         exit 0
     fi
     echo ""
@@ -253,7 +254,7 @@ case $choice in
     7)
         echo "🔄 Re-running setup wizard..."
         echo ""
-        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        ./setup/setup-wizard.sh
         ;;
     8)
         echo "🔑 Create Docker Secrets"
