@@ -246,9 +246,9 @@ networks:
 ### Manual Test
 1. Run the setup wizard:
    ```bash
-   ./setup-wizard.sh
+   ./setup/setup-wizard.sh
    # OR
-   .\setup-wizard.ps1
+   .\setup\setup-wizard.ps1
    ```
 
 2. Select the scenario configuration when prompted

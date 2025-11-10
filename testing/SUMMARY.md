@@ -36,11 +36,11 @@ All testing materials moved to `testing/` directory:
 
 ```
 python-api-template/
-├── setup-wizard.sh              # Main setup wizard (Linux/Mac)
-├── setup-wizard.ps1             # Main setup wizard (Windows)
 ├── README.md                    # Project documentation
 │
 ├── setup/
+│   ├── setup-wizard.sh          # Main setup wizard (Linux/Mac)
+│   ├── setup-wizard.ps1         # Main setup wizard (Windows)
 │   ├── modules/                 # Setup wizard modules
 │   │   ├── config-builder.sh   # ✅ FIXED: Correct placeholder injection
 │   │   ├── config-builder.ps1  # ✅ FIXED: Correct placeholder injection
@@ -107,10 +107,10 @@ sh test-build.sh
 ### Run Setup Wizard
 ```bash
 # Linux/Mac
-./setup-wizard.sh
+./setup/setup-wizard.sh
 
 # Windows
-.\setup-wizard.ps1
+.\setup\setup-wizard.ps1
 ```
 
 ### Validate Output

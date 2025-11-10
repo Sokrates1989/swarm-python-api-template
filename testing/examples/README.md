@@ -43,19 +43,19 @@ After running the setup wizard, compare your generated `swarm-stack.yml` with th
 ### Linux/Mac
 ```bash
 # Run setup wizard
-./setup-wizard.sh
+./setup/setup-wizard.sh
 
 # Compare with example
-diff swarm-stack.yml examples/swarm-stack-traefik-postgres-local.yml
+diff swarm-stack.yml testing/examples/swarm-stack-traefik-postgres-local.yml
 ```
 
 ### Windows
 ```powershell
 # Run setup wizard
-.\setup-wizard.ps1
+.\setup\setup-wizard.ps1
 
 # Compare with example
-Compare-Object (Get-Content swarm-stack.yml) (Get-Content examples\swarm-stack-traefik-postgres-local.yml)
+Compare-Object (Get-Content swarm-stack.yml) (Get-Content testing\examples\swarm-stack-traefik-postgres-local.yml)
 ```
 
 ## What to Look For

@@ -39,15 +39,15 @@ Run the setup wizard from the project root:
 
 ```bash
 # Linux/Mac
-./setup-wizard.sh
+./setup/setup-wizard.sh
 
 # Windows PowerShell
-.\setup-wizard.ps1
+.\setup\setup-wizard.ps1
 ```
 
 The setup wizards are now modular and platform-specific:
-- **`setup-wizard.sh`** - For Linux/Mac (Bash)
-- **`setup-wizard.ps1`** - For Windows (PowerShell)
+- **`setup/setup-wizard.sh`** - For Linux/Mac (Bash)
+- **`setup/setup-wizard.ps1`** - For Windows (PowerShell)
 
 The interactive wizard will:
 1. Check for existing setup and offer to backup
@@ -129,7 +129,7 @@ If setup fails or you want to start over:
 rm -f .env swarm-stack.yml .setup-complete
 
 # Run setup wizard again
-./setup/setup-wizard.sh
+./setup/setup-wizard.sh  # Already in correct location
 ```
 
 For more details on the modular system, see `compose-modules/README.md`.

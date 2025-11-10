@@ -67,19 +67,19 @@ Once you have completed the prerequisites above, the easiest way to set up your 
 ### Linux/Mac
 ```bash
 # Make the script executable
-chmod +x setup-wizard.sh
+chmod +x setup/setup-wizard.sh
 
 # Run the setup wizard
-./setup-wizard.sh
+./setup/setup-wizard.sh
 ```
 
 ### Windows (PowerShell)
 ```powershell
 # Run the setup wizard
-.\setup-wizard.ps1
+.\setup\setup-wizard.ps1
 
 # Alternative: If execution policy blocks it
-powershell -ExecutionPolicy Bypass -File .\setup-wizard.ps1
+powershell -ExecutionPolicy Bypass -File .\setup\setup-wizard.ps1
 ```
 
 The setup wizard will:

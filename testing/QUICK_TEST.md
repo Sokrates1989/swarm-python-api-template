@@ -11,7 +11,7 @@ sh test-build.sh
 
 ## Validate Your Stack File
 
-After running `./setup-wizard.sh` or `.\setup-wizard.ps1`:
+After running `./setup/setup-wizard.sh` or `.\setup\setup-wizard.ps1`:
 
 ```bash
 # Linux/Mac

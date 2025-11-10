@@ -1,650 +1,225 @@
-# Interactive Setup Script for Swarm Python API Template (PowerShell)
-# This script helps users configure their Docker Swarm deployment
+# Swarm Python API Template - Setup Wizard
+# Interactive setup script for Windows
+# This script uses modular components for maintainability
 
 $ErrorActionPreference = "Stop"
 
-# Get the directory where this script is located (setup/)
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-# Get the project root directory (parent of setup/)
-$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
-Set-Location $PROJECT_ROOT
+# Get the directory where this script is located
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = Split-Path -Parent $ScriptDir
+Set-Location $ProjectRoot
 
-Write-Host "🚀 Swarm Python API Template - Initial Setup" -ForegroundColor Cyan
-Write-Host "==============================================" -ForegroundColor Cyan
+# Import all modules
+Import-Module "$ScriptDir\modules\user-prompts.ps1" -Force
+Import-Module "$ScriptDir\modules\config-builder.ps1" -Force
+Import-Module "$ScriptDir\modules\network-check.ps1" -Force
+Import-Module "$ScriptDir\modules\data-dirs.ps1" -Force
+Import-Module "$ScriptDir\modules\secret-manager.ps1" -Force
+Import-Module "$ScriptDir\modules\deploy-stack.ps1" -Force
+
+# =============================================================================
+# WELCOME & SETUP CHECK
+# =============================================================================
+
+Write-Host "🚀 Swarm Python API Template - Setup Wizard" -ForegroundColor Cyan
+Write-Host "============================================"
 Write-Host ""
-Write-Host "Working directory: $PROJECT_ROOT"
+Write-Host "This wizard will guide you through the complete setup and deployment."
 Write-Host ""
 
 # Check if setup is already complete
-$SETUP_ALREADY_DONE = $false
+$SetupAlreadyDone = $false
 
 if (Test-Path ".setup-complete") {
-    $SETUP_ALREADY_DONE = $true
-    Write-Host "⚠️  Setup has already been completed (.setup-complete marker found)." -ForegroundColor Yellow
+    $SetupAlreadyDone = $true
+    Write-Host "⚠️  Setup has already been completed." -ForegroundColor Yellow
 } elseif ((Test-Path ".env") -and (Test-Path "swarm-stack.yml")) {
-    $SETUP_ALREADY_DONE = $true
-    Write-Host "⚠️  Setup appears to have been done manually (.env and swarm-stack.yml exist)." -ForegroundColor Yellow
+    $SetupAlreadyDone = $true
+    Write-Host "⚠️  Setup appears to have been done manually." -ForegroundColor Yellow
 }
 
-if ($SETUP_ALREADY_DONE) {
-    $RERUN_SETUP = Read-Host "Do you want to run setup again? This will overwrite .env and swarm-stack.yml (y/N)"
-    if ($RERUN_SETUP -notmatch "^[Yy]$") {
+if ($SetupAlreadyDone) {
+    if (-not (Get-YesNo "Run setup again? This will overwrite configuration" "N")) {
         Write-Host "Setup cancelled."
         exit 0
     }
     Write-Host ""
 }
 
-# Database Type Selection
-Write-Host "📊 Database Selection" -ForegroundColor Cyan
-Write-Host "--------------------"
-Write-Host "Choose your database type:"
-Write-Host "1) PostgreSQL (relational database)"
-Write-Host "2) Neo4j (graph database)"
+# Backup existing files
+Backup-ExistingFiles $ProjectRoot
+
+Write-Host ""
+Write-Host "Let's configure your deployment!"
 Write-Host ""
 
-$DB_CHOICE = Read-Host "Your choice (1-2) [1]"
-if ([string]::IsNullOrWhiteSpace($DB_CHOICE)) { $DB_CHOICE = "1" }
+# =============================================================================
+# CONFIGURATION PHASE - Collect User Input
+# =============================================================================
 
-switch ($DB_CHOICE) {
-    "1" {
-        $DB_TYPE = "postgresql"
-        Write-Host "✅ Selected: PostgreSQL" -ForegroundColor Green
-    }
-    "2" {
-        $DB_TYPE = "neo4j"
-        Write-Host "✅ Selected: Neo4j" -ForegroundColor Green
-    }
-    default {
-        $DB_TYPE = "postgresql"
-        Write-Host "⚠️  Invalid choice, defaulting to PostgreSQL" -ForegroundColor Yellow
-    }
+# Database Type
+$DbType = Get-DatabaseType
+Write-Host "✅ Selected: $DbType" -ForegroundColor Green
+Write-Host ""
+
+# Proxy Type
+$ProxyType = Get-ProxyType
+Write-Host "✅ Selected: $ProxyType" -ForegroundColor Green
+Write-Host ""
+
+# Database Mode
+$DbMode = Get-DatabaseMode
+Write-Host "✅ Selected: $DbMode" -ForegroundColor Green
+Write-Host ""
+
+$DeployDatabase = ($DbMode -eq "local")
+
+# Get Traefik network if needed (before building stack file)
+if ($ProxyType -eq "traefik") {
+    $TraefikNetwork = Get-TraefikNetwork
 }
 
-Write-Host ""
-
-# Proxy Selection
-Write-Host "🌐 Proxy Configuration" -ForegroundColor Cyan
-Write-Host "---------------------"
-Write-Host "Choose your proxy/ingress solution:"
-Write-Host "1) Traefik (recommended for automatic HTTPS with Let's Encrypt)"
-Write-Host "2) No proxy (direct port exposure - you manage your own proxy/load balancer)"
-Write-Host ""
-
-$PROXY_CHOICE = Read-Host "Your choice (1-2) [1]"
-if ([string]::IsNullOrWhiteSpace($PROXY_CHOICE)) { $PROXY_CHOICE = "1" }
-
-switch ($PROXY_CHOICE) {
-    "1" {
-        $PROXY_TYPE = "traefik"
-        Write-Host "✅ Selected: Traefik (automatic HTTPS)" -ForegroundColor Green
-    }
-    "2" {
-        $PROXY_TYPE = "no-proxy"
-        Write-Host "✅ Selected: No proxy (direct port exposure)" -ForegroundColor Green
-    }
-    default {
-        $PROXY_TYPE = "traefik"
-        Write-Host "⚠️  Invalid choice, defaulting to Traefik" -ForegroundColor Yellow
-    }
-}
-
-Write-Host ""
-
-# Database Mode Selection
-Write-Host "Choose database deployment mode:"
-Write-Host "1) Local database (deploy database alongside API in swarm)"
-Write-Host "2) External database (use existing database server)"
-Write-Host ""
-
-$DB_MODE_CHOICE = Read-Host "Your choice (1-2) [1]"
-if ([string]::IsNullOrWhiteSpace($DB_MODE_CHOICE)) { $DB_MODE_CHOICE = "1" }
-
-switch ($DB_MODE_CHOICE) {
-    "1" {
-        $DB_MODE = "local"
-        $DEPLOY_DATABASE = $true
-        Write-Host "✅ Selected: Local database (will deploy in swarm)" -ForegroundColor Green
-    }
-    "2" {
-        $DB_MODE = "external"
-        $DEPLOY_DATABASE = $false
-        Write-Host "✅ Selected: External database" -ForegroundColor Green
-    }
-    default {
-        $DB_MODE = "local"
-        $DEPLOY_DATABASE = $true
-        Write-Host "⚠️  Invalid choice, defaulting to local" -ForegroundColor Yellow
-    }
-}
-
-Write-Host ""
-
-# Build .env file from modular templates
+# Build configuration files
 Write-Host "⚙️  Building configuration files..." -ForegroundColor Cyan
+New-EnvFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot
+New-StackFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot
 
-# Start with base configuration
-Get-Content "setup\env-templates\.env.base.template" | Set-Content ".env"
-
-# Add database-specific configuration
-if ($DB_TYPE -eq "postgresql") {
-    if ($DB_MODE -eq "local") {
-        Get-Content "setup\env-templates\.env.postgres-local.template" | Add-Content ".env"
-        $DATABASE_MODULE = "postgres-local.yml"
-    } else {
-        Get-Content "setup\env-templates\.env.postgres-external.template" | Add-Content ".env"
-        $DATABASE_MODULE = "postgres-external.yml"
-    }
-} else {
-    if ($DB_MODE -eq "local") {
-        Get-Content "setup\env-templates\.env.neo4j-local.template" | Add-Content ".env"
-        $DATABASE_MODULE = "neo4j-local.yml"
-    } else {
-        Get-Content "setup\env-templates\.env.neo4j-external.template" | Add-Content ".env"
-        $DATABASE_MODULE = "neo4j-external.yml"
-    }
+# Replace Traefik network placeholder if using Traefik
+if ($ProxyType -eq "traefik") {
+    Update-StackNetwork -StackFile "$ProjectRoot\swarm-stack.yml" -TraefikNetwork $TraefikNetwork
 }
 
-# Add proxy-specific configuration
-if ($PROXY_TYPE -eq "traefik") {
-    Get-Content "setup\env-templates\.env.proxy-traefik.template" | Add-Content ".env"
-    $PROXY_MODULE = "proxy-traefik.yml"
-} else {
-    Get-Content "setup\env-templates\.env.proxy-none.template" | Add-Content ".env"
-    $PROXY_MODULE = "proxy-none.yml"
-}
-
-# Build swarm-stack.yml from modules with template injection
-Write-Host "Building swarm-stack.yml..."
-
-# Start with base (services: and redis)
-Get-Content "setup\compose-modules\base.yml" | Set-Content "swarm-stack.yml"
-
-# Build API service from template with snippet injection
-Get-Content "setup\compose-modules\api.template.yml" | Set-Content "swarm-stack.tmp.yml"
-
-# Inject database environment snippet
-$DB_SNIPPET = "setup\compose-modules\snippets\db-$DB_TYPE-$DB_MODE.env.yml"
-$content = Get-Content "swarm-stack.tmp.yml" -Raw
-$snippet = Get-Content $DB_SNIPPET -Raw
-$content = $content -replace '###DATABASE_ENV###', $snippet
-Set-Content "swarm-stack.tmp.yml" $content
-
-# Inject proxy network snippet (or remove placeholder)
-$content = Get-Content "swarm-stack.tmp.yml" -Raw
-if ($PROXY_TYPE -eq "traefik") {
-    $networkSnippet = Get-Content "setup\compose-modules\snippets\proxy-traefik.network.yml" -Raw
-    $content = $content -replace '###PROXY_NETWORK###', $networkSnippet
-} else {
-    $content = $content -replace '###PROXY_NETWORK###\r?\n?', ''
-}
-Set-Content "swarm-stack.tmp.yml" $content
-
-# Inject proxy ports or labels
-$content = Get-Content "swarm-stack.tmp.yml" -Raw
-if ($PROXY_TYPE -eq "traefik") {
-    $labelsSnippet = Get-Content "setup\compose-modules\snippets\proxy-traefik.labels.yml" -Raw
-    $content = $content -replace '###PROXY_LABELS###', $labelsSnippet
-    $content = $content -replace '###PROXY_PORTS###\r?\n?', ''
-} else {
-    $portsSnippet = Get-Content "setup\compose-modules\snippets\proxy-none.ports.yml" -Raw
-    $content = $content -replace '###PROXY_PORTS###', $portsSnippet
-    $content = $content -replace '###PROXY_LABELS###\r?\n?', ''
-}
-Set-Content "swarm-stack.tmp.yml" $content
-
-# Append API service to stack
-Get-Content "swarm-stack.tmp.yml" | Add-Content "swarm-stack.yml"
-Remove-Item "swarm-stack.tmp.yml" -ErrorAction SilentlyContinue
-
-# Add database service if local
-if ($DEPLOY_DATABASE) {
-    Get-Content "setup\compose-modules\$DATABASE_MODULE" | Add-Content "swarm-stack.yml"
-}
-
-# Add footer (networks and secrets)
-Get-Content "setup\compose-modules\footer.yml" | Add-Content "swarm-stack.yml"
-
-Write-Host "✅ swarm-stack.yml created" -ForegroundColor Green
 Write-Host ""
 
-# Docker Image Configuration
-Write-Host "📦 Docker Image Configuration" -ForegroundColor Cyan
-Write-Host "------------------------------"
-Write-Host "This should match the image built from your main python-api-template."
+# Collect deployment parameters
+Write-Host "📝 Deployment Configuration" -ForegroundColor Cyan
+Write-Host "==========================="
 Write-Host ""
 
-$IMAGE_VERIFIED = $false
-while (-not $IMAGE_VERIFIED) {
-    do {
-        $IMAGE_NAME = Read-Host "Enter Docker image name (e.g., sokrates1989/python-api-template)"
-        if ([string]::IsNullOrWhiteSpace($IMAGE_NAME)) {
-            Write-Host "❌ Image name cannot be empty" -ForegroundColor Red
-        }
-    } while ([string]::IsNullOrWhiteSpace($IMAGE_NAME))
+$StackName = Get-StackName
+$DataRoot = Get-DataRoot (Get-Location).Path
 
-    $IMAGE_VERSION = Read-Host "Enter Docker image version/tag [0.0.3]"
-    if ([string]::IsNullOrWhiteSpace($IMAGE_VERSION)) { $IMAGE_VERSION = "0.0.3" }
+if ($ProxyType -eq "traefik") {
+    $ApiUrl = Get-ApiDomain
+} else {
+    $PublishedPort = Get-PublishedPort
+}
 
-    Write-Host ""
-    Write-Host "🔍 Verifying Docker image: ${IMAGE_NAME}:${IMAGE_VERSION}" -ForegroundColor Cyan
+# Docker image
+$ImageInfo = Get-DockerImage
+if ($null -eq $ImageInfo) {
+    Write-Host "Setup cancelled."
+    exit 1
+}
+$ImageName = $ImageInfo.Name
+$ImageVersion = $ImageInfo.Version
+
+# Debug mode
+Write-Host ""
+$EnableDebug = Read-Host "Enable debug mode? (y/N)"
+if ($EnableDebug -match '^[Yy]$') {
+    $DebugMode = "true"
+    Write-Host "✅ Debug mode enabled" -ForegroundColor Green
+} else {
+    $DebugMode = "false"
+    Write-Host "✅ Debug mode disabled" -ForegroundColor Green
+}
+
+# Update .env with collected values
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "STACK_NAME" -Value $StackName
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "DATA_ROOT" -Value $DataRoot
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "IMAGE_NAME" -Value $ImageName
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "IMAGE_VERSION" -Value $ImageVersion
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "DEBUG" -Value $DebugMode
+
+if ($ProxyType -eq "traefik") {
+    Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "TRAEFIK_NETWORK" -Value $TraefikNetwork
+    Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "API_URL" -Value $ApiUrl
+} else {
+    Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "PUBLISHED_PORT" -Value $PublishedPort
+}
+
+# Replicas
+Write-Host ""
+$ApiReplicas = Get-Replicas -ServiceName "API" -DefaultCount 1
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "API_REPLICAS" -Value $ApiReplicas
+
+if ($DbMode -eq "local") {
+    $DbReplicas = Get-Replicas -ServiceName "Database" -DefaultCount 1
     
-    try {
-        $pullResult = docker pull "${IMAGE_NAME}:${IMAGE_VERSION}" 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Image successfully pulled and verified" -ForegroundColor Green
-            $IMAGE_VERIFIED = $true
-        } else {
-            throw "Pull failed"
-        }
-    } catch {
-        Write-Host "❌ Could not pull image ${IMAGE_NAME}:${IMAGE_VERSION}" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "This might be because:"
-        Write-Host "  1) The image doesn't exist yet (you need to build and push it)"
-        Write-Host "  2) You're not logged in to the registry"
-        Write-Host "  3) The image name or version is incorrect"
-        Write-Host ""
-        Write-Host "What would you like to do?"
-        Write-Host "1) Login to Docker registry"
-        Write-Host "2) Re-enter image name/version"
-        Write-Host "3) Skip verification and continue anyway"
-        Write-Host "4) Cancel setup"
-        Write-Host ""
-        $IMAGE_CHOICE = Read-Host "Your choice (1-4)"
-        
-        switch ($IMAGE_CHOICE) {
-            "1" {
-                Write-Host ""
-                Write-Host "🔐 Docker Registry Login" -ForegroundColor Cyan
-                Write-Host "----------------------"
-                Write-Host "For Docker Hub: docker login"
-                Write-Host "For other registries: docker login <registry-url>"
-                Write-Host ""
-                $REGISTRY_URL = Read-Host "Enter registry URL (press Enter for Docker Hub)"
-                if ([string]::IsNullOrWhiteSpace($REGISTRY_URL)) {
-                    docker login
-                } else {
-                    docker login $REGISTRY_URL
-                }
-                Write-Host ""
-                Write-Host "Retrying image pull..." -ForegroundColor Cyan
-            }
-            "2" {
-                Write-Host ""
-                Write-Host "Re-entering image details..." -ForegroundColor Cyan
-                Write-Host ""
-            }
-            "3" {
-                Write-Host ""
-                Write-Host "⚠️  Skipping image verification" -ForegroundColor Yellow
-                $IMAGE_VERIFIED = $true
-            }
-            "4" {
-                Write-Host "Setup cancelled."
-                exit 1
-            }
-            default {
-                Write-Host "Invalid choice, please try again." -ForegroundColor Yellow
-                Write-Host ""
-            }
-        }
+    if ($DbType -eq "postgresql") {
+        Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "POSTGRES_REPLICAS" -Value $DbReplicas
+    } elseif ($DbType -eq "neo4j") {
+        Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "NEO4J_REPLICAS" -Value $DbReplicas
     }
 }
 
-(Get-Content ".env") -replace "^IMAGE_NAME=.*", "IMAGE_NAME=$IMAGE_NAME" | Set-Content ".env"
-(Get-Content ".env") -replace "^IMAGE_VERSION=.*", "IMAGE_VERSION=$IMAGE_VERSION" | Set-Content ".env"
+$RedisReplicas = Get-Replicas -ServiceName "Redis" -DefaultCount 1
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "REDIS_REPLICAS" -Value $RedisReplicas
 
-Write-Host "✅ Image configured: ${IMAGE_NAME}:${IMAGE_VERSION}" -ForegroundColor Green
+# Auto-generate secret names from stack name
 Write-Host ""
+$StackNameUpper = $StackName.ToUpper() -replace '[^A-Z0-9]', '_'
+$DbPasswordSecret = "${StackNameUpper}_DB_PASSWORD"
+$AdminApiKeySecret = "${StackNameUpper}_ADMIN_API_KEY"
 
-# Domain/Port Configuration
-if ($PROXY_TYPE -eq "traefik") {
-    Write-Host "🌐 Domain Configuration" -ForegroundColor Cyan
-    Write-Host "----------------------"
-    Write-Host "Enter the domain where your API will be accessible."
-    Write-Host ""
-    Write-Host "⚠️  IMPORTANT: Make sure your domain/subdomain is already created and" -ForegroundColor Yellow
-    Write-Host "   points to your swarm manager's IP address before deploying."
-    Write-Host ""
-    
-    do {
-        $API_URL = Read-Host "API domain (e.g., api.example.com)"
-        if ([string]::IsNullOrWhiteSpace($API_URL)) {
-            Write-Host "❌ Domain cannot be empty" -ForegroundColor Red
-        }
-    } while ([string]::IsNullOrWhiteSpace($API_URL))
-    
-    (Get-Content ".env") -replace "^API_URL=.*", "API_URL=$API_URL" | Set-Content ".env"
-    Write-Host "✅ API will be accessible at: https://${API_URL}" -ForegroundColor Green
-    Write-Host ""
-} else {
-    Write-Host "🔌 Port Configuration" -ForegroundColor Cyan
-    Write-Host "--------------------"
-    Write-Host "Configure the port where your API will be accessible."
-    Write-Host ""
-    
-    $PUBLISHED_PORT = Read-Host "Published port on host [8000]"
-    if ([string]::IsNullOrWhiteSpace($PUBLISHED_PORT)) { $PUBLISHED_PORT = "8000" }
-    
-    (Get-Content ".env") -replace "^PUBLISHED_PORT=.*", "PUBLISHED_PORT=$PUBLISHED_PORT" | Set-Content ".env"
-    Write-Host "✅ API will be accessible at: http://<your-server-ip>:${PUBLISHED_PORT}" -ForegroundColor Green
-    Write-Host ""
-}
+Write-Host "Secret names (auto-generated):"
+Write-Host "  Database password: $DbPasswordSecret"
+Write-Host "  Admin API key: $AdminApiKeySecret"
 
-# Data Root Configuration
-Write-Host "💾 Data Storage Configuration" -ForegroundColor Cyan
-Write-Host "----------------------------"
-Write-Host "Enter the path where persistent data will be stored."
-Write-Host "For multi-node swarms, use a shared filesystem like GlusterFS."
+Update-StackSecrets -StackFile "$ProjectRoot\swarm-stack.yml" -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret
+
 Write-Host ""
-
-# Use project root as default data root
-$DEFAULT_DATA_ROOT = "$PROJECT_ROOT"
-
-$DATA_ROOT = Read-Host "Data root path [$DEFAULT_DATA_ROOT]"
-if ([string]::IsNullOrWhiteSpace($DATA_ROOT)) { $DATA_ROOT = $DEFAULT_DATA_ROOT }
-
-(Get-Content ".env") -replace "^DATA_ROOT=.*", "DATA_ROOT=$DATA_ROOT" | Set-Content ".env"
-Write-Host "✅ Data will be stored at: $DATA_ROOT" -ForegroundColor Green
-Write-Host ""
-
-# Stack Name Configuration
-Write-Host "🏷️  Stack Name Configuration" -ForegroundColor Cyan
-Write-Host "---------------------------"
-Write-Host "Choose a unique name for your Docker Swarm stack."
-Write-Host ""
-
-$DEFAULT_STACK_NAME = "api_production"
-$STACK_NAME = Read-Host "Stack name [$DEFAULT_STACK_NAME]"
-if ([string]::IsNullOrWhiteSpace($STACK_NAME)) { $STACK_NAME = $DEFAULT_STACK_NAME }
-
-(Get-Content ".env") -replace "^STACK_NAME=.*", "STACK_NAME=$STACK_NAME" | Set-Content ".env"
-Write-Host "✅ Stack name: $STACK_NAME" -ForegroundColor Green
-Write-Host ""
-
-# Database Credentials
-if ($DEPLOY_DATABASE) {
-    Write-Host "🔐 Database Credentials (Local Database)" -ForegroundColor Cyan
-    Write-Host "---------------------------------------"
-    Write-Host "These will be used to create Docker secrets."
-    Write-Host ""
-    
-    if ($DB_TYPE -eq "postgresql") {
-        $DB_NAME = Read-Host "Database name [apidb]"
-        if ([string]::IsNullOrWhiteSpace($DB_NAME)) { $DB_NAME = "apidb" }
-        
-        $DB_USER = Read-Host "Database user [apiuser]"
-        if ([string]::IsNullOrWhiteSpace($DB_USER)) { $DB_USER = "apiuser" }
-        
-        $DB_PORT = Read-Host "Database port [5432]"
-        if ([string]::IsNullOrWhiteSpace($DB_PORT)) { $DB_PORT = "5432" }
-        
-        (Get-Content ".env") -replace "^DB_NAME=.*", "DB_NAME=$DB_NAME" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_USER=.*", "DB_USER=$DB_USER" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_PORT=.*", "DB_PORT=$DB_PORT" | Set-Content ".env"
-        
-        Write-Host "✅ PostgreSQL configured" -ForegroundColor Green
-    } elseif ($DB_TYPE -eq "neo4j") {
-        $DB_USER = Read-Host "Database user [neo4j]"
-        if ([string]::IsNullOrWhiteSpace($DB_USER)) { $DB_USER = "neo4j" }
-        
-        (Get-Content ".env") -replace "^DB_USER=.*", "DB_USER=$DB_USER" | Set-Content ".env"
-        
-        Write-Host "✅ Neo4j configured" -ForegroundColor Green
-    }
-    
-    Write-Host ""
-    Write-Host "⚠️  IMPORTANT: You'll need to create Docker secrets for:" -ForegroundColor Yellow
-    Write-Host "   - Database password"
-    Write-Host "   - Admin API key"
-    Write-Host ""
-} else {
-    Write-Host "🔐 External Database Configuration" -ForegroundColor Cyan
-    Write-Host "---------------------------------"
-    Write-Host "Configure connection to your existing database."
-    Write-Host ""
-    
-    if ($DB_TYPE -eq "postgresql") {
-        do {
-            $DB_HOST = Read-Host "Database host"
-            if ([string]::IsNullOrWhiteSpace($DB_HOST)) {
-                Write-Host "❌ Database host cannot be empty" -ForegroundColor Red
-            }
-        } while ([string]::IsNullOrWhiteSpace($DB_HOST))
-        
-        $DB_PORT = Read-Host "Database port [5432]"
-        if ([string]::IsNullOrWhiteSpace($DB_PORT)) { $DB_PORT = "5432" }
-        
-        $DB_NAME = Read-Host "Database name [apidb]"
-        if ([string]::IsNullOrWhiteSpace($DB_NAME)) { $DB_NAME = "apidb" }
-        
-        $DB_USER = Read-Host "Database user [apiuser]"
-        if ([string]::IsNullOrWhiteSpace($DB_USER)) { $DB_USER = "apiuser" }
-        
-        $DB_PASSWORD = Read-Host "Database password" -AsSecureString
-        $DB_PASSWORD_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DB_PASSWORD))
-        
-        (Get-Content ".env") -replace "^DB_HOST=.*", "DB_HOST=$DB_HOST" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_PORT=.*", "DB_PORT=$DB_PORT" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_NAME=.*", "DB_NAME=$DB_NAME" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_USER=.*", "DB_USER=$DB_USER" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_PASSWORD=.*", "DB_PASSWORD=$DB_PASSWORD_PLAIN" | Set-Content ".env"
-        
-        Write-Host "✅ PostgreSQL external connection configured" -ForegroundColor Green
-    } elseif ($DB_TYPE -eq "neo4j") {
-        do {
-            $NEO4J_URL = Read-Host "Neo4j URL (e.g., bolt://host``:7687)"
-            if ([string]::IsNullOrWhiteSpace($NEO4J_URL)) {
-                Write-Host "❌ Neo4j URL cannot be empty" -ForegroundColor Red
-            }
-        } while ([string]::IsNullOrWhiteSpace($NEO4J_URL))
-        
-        $DB_USER = Read-Host "Database user [neo4j]"
-        if ([string]::IsNullOrWhiteSpace($DB_USER)) { $DB_USER = "neo4j" }
-        
-        $DB_PASSWORD = Read-Host "Database password" -AsSecureString
-        $DB_PASSWORD_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DB_PASSWORD))
-        
-        (Get-Content ".env") -replace "^NEO4J_URL=.*", "NEO4J_URL=$NEO4J_URL" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_USER=.*", "DB_USER=$DB_USER" | Set-Content ".env"
-        (Get-Content ".env") -replace "^DB_PASSWORD=.*", "DB_PASSWORD=$DB_PASSWORD_PLAIN" | Set-Content ".env"
-        
-        Write-Host "✅ Neo4j external connection configured" -ForegroundColor Green
-    }
-    
-    Write-Host ""
-    Write-Host "⚠️  IMPORTANT: You'll still need to create Docker secret for:" -ForegroundColor Yellow
-    Write-Host "   - Admin API key"
-    Write-Host ""
-}
-
-# Replicas Configuration
-Write-Host "📊 Replica Configuration" -ForegroundColor Cyan
-Write-Host "-----------------------"
-Write-Host "Configure the number of replicas for each service."
-Write-Host ""
-
-$API_REPLICAS = Read-Host "API replicas [1]"
-if ([string]::IsNullOrWhiteSpace($API_REPLICAS)) { $API_REPLICAS = "1" }
-(Get-Content ".env") -replace "^API_REPLICAS=.*", "API_REPLICAS=$API_REPLICAS" | Set-Content ".env"
-
-if ($DEPLOY_DATABASE) {
-    if ($DB_TYPE -eq "postgresql") {
-        $DB_REPLICAS = Read-Host "PostgreSQL replicas [1]"
-        if ([string]::IsNullOrWhiteSpace($DB_REPLICAS)) { $DB_REPLICAS = "1" }
-        (Get-Content ".env") -replace "^POSTGRES_REPLICAS=.*", "POSTGRES_REPLICAS=$DB_REPLICAS" | Set-Content ".env"
-    } elseif ($DB_TYPE -eq "neo4j") {
-        $DB_REPLICAS = Read-Host "Neo4j replicas [1]"
-        if ([string]::IsNullOrWhiteSpace($DB_REPLICAS)) { $DB_REPLICAS = "1" }
-        (Get-Content ".env") -replace "^NEO4J_REPLICAS=.*", "NEO4J_REPLICAS=$DB_REPLICAS" | Set-Content ".env"
-    }
-}
-
-$REDIS_REPLICAS = Read-Host "Redis replicas [1]"
-if ([string]::IsNullOrWhiteSpace($REDIS_REPLICAS)) { $REDIS_REPLICAS = "1" }
-(Get-Content ".env") -replace "^REDIS_REPLICAS=.*", "REDIS_REPLICAS=$REDIS_REPLICAS" | Set-Content ".env"
-
-Write-Host "✅ Replicas configured" -ForegroundColor Green
-Write-Host ""
-
-# Secret Names Configuration
-Write-Host "🔑 Docker Secrets Configuration" -ForegroundColor Cyan
-Write-Host "------------------------------"
-Write-Host "Enter names for Docker secrets (you'll create these manually)."
-Write-Host ""
-
-# Convert stack name to uppercase and replace non-alphanumeric chars with underscore
-$STACK_NAME_UPPER = $STACK_NAME.ToUpper() -replace '[^A-Z0-9]', '_'
-
-$DB_PASSWORD_SECRET = Read-Host "Database password secret name [${STACK_NAME_UPPER}_DB_PASSWORD]"
-if ([string]::IsNullOrWhiteSpace($DB_PASSWORD_SECRET)) { $DB_PASSWORD_SECRET = "${STACK_NAME_UPPER}_DB_PASSWORD" }
-
-$ADMIN_API_KEY_SECRET = Read-Host "Admin API key secret name [${STACK_NAME_UPPER}_ADMIN_API_KEY]"
-if ([string]::IsNullOrWhiteSpace($ADMIN_API_KEY_SECRET)) { $ADMIN_API_KEY_SECRET = "${STACK_NAME_UPPER}_ADMIN_API_KEY" }
-
-# Replace secret placeholders in swarm-stack.yml
-(Get-Content "swarm-stack.yml") -replace "XXX_CHANGE_ME_DB_PASSWORD_XXX", $DB_PASSWORD_SECRET | Set-Content "swarm-stack.yml"
-(Get-Content "swarm-stack.yml") -replace "XXX_CHANGE_ME_ADMIN_API_KEY_XXX", $ADMIN_API_KEY_SECRET | Set-Content "swarm-stack.yml"
-
-Write-Host "✅ Secret names configured" -ForegroundColor Green
+Write-Host "✅ Configuration complete" -ForegroundColor Green
 Write-Host ""
 
 # Mark setup as complete
-"" | Set-Content ".setup-complete"
-Write-Host "✅ Setup complete! Configuration saved." -ForegroundColor Green
-Write-Host ""
+New-Item -ItemType File -Path ".setup-complete" -Force | Out-Null
 
 # =============================================================================
-# CREATE DOCKER SECRETS
+# SECRET CREATION
 # =============================================================================
-Write-Host "🔑 Create Docker Secrets" -ForegroundColor Cyan
-Write-Host "=======================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Let's create the required Docker secrets now."
-Write-Host ""
 
-$CREATE_SECRETS = Read-Host "Create secrets now? (Y/n)"
-if ($CREATE_SECRETS -ne "n" -and $CREATE_SECRETS -ne "N") {
-    Write-Host ""
-    Write-Host "Creating Database Password Secret..." -ForegroundColor Cyan
-    Write-Host "-----------------------------------"
-    Write-Host "Opening Notepad for database password..."
-    Write-Host "Please enter the password, save, and close Notepad."
-    Write-Host ""
-    Write-Host "Press any key to enter secret for $DB_PASSWORD_SECRET..." -ForegroundColor Yellow
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    Write-Host ""
-    
-    # Create empty file and open in notepad
-    "" | Set-Content "secret.txt" -NoNewline
-    notepad secret.txt | Out-Null
-    
-    try {
-        docker secret create $DB_PASSWORD_SECRET secret.txt 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Secret $DB_PASSWORD_SECRET created successfully" -ForegroundColor Green
-        } else {
-            Write-Host "⚠️  Secret $DB_PASSWORD_SECRET may already exist" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "⚠️  Secret $DB_PASSWORD_SECRET may already exist" -ForegroundColor Yellow
-    }
-    Remove-Item "secret.txt" -ErrorAction SilentlyContinue
-    Write-Host ""
-    
-    Write-Host "Creating Admin API Key Secret..." -ForegroundColor Cyan
-    Write-Host "--------------------------------"
-    Write-Host "Opening Notepad for admin API key..."
-    Write-Host "Please enter the API key, save, and close Notepad."
-    Write-Host ""
-    Write-Host "Press any key to enter secret for $ADMIN_API_KEY_SECRET..." -ForegroundColor Yellow
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    Write-Host ""
-    
-    # Create empty file and open in notepad
-    "" | Set-Content "secret.txt" -NoNewline
-    notepad secret.txt | Out-Null
-    
-    try {
-        docker secret create $ADMIN_API_KEY_SECRET secret.txt 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Secret $ADMIN_API_KEY_SECRET created successfully" -ForegroundColor Green
-        } else {
-            Write-Host "⚠️  Secret $ADMIN_API_KEY_SECRET may already exist" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "⚠️  Secret $ADMIN_API_KEY_SECRET may already exist" -ForegroundColor Yellow
-    }
-    Remove-Item "secret.txt" -ErrorAction SilentlyContinue
-    Write-Host ""
-    
-    Write-Host "✅ Secrets created!" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "List secrets with: docker secret ls"
-    Write-Host ""
+$secretsCreated = New-DockerSecrets -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret
+
+# =============================================================================
+# DEPLOYMENT PHASE
+# =============================================================================
+
+# Network verification
+if (-not (Network-Verify -ApiUrl $ApiUrl -ProxyType $ProxyType)) {
+    Write-Host "❌ Network verification failed" -ForegroundColor Red
+    exit 1
+}
+
+# Create data directories
+if (-not (New-DataDirectories -DataRoot $DataRoot -DbType $DbType)) {
+    Write-Host "❌ Failed to create data directories" -ForegroundColor Red
+    exit 1
+}
+
+# Deploy stack
+if (-not (Invoke-StackDeploy -StackName $StackName -StackFile "swarm-stack.yml")) {
+    Write-Host "❌ Deployment failed" -ForegroundColor Red
+    exit 1
+}
+
+# Health check
+Test-DeploymentHealth -StackName $StackName -DbType $DbType -ProxyType $ProxyType -ApiUrl $ApiUrl
+
+Write-Host ""
+Write-Host "🎉 Setup and deployment complete!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Configuration files created:"
+Write-Host "  - .env"
+Write-Host "  - swarm-stack.yml"
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "  - Monitor services: docker stack services $StackName"
+Write-Host "  - View logs: docker service logs ${StackName}_api"
+if ($ProxyType -eq "traefik") {
+    Write-Host "  - Access API: https://${ApiUrl}"
 } else {
-    Write-Host ""
-    Write-Host "⚠️  Skipped secret creation. You can create them manually:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "   # Database password secret"
-    Write-Host "   notepad secret.txt  # Insert password (avoid backslashes) and save"
-    Write-Host "   docker secret create $DB_PASSWORD_SECRET secret.txt"
-    Write-Host "   del secret.txt"
-    Write-Host ""
-    Write-Host "   # Admin API key secret"
-    Write-Host "   notepad secret.txt  # Insert API key (avoid backslashes) and save"
-    Write-Host "   docker secret create $ADMIN_API_KEY_SECRET secret.txt"
-    Write-Host "   del secret.txt"
-    Write-Host ""
+    Write-Host "  - Access API: http://localhost:${PublishedPort}"
 }
-
-# =============================================================================
-# NEXT STEPS
-# =============================================================================
-Write-Host "🎉 Next Steps:" -ForegroundColor Cyan
-Write-Host "=============="
-Write-Host ""
-
-if ($PROXY_TYPE -eq "traefik") {
-    Write-Host "1. Ensure your domain points to the swarm manager:"
-    Write-Host "   - Domain: $API_URL"
-    Write-Host "   - Should resolve to your swarm manager's IP"
-    Write-Host "   - Test with: nslookup $API_URL"
-    Write-Host "   - If not set up yet, see README.md (Domain Setup section)"
-    Write-Host ""
-} else {
-    Write-Host "1. Ensure port $PUBLISHED_PORT is accessible:"
-    Write-Host "   - Port $PUBLISHED_PORT should be open in your firewall"
-    Write-Host "   - API will be accessible at: http://<your-server-ip>:$PUBLISHED_PORT"
-    Write-Host ""
-}
-
-Write-Host "2. Create data directories:"
-Write-Host "   mkdir -p $DATA_ROOT"
-if ($DB_TYPE -eq "postgresql") {
-    Write-Host "   mkdir -p $DATA_ROOT/postgres_data"
-} elseif ($DB_TYPE -eq "neo4j") {
-    Write-Host "   mkdir -p $DATA_ROOT/neo4j_data"
-    Write-Host "   mkdir -p $DATA_ROOT/neo4j_logs"
-}
-Write-Host "   mkdir -p $DATA_ROOT/redis_data"
-Write-Host ""
-
-Write-Host "3. Deploy to swarm:"
-Write-Host "   # First generate the merged config:"
-Write-Host "   docker-compose -f swarm-stack.yml config > merged-stack.yml"
-Write-Host ""
-Write-Host "   # Then deploy:"
-Write-Host "   docker stack deploy -c merged-stack.yml $STACK_NAME"
-Write-Host ""
-Write-Host "   # Or as one-liner (Linux/WSL):"
-Write-Host "   docker stack deploy -c <(docker-compose -f swarm-stack.yml config) $STACK_NAME"
-Write-Host ""
-
-Write-Host "4. Check deployment status:"
-Write-Host "   docker stack services $STACK_NAME"
-Write-Host ""
-
-Write-Host "For more information, see README.md" -ForegroundColor Cyan
 Write-Host ""
