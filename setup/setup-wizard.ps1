@@ -67,6 +67,15 @@ $ProxyType = Get-ProxyType
 Write-Host "✅ Selected: $ProxyType" -ForegroundColor Green
 Write-Host ""
 
+# SSL Mode (only for Traefik)
+if ($ProxyType -eq "traefik") {
+    $SslMode = Get-SslMode
+    Write-Host "✅ Selected: $SslMode SSL" -ForegroundColor Green
+    Write-Host ""
+} else {
+    $SslMode = "direct"  # Default for non-Traefik
+}
+
 # Database Mode
 $DbMode = Get-DatabaseMode
 Write-Host "✅ Selected: $DbMode" -ForegroundColor Green
@@ -82,7 +91,7 @@ if ($ProxyType -eq "traefik") {
 # Build configuration files
 Write-Host "⚙️  Building configuration files..." -ForegroundColor Cyan
 New-EnvFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot
-New-StackFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot
+New-StackFile -DbType $DbType -DbMode $DbMode -ProxyType $ProxyType -ProjectRoot $ProjectRoot -SslMode $SslMode
 
 # Replace Traefik network placeholder if using Traefik
 if ($ProxyType -eq "traefik") {

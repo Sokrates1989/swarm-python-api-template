@@ -69,6 +69,15 @@ PROXY_TYPE=$(prompt_proxy_type)
 echo "✅ Selected: $PROXY_TYPE"
 echo ""
 
+# SSL Mode (only for Traefik)
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    SSL_MODE=$(prompt_ssl_mode)
+    echo "✅ Selected: $SSL_MODE SSL"
+    echo ""
+else
+    SSL_MODE="direct"  # Default for non-Traefik
+fi
+
 # Database Mode
 DB_MODE=$(prompt_database_mode)
 echo "✅ Selected: $DB_MODE"
@@ -88,7 +97,7 @@ fi
 # Build configuration files
 echo "⚙️  Building configuration files..."
 build_env_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT"
-build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT"
+build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
 
 # Replace Traefik network placeholder if using Traefik
 if [ "$PROXY_TYPE" = "traefik" ]; then

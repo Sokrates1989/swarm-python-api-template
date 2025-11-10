@@ -33,6 +33,25 @@ function Get-ProxyType {
     }
 }
 
+function Get-SslMode {
+    Write-Host "🔒 SSL/TLS Configuration" -ForegroundColor Cyan
+    Write-Host "-----------------------"
+    Write-Host "1) Direct SSL (Traefik handles SSL with Let's Encrypt)"
+    Write-Host "2) Proxy SSL (SSL terminated at upstream proxy, e.g., Cloudflare)"
+    Write-Host ""
+    Write-Host "Choose option 1 if Traefik directly faces the internet."
+    Write-Host "Choose option 2 if there's another proxy/CDN in front of Traefik."
+    Write-Host ""
+    $SslChoice = Read-Host "Your choice (1-2) [1]"
+    if ([string]::IsNullOrWhiteSpace($SslChoice)) { $SslChoice = "1" }
+    
+    switch ($SslChoice) {
+        "1" { return "direct" }
+        "2" { return "proxy" }
+        default { return "direct" }
+    }
+}
+
 function Get-DatabaseMode {
     Write-Host "📍 Database Mode" -ForegroundColor Cyan
     Write-Host "---------------"

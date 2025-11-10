@@ -43,6 +43,7 @@ build_stack_file() {
     local db_mode="$2"
     local proxy_type="$3"
     local project_root="$4"
+    local ssl_mode="${5:-direct}"  # Default to direct SSL if not specified
     
     echo "⚙️  Building swarm-stack.yml..."
     
@@ -77,8 +78,8 @@ build_stack_file() {
     
     # Inject proxy configuration snippet
     if [ "$proxy_type" = "traefik" ]; then
-        # Inject Traefik labels at ###PROXY_LABELS###
-        local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik.labels.yml"
+        # Inject Traefik labels at ###PROXY_LABELS### based on SSL mode
+        local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik-${ssl_mode}-ssl.labels.yml"
         if [ -f "$proxy_labels_snippet" ]; then
             sed -i "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_api"
         fi

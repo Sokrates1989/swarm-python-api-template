@@ -34,6 +34,25 @@ prompt_proxy_type() {
     esac
 }
 
+prompt_ssl_mode() {
+    echo "🔒 SSL/TLS Configuration" >&2
+    echo "-----------------------" >&2
+    echo "1) Direct SSL (Traefik handles SSL with Let's Encrypt)" >&2
+    echo "2) Proxy SSL (SSL terminated at upstream proxy, e.g., Cloudflare)" >&2
+    echo "" >&2
+    echo "Choose option 1 if Traefik directly faces the internet." >&2
+    echo "Choose option 2 if there's another proxy/CDN in front of Traefik." >&2
+    echo "" >&2
+    read -p "Your choice (1-2) [1]: " SSL_CHOICE
+    SSL_CHOICE="${SSL_CHOICE:-1}"
+    
+    case $SSL_CHOICE in
+        1) echo "direct" ;;
+        2) echo "proxy" ;;
+        *) echo "direct" ;;
+    esac
+}
+
 prompt_database_mode() {
     echo "📍 Database Mode" >&2
     echo "---------------" >&2

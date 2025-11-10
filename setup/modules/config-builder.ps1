@@ -47,7 +47,8 @@ function New-StackFile {
         [string]$DbType,
         [string]$DbMode,
         [string]$ProxyType,
-        [string]$ProjectRoot
+        [string]$ProjectRoot,
+        [string]$SslMode = "direct"  # Default to direct SSL if not specified
     )
     
     Write-Host "⚙️  Building swarm-stack.yml..."
@@ -91,8 +92,8 @@ function New-StackFile {
     
     # Inject proxy configuration snippet
     if ($ProxyType -eq "traefik") {
-        # Inject Traefik labels at ###PROXY_LABELS###
-        $proxyLabelsSnippet = "$ProjectRoot\setup\compose-modules\snippets\proxy-traefik.labels.yml"
+        # Inject Traefik labels at ###PROXY_LABELS### based on SSL mode
+        $proxyLabelsSnippet = "$ProjectRoot\setup\compose-modules\snippets\proxy-traefik-${SslMode}-ssl.labels.yml"
         if (Test-Path $proxyLabelsSnippet) {
             $proxyLabelsContent = Get-Content $proxyLabelsSnippet -Raw
             $apiContent = $apiContent -replace '###PROXY_LABELS###', $proxyLabelsContent
