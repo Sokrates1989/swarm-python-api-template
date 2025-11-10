@@ -1,0 +1,113 @@
+# Base configuration for all deployments
+# This file contains common settings
+# NOTE: Only contains 'services:' section. Networks and secrets are in footer.yml
+services:
+  redis:
+    image: redis:7-alpine
+    networks:
+      - backend
+    deploy:
+      mode: replicated
+      replicas: ${REDIS_REPLICAS}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+# API service template
+# Placeholders will be replaced during build
+  api:
+    image: ${IMAGE_NAME}:${IMAGE_VERSION}
+    networks:
+      - backend
+      - XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX
+    secrets:
+      - "XXX_CHANGE_ME_DB_PASSWORD_XXX"
+      - "XXX_CHANGE_ME_ADMIN_API_KEY_XXX"
+    environment:
+      PYTHON_VERSION: ${PYTHON_VERSION}
+      IMAGE_TAG: ${IMAGE_VERSION}
+      REDIS_URL: ${REDIS_URL}
+      PORT: ${PORT}
+      DEBUG: ${DEBUG}
+      ADMIN_API_KEY_FILE: /run/secrets/XXX_CHANGE_ME_ADMIN_API_KEY_XXX
+      DB_TYPE: ${DB_TYPE}
+      DB_MODE: local
+      DB_HOST: ${STACK_NAME}_postgres
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PORT: ${DB_PORT}
+      DB_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX
+    deploy:
+      mode: replicated
+      replicas: ${API_REPLICAS}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=traefik-public
+        - traefik.docker.network=${TRAEFIK_NETWORK}
+        - traefik.http.routers.${STACK_NAME}_api.service=${STACK_NAME}_api
+        - traefik.http.services.${STACK_NAME}_api.loadbalancer.server.port=${PORT}
+        - traefik.http.routers.${STACK_NAME}_api.rule=Host(`${API_URL}`)
+        - traefik.http.routers.${STACK_NAME}_api.entrypoints=https,http,web
+        - traefik.http.routers.${STACK_NAME}_api.tls=true
+        - traefik.http.routers.${STACK_NAME}_api.tls.certresolver=le
+        - "autoscale=true"
+        - "autoscale.minimum_replicas=1"
+        - "autoscale.maximum_replicas=5"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health').read()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+# PostgreSQL local database deployment
+# Use this when deploying PostgreSQL in the swarm
+# NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
+  postgres:
+    image: postgres:16-alpine
+    volumes:
+      - ${DATA_ROOT}/postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    secrets:
+      - "XXX_CHANGE_ME_DB_PASSWORD_XXX"
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX
+    deploy:
+      mode: replicated
+      replicas: ${POSTGRES_REPLICAS}
+      placement:
+        constraints:
+          - node.role == manager
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+
+# Footer configuration
+# This file closes the services section and adds networks and secrets
+# Always concatenated last
+networks:
+  backend:
+    driver: overlay
+  XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX:
+    external: true
+
+secrets:
+  "XXX_CHANGE_ME_DB_PASSWORD_XXX":
+    external: true
+  "XXX_CHANGE_ME_ADMIN_API_KEY_XXX":
+    external: true
