@@ -120,11 +120,23 @@ fi
 IMAGE_NAME=$(echo "$IMAGE_INFO" | cut -d':' -f1)
 IMAGE_VERSION=$(echo "$IMAGE_INFO" | cut -d':' -f2)
 
+# Debug mode
+echo ""
+read -p "Enable debug mode? (y/N): " ENABLE_DEBUG
+if [[ "$ENABLE_DEBUG" =~ ^[Yy]$ ]]; then
+    DEBUG_MODE="true"
+    echo "✅ Debug mode enabled"
+else
+    DEBUG_MODE="false"
+    echo "✅ Debug mode disabled"
+fi
+
 # Update .env with collected values
 update_env_values "$PROJECT_ROOT/.env" "STACK_NAME" "$STACK_NAME"
 update_env_values "$PROJECT_ROOT/.env" "DATA_ROOT" "$DATA_ROOT"
 update_env_values "$PROJECT_ROOT/.env" "IMAGE_NAME" "$IMAGE_NAME"
 update_env_values "$PROJECT_ROOT/.env" "IMAGE_VERSION" "$IMAGE_VERSION"
+update_env_values "$PROJECT_ROOT/.env" "DEBUG" "$DEBUG_MODE"
 
 if [ "$PROXY_TYPE" = "traefik" ]; then
     update_env_values "$PROJECT_ROOT/.env" "TRAEFIK_NETWORK" "$TRAEFIK_NETWORK"

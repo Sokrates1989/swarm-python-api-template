@@ -114,11 +114,23 @@ if ($null -eq $ImageInfo) {
 $ImageName = $ImageInfo.Name
 $ImageVersion = $ImageInfo.Version
 
+# Debug mode
+Write-Host ""
+$EnableDebug = Read-Host "Enable debug mode? (y/N)"
+if ($EnableDebug -match '^[Yy]$') {
+    $DebugMode = "true"
+    Write-Host "✅ Debug mode enabled" -ForegroundColor Green
+} else {
+    $DebugMode = "false"
+    Write-Host "✅ Debug mode disabled" -ForegroundColor Green
+}
+
 # Update .env with collected values
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "STACK_NAME" -Value $StackName
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "DATA_ROOT" -Value $DataRoot
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "IMAGE_NAME" -Value $ImageName
 Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "IMAGE_VERSION" -Value $ImageVersion
+Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "DEBUG" -Value $DebugMode
 
 if ($ProxyType -eq "traefik") {
     Update-EnvValue -EnvFile "$ProjectRoot\.env" -Key "TRAEFIK_NETWORK" -Value $TraefikNetwork
