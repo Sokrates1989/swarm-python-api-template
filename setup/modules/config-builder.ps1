@@ -91,21 +91,27 @@ function New-StackFile {
     
     # Inject proxy configuration snippet
     if ($ProxyType -eq "traefik") {
+        # Inject Traefik labels at ###PROXY_LABELS###
         $proxyLabelsSnippet = "$ProjectRoot\setup\compose-modules\snippets\proxy-traefik.labels.yml"
         if (Test-Path $proxyLabelsSnippet) {
             $proxyLabelsContent = Get-Content $proxyLabelsSnippet -Raw
-            $apiContent = $apiContent -replace '###PROXY_CONFIG###', $proxyLabelsContent
+            $apiContent = $apiContent -replace '###PROXY_LABELS###', $proxyLabelsContent
         } else {
-            $apiContent = $apiContent -replace '###PROXY_CONFIG###', ''
+            $apiContent = $apiContent -replace '###PROXY_LABELS###', ''
         }
+        # Remove ###PROXY_PORTS### placeholder (not used for Traefik)
+        $apiContent = $apiContent -replace '###PROXY_PORTS###', ''
     } else {
+        # Inject ports at ###PROXY_PORTS###
         $proxyPortsSnippet = "$ProjectRoot\setup\compose-modules\snippets\proxy-none.ports.yml"
         if (Test-Path $proxyPortsSnippet) {
             $proxyPortsContent = Get-Content $proxyPortsSnippet -Raw
-            $apiContent = $apiContent -replace '###PROXY_CONFIG###', $proxyPortsContent
+            $apiContent = $apiContent -replace '###PROXY_PORTS###', $proxyPortsContent
         } else {
-            $apiContent = $apiContent -replace '###PROXY_CONFIG###', ''
+            $apiContent = $apiContent -replace '###PROXY_PORTS###', ''
         }
+        # Remove ###PROXY_LABELS### placeholder (not used for direct ports)
+        $apiContent = $apiContent -replace '###PROXY_LABELS###', ''
     }
     
     # Append API service to stack

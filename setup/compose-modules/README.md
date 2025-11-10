@@ -10,12 +10,12 @@ This directory contains modular Docker Compose files and snippets that are combi
 - **`api.template.yml`** - API service template with placeholder markers
 - **`footer.yml`** - Networks and secrets definitions (always last)
 
-### Database Service Modules (For Local Deployment)
+### Database Service Modules
 
-- **`postgres-local.yml`** - PostgreSQL database service definition
-- **`neo4j-local.yml`** - Neo4j database service definition
-- **`postgres-external.yml`** - Empty (external databases don't need service definitions)
-- **`neo4j-external.yml`** - Empty (external databases don't need service definitions)
+- **`postgres-local.yml`** - PostgreSQL database service definition (for local deployment)
+- **`neo4j-local.yml`** - Neo4j database service definition (for local deployment)
+- **`postgres-external.yml`** - Empty placeholder (external databases don't need service definitions)
+- **`neo4j-external.yml`** - Empty placeholder (external databases don't need service definitions)
 
 ### Snippets Directory
 

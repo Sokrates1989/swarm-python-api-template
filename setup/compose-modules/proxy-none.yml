@@ -1,9 +1,0 @@
-# No proxy configuration
-# Direct port exposure to host
-# NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
-  api:
-    ports:
-      - target: ${PORT}
-        published: ${PUBLISHED_PORT}
-        protocol: tcp
-        mode: host

@@ -77,17 +77,24 @@ build_stack_file() {
     
     # Inject proxy configuration snippet
     if [ "$proxy_type" = "traefik" ]; then
+        # Inject Traefik labels at ###PROXY_LABELS###
         local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik.labels.yml"
         if [ -f "$proxy_labels_snippet" ]; then
-            sed -i "/###PROXY_CONFIG###/r $proxy_labels_snippet" "$temp_api"
+            sed -i "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_api"
         fi
+        sed -i '/###PROXY_LABELS###/d' "$temp_api"
+        # Remove ###PROXY_PORTS### placeholder (not used for Traefik)
+        sed -i '/###PROXY_PORTS###/d' "$temp_api"
     else
+        # Inject ports at ###PROXY_PORTS###
         local proxy_ports_snippet="${project_root}/setup/compose-modules/snippets/proxy-none.ports.yml"
         if [ -f "$proxy_ports_snippet" ]; then
-            sed -i "/###PROXY_CONFIG###/r $proxy_ports_snippet" "$temp_api"
+            sed -i "/###PROXY_PORTS###/r $proxy_ports_snippet" "$temp_api"
         fi
+        sed -i '/###PROXY_PORTS###/d' "$temp_api"
+        # Remove ###PROXY_LABELS### placeholder (not used for direct ports)
+        sed -i '/###PROXY_LABELS###/d' "$temp_api"
     fi
-    sed -i '/###PROXY_CONFIG###/d' "$temp_api"
     
     # Append API service to stack
     cat "$temp_api" >> "${project_root}/swarm-stack.yml"
