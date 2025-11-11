@@ -4,7 +4,15 @@
 deploy_stack() {
     local stack_name="$1"
     local stack_file="$2"
-    local env_file="${stack_file%/*}/.env"
+    
+    # Resolve absolute paths for stack file and .env
+    local stack_dir
+    stack_dir="$(cd "$(dirname "$stack_file")" 2>/dev/null && pwd)"
+    if [ -z "$stack_dir" ]; then
+        stack_dir="$(pwd)"
+    fi
+    local stack_file_abs="$stack_dir/$(basename "$stack_file")"
+    local env_file="$stack_dir/.env"
     
     echo "🚀 Deploying Stack"
     echo "=================="
@@ -21,7 +29,7 @@ deploy_stack() {
     
     echo ""
     echo "Deploying stack..."
-    docker stack deploy -c <(docker-compose -f "$stack_file" config) "$stack_name"
+    docker stack deploy -c <(docker-compose -f "$stack_file_abs" --env-file "$env_file" config) "$stack_name"
     
     if [ $? -ne 0 ]; then
         echo "❌ Deployment failed"

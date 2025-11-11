@@ -7,8 +7,9 @@ $ErrorActionPreference = "Stop"
 # Get script directory
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Import health check module
+# Import modules
 Import-Module "$ScriptDir\setup\modules\health-check.ps1" -Force
+Import-Module "$ScriptDir\setup\modules\deploy-stack.ps1" -Force
 
 Write-Host "Swarm Python API Template - Quick Start" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -173,25 +174,10 @@ switch ($choice) {
         Write-Host "   - Configured your domain DNS" -ForegroundColor Gray
         Write-Host "   - Created data directories" -ForegroundColor Gray
         Write-Host ""
-        $confirm = Read-Host "Continue with deployment? (y/N)"
-        if ($confirm -match "^[Yy]$") {
-            Write-Host ""
-            Write-Host "Deploying stack: $STACK_NAME" -ForegroundColor Cyan
-            
-            # Deploy using swarm-stack.yml
-            docker stack deploy -c swarm-stack.yml $STACK_NAME
-            
-            Write-Host ""
-            Write-Host "Deployment initiated!" -ForegroundColor Green
-            Write-Host ""
-            Write-Host "Check status with:" -ForegroundColor Yellow
-            Write-Host "  docker stack services $STACK_NAME" -ForegroundColor Gray
-            Write-Host ""
-            Write-Host "View logs with:" -ForegroundColor Yellow
-            Write-Host "  docker service logs -f ${STACK_NAME}_api" -ForegroundColor Gray
-        } else {
-            Write-Host "Deployment cancelled." -ForegroundColor Yellow
-        }
+        
+        # Use the deploy-stack module for consistent deployment with absolute stack path
+        $stackFile = Join-Path (Get-Location).Path "swarm-stack.yml"
+        Invoke-StackDeploy -StackName $STACK_NAME -StackFile $stackFile
     }
     "2" {
         Write-Host "Running deployment health check..." -ForegroundColor Cyan

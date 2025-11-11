@@ -23,9 +23,13 @@ function Invoke-StackDeploy {
     Write-Host ""
     Write-Host "Deploying stack..."
     
+    # Resolve paths and env file
+    $stackFileFull = (Resolve-Path $StackFile).Path
+    $envFile = Join-Path (Split-Path -Parent $stackFileFull) ".env"
+    
     # Generate config and deploy (PowerShell doesn't support process substitution)
     $tempConfig = [System.IO.Path]::GetTempFileName()
-    docker-compose -f $StackFile config | Out-File -FilePath $tempConfig -Encoding utf8
+    docker-compose -f $stackFileFull --env-file $envFile config | Out-File -FilePath $tempConfig -Encoding utf8
     docker stack deploy -c $tempConfig $StackName
     Remove-Item $tempConfig -ErrorAction SilentlyContinue
     

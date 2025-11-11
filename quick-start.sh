@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source modules
 source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
 source "${SCRIPT_DIR}/setup/modules/health-check.sh"
+source "${SCRIPT_DIR}/setup/modules/deploy-stack.sh"
 
 echo "🚀 Swarm Python API Template - Quick Start"
 echo "==========================================="
@@ -137,22 +138,10 @@ case $choice in
         echo "   - Configured your domain DNS"
         echo "   - Created data directories"
         echo ""
-        read -p "Continue with deployment? (y/N): " confirm
-        if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            echo ""
-            echo "Deploying stack: $STACK_NAME"
-            docker stack deploy -c swarm-stack.yml "$STACK_NAME"
-            echo ""
-            echo "✅ Deployment initiated!"
-            echo ""
-            echo "Check status with:"
-            echo "  docker stack services $STACK_NAME"
-            echo ""
-            echo "View logs with:"
-            echo "  docker service logs -f ${STACK_NAME}_api"
-        else
-            echo "Deployment cancelled."
-        fi
+        
+        # Use the deploy-stack module for consistent deployment with absolute stack path
+        STACK_FILE="$(pwd)/swarm-stack.yml"
+        deploy_stack "$STACK_NAME" "$STACK_FILE"
         ;;
     2)
         echo "🏥 Running deployment health check..."
