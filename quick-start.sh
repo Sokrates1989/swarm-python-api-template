@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source modules
 source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
+source "${SCRIPT_DIR}/setup/modules/health-check.sh"
 
 echo "🚀 Swarm Python API Template - Quick Start"
 echo "==========================================="
@@ -101,6 +102,7 @@ fi
 STACK_NAME=$(grep "^STACK_NAME=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "api_production")
 API_URL=$(grep "^API_URL=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "api.example.com")
 DB_TYPE=$(grep "^DB_TYPE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "postgresql")
+PROXY_TYPE=$(grep "^PROXY_TYPE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "none")
 IMAGE_NAME=$(grep "^IMAGE_NAME=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "")
 IMAGE_VERSION=$(grep "^IMAGE_VERSION=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "")
 
@@ -153,12 +155,9 @@ case $choice in
         fi
         ;;
     2)
-        echo "📊 Checking deployment status..."
+        echo "🏥 Running deployment health check..."
         echo ""
-        docker stack services "$STACK_NAME"
-        echo ""
-        echo "For detailed task status:"
-        echo "  docker service ps ${STACK_NAME}_api --no-trunc"
+        check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
         ;;
     3)
         echo "📜 Service Logs"

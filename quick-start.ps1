@@ -4,6 +4,12 @@
 
 $ErrorActionPreference = "Stop"
 
+# Get script directory
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Import health check module
+Import-Module "$ScriptDir\setup\modules\health-check.ps1" -Force
+
 Write-Host "Swarm Python API Template - Quick Start" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -98,6 +104,7 @@ if (-not (Test-Path swarm-stack.yml)) {
 $STACK_NAME = "api_production"
 $API_URL = "api.example.com"
 $DB_TYPE = "postgresql"
+$PROXY_TYPE = "none"
 $IMAGE_NAME = ""
 $IMAGE_VERSION = ""
 
@@ -117,6 +124,11 @@ if (Test-Path .env) {
     $dbTypeLine = $envContent | Where-Object { $_ -match "^DB_TYPE=" }
     if ($dbTypeLine) {
         $DB_TYPE = ($dbTypeLine -split "=", 2)[1].Trim().Trim('"')
+    }
+    
+    $proxyTypeLine = $envContent | Where-Object { $_ -match "^PROXY_TYPE=" }
+    if ($proxyTypeLine) {
+        $PROXY_TYPE = ($proxyTypeLine -split "=", 2)[1].Trim().Trim('"')
     }
     
     $imageLine = $envContent | Where-Object { $_ -match "^IMAGE_NAME=" }
@@ -182,12 +194,9 @@ switch ($choice) {
         }
     }
     "2" {
-        Write-Host "Checking deployment status..." -ForegroundColor Cyan
+        Write-Host "Running deployment health check..." -ForegroundColor Cyan
         Write-Host ""
-        docker stack services $STACK_NAME
-        Write-Host ""
-        Write-Host "For detailed task status:" -ForegroundColor Yellow
-        Write-Host "  docker service ps ${STACK_NAME}_api --no-trunc" -ForegroundColor Gray
+        Check-DeploymentHealth -StackName $STACK_NAME -DbType $DB_TYPE -ProxyType $PROXY_TYPE -ApiUrl $API_URL
     }
     "3" {
         Write-Host "Service Logs" -ForegroundColor Cyan
