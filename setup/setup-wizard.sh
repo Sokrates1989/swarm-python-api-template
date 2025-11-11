@@ -177,12 +177,16 @@ echo ""
 STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
 DB_PASSWORD_SECRET="${STACK_NAME_UPPER}_DB_PASSWORD"
 ADMIN_API_KEY_SECRET="${STACK_NAME_UPPER}_ADMIN_API_KEY"
+BACKUP_RESTORE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_RESTORE_API_KEY"
+BACKUP_DELETE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_DELETE_API_KEY"
 
 echo "Secret names (auto-generated):"
 echo "  Database password: $DB_PASSWORD_SECRET"
 echo "  Admin API key: $ADMIN_API_KEY_SECRET"
+echo "  Backup restore API key: $BACKUP_RESTORE_API_KEY_SECRET"
+echo "  Backup delete API key: $BACKUP_DELETE_API_KEY_SECRET"
 
-update_stack_secrets "$PROJECT_ROOT/swarm-stack.yml" "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET"
+update_stack_secrets "$PROJECT_ROOT/swarm-stack.yml" "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
 
 echo ""
 echo "✅ Configuration complete"
@@ -195,7 +199,7 @@ touch .setup-complete
 # SECRET CREATION
 # =============================================================================
 
-create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET"
+create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
 
 # =============================================================================
 # DEPLOYMENT PHASE

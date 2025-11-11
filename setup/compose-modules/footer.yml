@@ -12,3 +12,7 @@ secrets:
     external: true
   "XXX_CHANGE_ME_ADMIN_API_KEY_XXX":
     external: true
+  "XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX":
+    external: true
+  "XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX":
+    external: true

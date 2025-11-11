@@ -245,7 +245,13 @@ prompt_secret_names() {
     read -p "Admin API key secret [${stack_name_upper}_ADMIN_API_KEY]: " ADMIN_API_KEY_SECRET
     ADMIN_API_KEY_SECRET="${ADMIN_API_KEY_SECRET:-${stack_name_upper}_ADMIN_API_KEY}"
     
-    echo "${DB_PASSWORD_SECRET}:${ADMIN_API_KEY_SECRET}"
+    read -p "Backup restore API key secret [${stack_name_upper}_BACKUP_RESTORE_API_KEY]: " BACKUP_RESTORE_API_KEY_SECRET
+    BACKUP_RESTORE_API_KEY_SECRET="${BACKUP_RESTORE_API_KEY_SECRET:-${stack_name_upper}_BACKUP_RESTORE_API_KEY}"
+    
+    read -p "Backup delete API key secret [${stack_name_upper}_BACKUP_DELETE_API_KEY]: " BACKUP_DELETE_API_KEY_SECRET
+    BACKUP_DELETE_API_KEY_SECRET="${BACKUP_DELETE_API_KEY_SECRET:-${stack_name_upper}_BACKUP_DELETE_API_KEY}"
+    
+    echo "${DB_PASSWORD_SECRET}:${ADMIN_API_KEY_SECRET}:${BACKUP_RESTORE_API_KEY_SECRET}:${BACKUP_DELETE_API_KEY_SECRET}"
 }
 
 prompt_yes_no() {
