@@ -18,6 +18,7 @@ source "$SCRIPT_DIR/modules/network-check.sh"
 source "$SCRIPT_DIR/modules/data-dirs.sh"
 source "$SCRIPT_DIR/modules/secret-manager.sh"
 source "$SCRIPT_DIR/modules/deploy-stack.sh"
+source "$SCRIPT_DIR/modules/health-check.sh"
 
 # =============================================================================
 # WELCOME & SETUP CHECK

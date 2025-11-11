@@ -16,6 +16,7 @@ Import-Module "$ScriptDir\modules\network-check.ps1" -Force
 Import-Module "$ScriptDir\modules\data-dirs.ps1" -Force
 Import-Module "$ScriptDir\modules\secret-manager.ps1" -Force
 Import-Module "$ScriptDir\modules\deploy-stack.ps1" -Force
+Import-Module "$ScriptDir\modules\health-check.ps1" -Force
 
 # =============================================================================
 # WELCOME & SETUP CHECK
