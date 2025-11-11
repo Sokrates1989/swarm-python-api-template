@@ -65,6 +65,22 @@ create_data_directories() {
             fi
         fi
     fi
+
+    
+    # Create Backup directory
+    if [ -d "$data_root/backups" ]; then
+        echo "✅ Backup data directory already exists"
+    else
+        echo "Creating Backup data directory..."
+        mkdir -p "$data_root/backups"
+        if [ $? -eq 0 ]; then
+            echo "✅ Created: $data_root/backups"
+        else
+            echo "❌ Failed to create: $data_root/backups"
+            return 1
+        fi
+    fi
+
     
     # Create Redis directory
     if [ -d "$data_root/redis_data" ]; then

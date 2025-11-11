@@ -70,6 +70,21 @@ function New-DataDirectories {
         }
     }
     
+    # Create Backup directory
+    $BackupPath = Join-Path $DataRoot "backups"
+    if (Test-Path $BackupPath) {
+        Write-Host "✅ Backup data directory already exists" -ForegroundColor Green
+    } else {
+        Write-Host "Creating Backup data directory..."
+        try {
+            New-Item -ItemType Directory -Path $BackupPath -Force | Out-Null
+            Write-Host "✅ Created: $BackupPath" -ForegroundColor Green
+        } catch {
+            Write-Host "❌ Failed to create: $BackupPath" -ForegroundColor Red
+            return $false
+        }
+    }
+    
     # Create Redis directory
     $RedisPath = Join-Path $DataRoot "redis_data"
     if (Test-Path $RedisPath) {
