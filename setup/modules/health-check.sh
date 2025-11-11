@@ -6,6 +6,7 @@ check_deployment_health() {
     local db_type="$2"
     local proxy_type="$3"
     local api_url="$4"
+    local wait_seconds="${5:-0}"  # Default to 0 if not provided
     
     echo "🏥 Health Check"
     echo "==============="
@@ -90,19 +91,22 @@ check_deployment_health() {
     echo "Checking service logs..."
     echo ""
 
-    # Wait for services to initialize
-    echo "⏳ Waiting 20 seconds for services to initialize..."
-    sleep 20
+    # Wait for services to initialize (if configured)
+    if [ "$wait_seconds" -gt 0 ]; then
+        echo "⏳ Waiting $wait_seconds seconds for services to initialize..."
+        sleep "$wait_seconds"
+        echo ""
+    fi
     
-    # Check API logs
+    # Check API logs (increased to 50 lines to capture connection success)
     echo "--- API Logs ---"
-    docker service logs "${stack_name}_api" --tail 20 2>&1 | grep -i "startup\|ready\|error\|failed" || echo "No relevant log entries found"
+    docker service logs "${stack_name}_api" --tail 50 2>&1 | grep -i "startup\|ready\|error\|failed\|connection\|database\|migration" || echo "No relevant log entries found"
     echo ""
     
     # Check database logs
     if [ "$db_type" = "postgresql" ]; then
         echo "--- PostgreSQL Logs ---"
-        docker service logs "${stack_name}_postgres" --tail 20 2>&1 | grep -i "ready\|accept\|error\|failed" || echo "No relevant log entries found"
+        docker service logs "${stack_name}_postgres" --tail 30 2>&1 | grep -i "ready\|accept\|error\|failed\|connection" || echo "No relevant log entries found"
         echo ""
     elif [ "$db_type" = "neo4j" ]; then
         echo "--- Neo4j Logs ---"

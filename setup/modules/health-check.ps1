@@ -5,7 +5,8 @@ function Test-DeploymentHealth {
         [string]$StackName,
         [string]$DbType,
         [string]$ProxyType,
-        [string]$ApiUrl
+        [string]$ApiUrl,
+        [int]$WaitSeconds = 0  # Default to 0 if not provided
     )
     
     Write-Host "🏥 Health Check" -ForegroundColor Cyan
@@ -92,14 +93,16 @@ function Test-DeploymentHealth {
     Write-Host "Checking service logs..."
     Write-Host ""
 
-    # Wait for services to initialize
-    Write-Host "⏳ Waiting 20 seconds for services to initialize..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 20
-    Write-Host ""
+    # Wait for services to initialize (if configured)
+    if ($WaitSeconds -gt 0) {
+        Write-Host "⏳ Waiting $WaitSeconds seconds for services to initialize..." -ForegroundColor Yellow
+        Start-Sleep -Seconds $WaitSeconds
+        Write-Host ""
+    }
     
-    # Check API logs
+    # Check API logs (increased to 50 lines to capture connection success)
     Write-Host "--- API Logs ---" -ForegroundColor Cyan
-    docker service logs "${StackName}_api" --tail 20 2>&1 | Select-String -Pattern "startup|ready|error|failed" -CaseSensitive:$false
+    docker service logs "${StackName}_api" --tail 50 2>&1 | Select-String -Pattern "startup|ready|error|failed|connection|database|migration" -CaseSensitive:$false
     if (-not $?) {
         Write-Host "No relevant log entries found"
     }
@@ -108,7 +111,7 @@ function Test-DeploymentHealth {
     # Check database logs
     if ($DbType -eq "postgresql") {
         Write-Host "--- PostgreSQL Logs ---" -ForegroundColor Cyan
-        docker service logs "${StackName}_postgres" --tail 20 2>&1 | Select-String -Pattern "ready|accept|error|failed" -CaseSensitive:$false
+        docker service logs "${StackName}_postgres" --tail 30 2>&1 | Select-String -Pattern "ready|accept|error|failed|connection" -CaseSensitive:$false
         if (-not $?) {
             Write-Host "No relevant log entries found"
         }
@@ -169,4 +172,7 @@ function Test-DeploymentHealth {
     return $true
 }
 
-Export-ModuleMember -Function Test-DeploymentHealth
+# Create alias for easier calling
+Set-Alias -Name Check-DeploymentHealth -Value Test-DeploymentHealth
+
+Export-ModuleMember -Function Test-DeploymentHealth -Alias Check-DeploymentHealth

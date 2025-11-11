@@ -255,8 +255,8 @@ if (-not (Invoke-StackDeploy -StackName $StackName -StackFile "swarm-stack.yml")
     exit 1
 }
 
-# Health check
-Test-DeploymentHealth -StackName $StackName -DbType $DbType -ProxyType $ProxyType -ApiUrl $ApiUrl
+# Health check (with 20 second wait for initialization)
+Test-DeploymentHealth -StackName $StackName -DbType $DbType -ProxyType $ProxyType -ApiUrl $ApiUrl -WaitSeconds 20
 
 Write-Host ""
 Write-Host "🎉 Setup and deployment complete!" -ForegroundColor Green

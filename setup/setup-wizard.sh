@@ -266,8 +266,8 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Health check
-check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
+# Health check (with 20 second wait for initialization)
+check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL" 20
 
 echo ""
 echo "🎉 Setup and deployment complete!"
