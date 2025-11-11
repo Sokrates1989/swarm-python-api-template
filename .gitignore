@@ -8,6 +8,10 @@ redis_data/*
 .env
 docker-compose.yml
 
+# Ignore created files
+swarm-stack.yml
+.setup-complete
+
 # Ignore backup folders
 backup/
 
