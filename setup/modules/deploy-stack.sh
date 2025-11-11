@@ -31,8 +31,6 @@ deploy_stack() {
     echo ""
     echo "✅ Stack deployed successfully"
     echo ""
-    echo "⏳ Waiting 15 seconds for services to initialize..."
-    sleep 15
     echo ""
     
     echo "📋 Deployment Summary"

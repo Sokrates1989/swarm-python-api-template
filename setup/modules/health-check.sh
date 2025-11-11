@@ -89,6 +89,10 @@ check_deployment_health() {
     echo ""
     echo "Checking service logs..."
     echo ""
+
+    # Wait for services to initialize
+    echo "⏳ Waiting 20 seconds for services to initialize..."
+    sleep 20
     
     # Check API logs
     echo "--- API Logs ---"

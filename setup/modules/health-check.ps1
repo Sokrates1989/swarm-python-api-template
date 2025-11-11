@@ -91,6 +91,11 @@ function Test-DeploymentHealth {
     Write-Host ""
     Write-Host "Checking service logs..."
     Write-Host ""
+
+    # Wait for services to initialize
+    Write-Host "⏳ Waiting 20 seconds for services to initialize..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 20
+    Write-Host ""
     
     # Check API logs
     Write-Host "--- API Logs ---" -ForegroundColor Cyan

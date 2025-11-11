@@ -37,9 +37,6 @@ function Invoke-StackDeploy {
     Write-Host ""
     Write-Host "✅ Stack deployed successfully" -ForegroundColor Green
     Write-Host ""
-    Write-Host "⏳ Waiting 15 seconds for services to initialize..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 15
-    Write-Host ""
     
     Write-Host "📋 Deployment Summary" -ForegroundColor Cyan
     Write-Host "===================="
