@@ -233,6 +233,19 @@ switch ($choice) {
         Write-Host "Updating service..." -ForegroundColor Cyan
         docker service update --image "${IMAGE_NAME}:${newVersion}" "${STACK_NAME}_api"
         
+        # Persist the new version to .env
+        if (Test-Path .env) {
+            $envLines = Get-Content .env -ErrorAction SilentlyContinue
+            if ($envLines -match '^IMAGE_VERSION=') {
+                ($envLines -replace '^IMAGE_VERSION=.*$', "IMAGE_VERSION=$newVersion") | Set-Content .env -Encoding utf8
+            } else {
+                Add-Content .env "IMAGE_VERSION=$newVersion"
+            }
+            Write-Host "Saved IMAGE_VERSION=$newVersion to .env" -ForegroundColor Green
+        } else {
+            Write-Host "⚠️  .env not found; skipping persistence of IMAGE_VERSION" -ForegroundColor Yellow
+        }
+        
         Write-Host ""
         Write-Host "Service update initiated!" -ForegroundColor Green
         Write-Host "Monitor progress with: docker service ps ${STACK_NAME}_api" -ForegroundColor Yellow
@@ -256,15 +269,55 @@ switch ($choice) {
         switch ($scaleChoice) {
             "1" {
                 docker service scale "${STACK_NAME}_api=$replicas"
+                # Persist API replicas to .env
+                if (Test-Path .env) {
+                    $envLines = Get-Content .env -ErrorAction SilentlyContinue
+                    if ($envLines -match '^API_REPLICAS=') {
+                        ($envLines -replace '^API_REPLICAS=.*$', "API_REPLICAS=$replicas") | Set-Content .env -Encoding utf8
+                    } else {
+                        Add-Content .env "API_REPLICAS=$replicas"
+                    }
+                    Write-Host "Saved API_REPLICAS=$replicas to .env" -ForegroundColor Green
+                }
             }
             "2" {
                 docker service scale "${STACK_NAME}_redis=$replicas"
+                # Persist Redis replicas to .env
+                if (Test-Path .env) {
+                    $envLines = Get-Content .env -ErrorAction SilentlyContinue
+                    if ($envLines -match '^REDIS_REPLICAS=') {
+                        ($envLines -replace '^REDIS_REPLICAS=.*$', "REDIS_REPLICAS=$replicas") | Set-Content .env -Encoding utf8
+                    } else {
+                        Add-Content .env "REDIS_REPLICAS=$replicas"
+                    }
+                    Write-Host "Saved REDIS_REPLICAS=$replicas to .env" -ForegroundColor Green
+                }
             }
             "3" {
                 if ($DB_TYPE -eq "neo4j") {
                     docker service scale "${STACK_NAME}_neo4j=$replicas"
+                    # Persist Neo4j replicas to .env
+                    if (Test-Path .env) {
+                        $envLines = Get-Content .env -ErrorAction SilentlyContinue
+                        if ($envLines -match '^NEO4J_REPLICAS=') {
+                            ($envLines -replace '^NEO4J_REPLICAS=.*$', "NEO4J_REPLICAS=$replicas") | Set-Content .env -Encoding utf8
+                        } else {
+                            Add-Content .env "NEO4J_REPLICAS=$replicas"
+                        }
+                        Write-Host "Saved NEO4J_REPLICAS=$replicas to .env" -ForegroundColor Green
+                    }
                 } else {
                     docker service scale "${STACK_NAME}_postgres=$replicas"
+                    # Persist Postgres replicas to .env
+                    if (Test-Path .env) {
+                        $envLines = Get-Content .env -ErrorAction SilentlyContinue
+                        if ($envLines -match '^POSTGRES_REPLICAS=') {
+                            ($envLines -replace '^POSTGRES_REPLICAS=.*$', "POSTGRES_REPLICAS=$replicas") | Set-Content .env -Encoding utf8
+                        } else {
+                            Add-Content .env "POSTGRES_REPLICAS=$replicas"
+                        }
+                        Write-Host "Saved POSTGRES_REPLICAS=$replicas to .env" -ForegroundColor Green
+                    }
                 }
             }
             default {

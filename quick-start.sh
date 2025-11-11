@@ -195,6 +195,18 @@ case $choice in
         echo "Updating service..."
         docker service update --image "$IMAGE_NAME:$new_version" "${STACK_NAME}_api"
         
+        # Persist the new version to .env
+        if [ -f .env ]; then
+            if grep -q '^IMAGE_VERSION=' .env; then
+                sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=$new_version/" .env
+            else
+                echo "IMAGE_VERSION=$new_version" >> .env
+            fi
+            echo "Saved IMAGE_VERSION=$new_version to .env"
+        else
+            echo "⚠️  .env not found; skipping persistence of IMAGE_VERSION"
+        fi
+        
         echo ""
         echo "✅ Service update initiated!"
         echo "Monitor progress with: docker service ps ${STACK_NAME}_api"
@@ -218,15 +230,51 @@ case $choice in
         case $scale_choice in
             1)
                 docker service scale "${STACK_NAME}_api=$replicas"
+                # Persist API replicas
+                if [ -f .env ]; then
+                    if grep -q '^API_REPLICAS=' .env; then
+                        sed -i "s/^API_REPLICAS=.*/API_REPLICAS=$replicas/" .env
+                    else
+                        echo "API_REPLICAS=$replicas" >> .env
+                    fi
+                    echo "Saved API_REPLICAS=$replicas to .env"
+                fi
                 ;;
             2)
                 docker service scale "${STACK_NAME}_redis=$replicas"
+                # Persist Redis replicas
+                if [ -f .env ]; then
+                    if grep -q '^REDIS_REPLICAS=' .env; then
+                        sed -i "s/^REDIS_REPLICAS=.*/REDIS_REPLICAS=$replicas/" .env
+                    else
+                        echo "REDIS_REPLICAS=$replicas" >> .env
+                    fi
+                    echo "Saved REDIS_REPLICAS=$replicas to .env"
+                fi
                 ;;
             3)
                 if [ "$DB_TYPE" = "neo4j" ]; then
                     docker service scale "${STACK_NAME}_neo4j=$replicas"
+                    # Persist Neo4j replicas
+                    if [ -f .env ]; then
+                        if grep -q '^NEO4J_REPLICAS=' .env; then
+                            sed -i "s/^NEO4J_REPLICAS=.*/NEO4J_REPLICAS=$replicas/" .env
+                        else
+                            echo "NEO4J_REPLICAS=$replicas" >> .env
+                        fi
+                        echo "Saved NEO4J_REPLICAS=$replicas to .env"
+                    fi
                 else
                     docker service scale "${STACK_NAME}_postgres=$replicas"
+                    # Persist Postgres replicas
+                    if [ -f .env ]; then
+                        if grep -q '^POSTGRES_REPLICAS=' .env; then
+                            sed -i "s/^POSTGRES_REPLICAS=.*/POSTGRES_REPLICAS=$replicas/" .env
+                        else
+                            echo "POSTGRES_REPLICAS=$replicas" >> .env
+                        fi
+                        echo "Saved POSTGRES_REPLICAS=$replicas to .env"
+                    fi
                 fi
                 ;;
             *)
