@@ -9,6 +9,12 @@
 
 set -e
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source modules
+source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
+
 echo "🚀 Swarm Python API Template - Quick Start"
 echo "==========================================="
 echo ""
@@ -115,7 +121,7 @@ echo "4) Update API image"
 echo "5) Scale services"
 echo "6) Remove deployment"
 echo "7) Re-run setup wizard"
-echo "8) Create Docker secrets"
+echo "8) Manage Docker secrets"
 echo "9) Exit"
 echo ""
 read -p "Your choice (1-9): " choice
@@ -264,68 +270,106 @@ case $choice in
         ./setup/setup-wizard.sh
         ;;
     8)
-        echo "🔑 Create Docker Secrets"
-        echo ""
-        echo "This will help you create the required Docker secrets."
+        echo "🔑 Manage Docker Secrets"
         echo ""
         
         # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
         STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
         
-        # Detect available editor
-        if command -v nano &> /dev/null; then
-            EDITOR="nano"
-        elif command -v vi &> /dev/null; then
-            EDITOR="vi"
-        elif command -v vim &> /dev/null; then
-            EDITOR="vim"
+        # Define secret names
+        DB_PASSWORD_SECRET="${STACK_NAME_UPPER}_DB_PASSWORD"
+        ADMIN_API_KEY_SECRET="${STACK_NAME_UPPER}_ADMIN_API_KEY"
+        BACKUP_RESTORE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_RESTORE_API_KEY"
+        BACKUP_DELETE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_DELETE_API_KEY"
+        
+        # Check which secrets exist
+        echo "📋 Current Secret Status:"
+        echo "------------------------"
+        
+        if docker secret inspect "$DB_PASSWORD_SECRET" &>/dev/null; then
+            echo "✅ Database password secret exists"
         else
-            echo "❌ No text editor found (nano, vi, or vim required)"
-            echo "Please install a text editor and try again."
-            exit 1
+            echo "❌ Database password secret missing"
         fi
         
-        echo "Creating Database Password Secret..."
-        echo "-----------------------------------"
-        echo "Opening editor for database password..."
-        echo "Please enter the password, save, and close the editor."
-        echo ""
-        
-        read -p "Press any key to open editor..." -n 1 -r
-        echo ""
-        
-        $EDITOR secret.txt
-        docker secret create "${STACK_NAME_UPPER}_DB_PASSWORD" secret.txt 2>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "✅ Secret ${STACK_NAME_UPPER}_DB_PASSWORD created successfully"
+        if docker secret inspect "$ADMIN_API_KEY_SECRET" &>/dev/null; then
+            echo "✅ Admin API key secret exists"
         else
-            echo "⚠️  Secret ${STACK_NAME_UPPER}_DB_PASSWORD may already exist"
+            echo "❌ Admin API key secret missing"
         fi
-        rm -f secret.txt
-        echo ""
         
-        echo "Creating Admin API Key Secret..."
-        echo "--------------------------------"
-        echo "Opening editor for admin API key..."
-        echo "Please enter the API key, save, and close the editor."
-        echo ""
-        
-        read -p "Press any key to open editor..." -n 1 -r
-        echo ""
-        
-        $EDITOR secret.txt
-        docker secret create "${STACK_NAME_UPPER}_ADMIN_API_KEY" secret.txt 2>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "✅ Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY created successfully"
+        if docker secret inspect "$BACKUP_RESTORE_API_KEY_SECRET" &>/dev/null; then
+            echo "✅ Backup restore API key secret exists"
         else
-            echo "⚠️  Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY may already exist"
+            echo "❌ Backup restore API key secret missing"
         fi
-        rm -f secret.txt
-        echo ""
         
-        echo "✅ Secrets created!"
+        if docker secret inspect "$BACKUP_DELETE_API_KEY_SECRET" &>/dev/null; then
+            echo "✅ Backup delete API key secret exists"
+        else
+            echo "❌ Backup delete API key secret missing"
+        fi
+        
         echo ""
-        echo "List secrets with: docker secret ls"
+        echo "What would you like to do?"
+        echo "1) Create/update all secrets"
+        echo "2) List all secrets"
+        echo "3) Back to main menu"
+        echo ""
+        read -p "Your choice (1-3): " secret_choice
+        
+        case $secret_choice in
+            1)
+                # Check if stack is running
+                echo ""
+                echo "🔍 Checking for running stack..."
+                
+                if docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; then
+                    echo "⚠️  WARNING: Stack '$STACK_NAME' is currently running!"
+                    echo ""
+                    echo "Secrets cannot be updated while in use by a running stack."
+                    echo ""
+                    read -p "Remove stack before updating secrets? (y/N): " REMOVE_STACK
+                    
+                    if [[ "$REMOVE_STACK" =~ ^[Yy]$ ]]; then
+                        echo ""
+                        echo "Removing stack: $STACK_NAME"
+                        docker stack rm "$STACK_NAME"
+                        
+                        echo "Waiting for stack to be fully removed..."
+                        while docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; do
+                            echo -n "."
+                            sleep 2
+                        done
+                        echo ""
+                        echo "✅ Stack removed successfully"
+                        echo ""
+                        
+                        # Now create secrets
+                        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+                    else
+                        echo ""
+                        echo "⚠️  Secret creation cancelled."
+                        echo "Stop the stack manually with: docker stack rm $STACK_NAME"
+                        echo "Then run this option again."
+                    fi
+                else
+                    echo "✅ No running stack found"
+                    echo ""
+                    # Use the secret-manager module
+                    create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+                fi
+                ;;
+            2)
+                list_docker_secrets
+                ;;
+            3)
+                echo "Returning to main menu..."
+                ;;
+            *)
+                echo "Invalid choice"
+                ;;
+        esac
         ;;
     9)
         echo "👋 Goodbye!"

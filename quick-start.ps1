@@ -147,7 +147,7 @@ Write-Host "4) Update API image" -ForegroundColor Gray
 Write-Host "5) Scale services" -ForegroundColor Gray
 Write-Host "6) Remove deployment" -ForegroundColor Gray
 Write-Host "7) Re-run setup wizard" -ForegroundColor Gray
-Write-Host "8) Create Docker secrets" -ForegroundColor Gray
+Write-Host "8) Manage Docker secrets" -ForegroundColor Gray
 Write-Host "9) Exit" -ForegroundColor Gray
 Write-Host ""
 $choice = Read-Host "Your choice (1-9)"
@@ -301,67 +301,250 @@ switch ($choice) {
         .\setup\setup-wizard.ps1
     }
     "8" {
-        Write-Host "🔑 Create Docker Secrets" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "This will help you create the required Docker secrets." -ForegroundColor Yellow
+        Write-Host "🔑 Manage Docker Secrets" -ForegroundColor Cyan
         Write-Host ""
         
         # Convert stack name to uppercase and replace non-alphanumeric chars with underscore
         $STACK_NAME_UPPER = $STACK_NAME.ToUpper() -replace '[^A-Z0-9]', '_'
         
-        Write-Host "Creating Database Password Secret..." -ForegroundColor Cyan
-        Write-Host "-----------------------------------"
-        Write-Host "Opening Notepad for database password..."
-        Write-Host "Please enter the password, save, and close Notepad."
-        Write-Host ""
-        Write-Host "Press any key to enter secret for ${STACK_NAME_UPPER}_DB_PASSWORD..." -ForegroundColor Yellow
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        Write-Host ""
+        # Define secret names
+        $DB_PASSWORD_SECRET = "${STACK_NAME_UPPER}_DB_PASSWORD"
+        $ADMIN_API_KEY_SECRET = "${STACK_NAME_UPPER}_ADMIN_API_KEY"
+        $BACKUP_RESTORE_API_KEY_SECRET = "${STACK_NAME_UPPER}_BACKUP_RESTORE_API_KEY"
+        $BACKUP_DELETE_API_KEY_SECRET = "${STACK_NAME_UPPER}_BACKUP_DELETE_API_KEY"
         
-        "" | Set-Content "secret.txt" -NoNewline
-        notepad secret.txt | Out-Null
+        # Check which secrets exist
+        Write-Host "📋 Current Secret Status:" -ForegroundColor Yellow
+        Write-Host "------------------------"
         
         try {
-            docker secret create "${STACK_NAME_UPPER}_DB_PASSWORD" secret.txt 2>$null
+            $null = docker secret inspect $DB_PASSWORD_SECRET 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Secret ${STACK_NAME_UPPER}_DB_PASSWORD created successfully" -ForegroundColor Green
+                Write-Host "✅ Database password secret exists" -ForegroundColor Green
             } else {
-                Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_DB_PASSWORD may already exist" -ForegroundColor Yellow
+                Write-Host "❌ Database password secret missing" -ForegroundColor Red
             }
         } catch {
-            Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_DB_PASSWORD may already exist" -ForegroundColor Yellow
+            Write-Host "❌ Database password secret missing" -ForegroundColor Red
         }
-        Remove-Item "secret.txt" -ErrorAction SilentlyContinue
-        Write-Host ""
-        
-        Write-Host "Creating Admin API Key Secret..." -ForegroundColor Cyan
-        Write-Host "--------------------------------"
-        Write-Host "Opening Notepad for admin API key..."
-        Write-Host "Please enter the API key, save, and close Notepad."
-        Write-Host ""
-        Write-Host "Press any key to enter secret for ${STACK_NAME_UPPER}_ADMIN_API_KEY..." -ForegroundColor Yellow
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        Write-Host ""
-        
-        "" | Set-Content "secret.txt" -NoNewline
-        notepad secret.txt | Out-Null
         
         try {
-            docker secret create "${STACK_NAME_UPPER}_ADMIN_API_KEY" secret.txt 2>$null
+            $null = docker secret inspect $ADMIN_API_KEY_SECRET 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY created successfully" -ForegroundColor Green
+                Write-Host "✅ Admin API key secret exists" -ForegroundColor Green
             } else {
-                Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY may already exist" -ForegroundColor Yellow
+                Write-Host "❌ Admin API key secret missing" -ForegroundColor Red
             }
         } catch {
-            Write-Host "⚠️  Secret ${STACK_NAME_UPPER}_ADMIN_API_KEY may already exist" -ForegroundColor Yellow
+            Write-Host "❌ Admin API key secret missing" -ForegroundColor Red
         }
-        Remove-Item "secret.txt" -ErrorAction SilentlyContinue
-        Write-Host ""
         
-        Write-Host "✅ Secrets created!" -ForegroundColor Green
+        try {
+            $null = docker secret inspect $BACKUP_RESTORE_API_KEY_SECRET 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Backup restore API key secret exists" -ForegroundColor Green
+            } else {
+                Write-Host "❌ Backup restore API key secret missing" -ForegroundColor Red
+            }
+        } catch {
+            Write-Host "❌ Backup restore API key secret missing" -ForegroundColor Red
+        }
+        
+        try {
+            $null = docker secret inspect $BACKUP_DELETE_API_KEY_SECRET 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Backup delete API key secret exists" -ForegroundColor Green
+            } else {
+                Write-Host "❌ Backup delete API key secret missing" -ForegroundColor Red
+            }
+        } catch {
+            Write-Host "❌ Backup delete API key secret missing" -ForegroundColor Red
+        }
+        
         Write-Host ""
-        Write-Host "List secrets with: docker secret ls" -ForegroundColor Yellow
+        Write-Host "What would you like to do?" -ForegroundColor Yellow
+        Write-Host "1) Create/update all secrets"
+        Write-Host "2) List all secrets"
+        Write-Host "3) Back to main menu"
+        Write-Host ""
+        $secret_choice = Read-Host "Your choice (1-3)"
+        
+        switch ($secret_choice) {
+            "1" {
+                # Check if stack is running
+                Write-Host ""
+                Write-Host "🔍 Checking for running stack..." -ForegroundColor Yellow
+                
+                $stackExists = docker stack ls --format "{{.Name}}" | Select-String -Pattern "^${STACK_NAME}$"
+                
+                if ($stackExists) {
+                    Write-Host "⚠️  WARNING: Stack '$STACK_NAME' is currently running!" -ForegroundColor Yellow
+                    Write-Host ""
+                    Write-Host "Secrets cannot be updated while in use by a running stack." -ForegroundColor Yellow
+                    Write-Host ""
+                    $removeStack = Read-Host "Remove stack before updating secrets? (y/N)"
+                    
+                    if ($removeStack -match '^[Yy]$') {
+                        Write-Host ""
+                        Write-Host "Removing stack: $STACK_NAME" -ForegroundColor Cyan
+                        docker stack rm $STACK_NAME
+                        
+                        Write-Host "Waiting for stack to be fully removed..." -ForegroundColor Yellow
+                        do {
+                            Write-Host "." -NoNewline
+                            Start-Sleep -Seconds 2
+                            $stackStillExists = docker stack ls --format "{{.Name}}" | Select-String -Pattern "^${STACK_NAME}$"
+                        } while ($stackStillExists)
+                        Write-Host ""
+                        Write-Host "✅ Stack removed successfully" -ForegroundColor Green
+                        Write-Host ""
+                        
+                        # Now create secrets
+                        $secrets = @($DB_PASSWORD_SECRET, $ADMIN_API_KEY_SECRET, $BACKUP_RESTORE_API_KEY_SECRET, $BACKUP_DELETE_API_KEY_SECRET)
+                        foreach ($secret in $secrets) {
+                            Write-Host ""
+                            Write-Host "Creating: $secret" -ForegroundColor Cyan
+                            Write-Host "Opening Notepad..." -ForegroundColor Yellow
+                            Write-Host "Please enter the secret value, save, and close Notepad." -ForegroundColor Yellow
+                            Write-Host ""
+                            Write-Host "Press any key to open editor..." -ForegroundColor Yellow
+                            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                            Write-Host ""
+                            
+                            "" | Set-Content "secret.txt" -NoNewline
+                            notepad secret.txt | Out-Null
+                            
+                            # Check if secret already exists
+                            $secretExists = $false
+                            try {
+                                $null = docker secret inspect $secret 2>&1
+                                if ($LASTEXITCODE -eq 0) {
+                                    $secretExists = $true
+                                }
+                            } catch {}
+                            
+                            if ($secretExists) {
+                                Write-Host "⚠️  Secret '$secret' already exists" -ForegroundColor Yellow
+                                $recreate = Read-Host "Delete and recreate? (y/N)"
+                                if ($recreate -match '^[Yy]$') {
+                                    Write-Host "Removing old secret..." -ForegroundColor Yellow
+                                    docker secret rm $secret 2>&1 | Out-Null
+                                    if ($LASTEXITCODE -eq 0) {
+                                        Write-Host "Creating new secret..." -ForegroundColor Yellow
+                                        docker secret create $secret secret.txt 2>&1 | Out-Null
+                                        if ($LASTEXITCODE -eq 0) {
+                                            Write-Host "✅ Recreated $secret" -ForegroundColor Green
+                                        } else {
+                                            Write-Host "❌ Failed to create secret" -ForegroundColor Red
+                                        }
+                                    } else {
+                                        Write-Host "❌ Failed to remove old secret" -ForegroundColor Red
+                                        Write-Host "The secret might be in use. Stop the service first." -ForegroundColor Yellow
+                                    }
+                                } else {
+                                    Write-Host "⏭️  Keeping existing secret" -ForegroundColor Cyan
+                                }
+                            } else {
+                                Write-Host "Creating secret..." -ForegroundColor Yellow
+                                docker secret create $secret secret.txt 2>&1 | Out-Null
+                                if ($LASTEXITCODE -eq 0) {
+                                    Write-Host "✅ Created $secret" -ForegroundColor Green
+                                } else {
+                                    Write-Host "❌ Failed to create secret" -ForegroundColor Red
+                                }
+                            }
+                            
+                            Remove-Item "secret.txt" -ErrorAction SilentlyContinue
+                        }
+                        
+                        Write-Host ""
+                        Write-Host "✅ Secret creation complete" -ForegroundColor Green
+                    } else {
+                        Write-Host ""
+                        Write-Host "⚠️  Secret creation cancelled." -ForegroundColor Yellow
+                        Write-Host "Stop the stack manually with: docker stack rm $STACK_NAME" -ForegroundColor Yellow
+                        Write-Host "Then run this option again." -ForegroundColor Yellow
+                    }
+                } else {
+                    Write-Host "✅ No running stack found" -ForegroundColor Green
+                    Write-Host ""
+                    
+                    # Create secrets
+                    $secrets = @($DB_PASSWORD_SECRET, $ADMIN_API_KEY_SECRET, $BACKUP_RESTORE_API_KEY_SECRET, $BACKUP_DELETE_API_KEY_SECRET)
+                    foreach ($secret in $secrets) {
+                        Write-Host ""
+                        Write-Host "Creating: $secret" -ForegroundColor Cyan
+                        Write-Host "Opening Notepad..." -ForegroundColor Yellow
+                        Write-Host "Please enter the secret value, save, and close Notepad." -ForegroundColor Yellow
+                        Write-Host ""
+                        Write-Host "Press any key to open editor..." -ForegroundColor Yellow
+                        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                        Write-Host ""
+                        
+                        "" | Set-Content "secret.txt" -NoNewline
+                        notepad secret.txt | Out-Null
+                        
+                        # Check if secret already exists
+                        $secretExists = $false
+                        try {
+                            $null = docker secret inspect $secret 2>&1
+                            if ($LASTEXITCODE -eq 0) {
+                                $secretExists = $true
+                            }
+                        } catch {}
+                        
+                        if ($secretExists) {
+                            Write-Host "⚠️  Secret '$secret' already exists" -ForegroundColor Yellow
+                            $recreate = Read-Host "Delete and recreate? (y/N)"
+                            if ($recreate -match '^[Yy]$') {
+                                Write-Host "Removing old secret..." -ForegroundColor Yellow
+                                docker secret rm $secret 2>&1 | Out-Null
+                                if ($LASTEXITCODE -eq 0) {
+                                    Write-Host "Creating new secret..." -ForegroundColor Yellow
+                                    docker secret create $secret secret.txt 2>&1 | Out-Null
+                                    if ($LASTEXITCODE -eq 0) {
+                                        Write-Host "✅ Recreated $secret" -ForegroundColor Green
+                                    } else {
+                                        Write-Host "❌ Failed to create secret" -ForegroundColor Red
+                                    }
+                                } else {
+                                    Write-Host "❌ Failed to remove old secret" -ForegroundColor Red
+                                    Write-Host "The secret might be in use. Stop the service first." -ForegroundColor Yellow
+                                }
+                            } else {
+                                Write-Host "⏭️  Keeping existing secret" -ForegroundColor Cyan
+                            }
+                        } else {
+                            Write-Host "Creating secret..." -ForegroundColor Yellow
+                            docker secret create $secret secret.txt 2>&1 | Out-Null
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Host "✅ Created $secret" -ForegroundColor Green
+                            } else {
+                                Write-Host "❌ Failed to create secret" -ForegroundColor Red
+                            }
+                        }
+                        
+                        Remove-Item "secret.txt" -ErrorAction SilentlyContinue
+                    }
+                    
+                    Write-Host ""
+                    Write-Host "✅ Secret creation complete" -ForegroundColor Green
+                }
+            }
+            "2" {
+                Write-Host ""
+                Write-Host "📋 Existing Docker Secrets" -ForegroundColor Cyan
+                Write-Host "========================="
+                Write-Host ""
+                docker secret ls
+            }
+            "3" {
+                Write-Host "Returning to main menu..." -ForegroundColor Cyan
+            }
+            default {
+                Write-Host "Invalid choice" -ForegroundColor Red
+            }
+        }
     }
     "9" {
         Write-Host "Goodbye!" -ForegroundColor Cyan

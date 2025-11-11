@@ -47,22 +47,30 @@ create_single_secret() {
             echo "⚠️  Secret '$secret_name' already exists"
             read -p "Delete and recreate? (y/N): " RECREATE
             if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
-                docker secret rm "$secret_name" 2>/dev/null || true
-                docker secret create "$secret_name" secret.txt 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    echo "✅ Recreated $secret_name"
+                echo "Removing old secret..."
+                if docker secret rm "$secret_name" 2>&1; then
+                    echo "Creating new secret..."
+                    if docker secret create "$secret_name" secret.txt 2>&1; then
+                        echo "✅ Recreated $secret_name"
+                    else
+                        echo "❌ Failed to create secret"
+                        echo "Error: Docker secret creation failed. Check if Docker Swarm is initialized."
+                    fi
                 else
-                    echo "❌ Failed to create secret"
+                    echo "❌ Failed to remove old secret"
+                    echo "The secret might be in use by a service. Stop the service first."
+                    echo "Afterwards run ./quick-start.sh to create the secrets or rerun the complete setup wizard."
                 fi
             else
                 echo "⏭️  Keeping existing secret"
             fi
         else
-            docker secret create "$secret_name" secret.txt 2>/dev/null
-            if [ $? -eq 0 ]; then
+            echo "Creating secret..."
+            if docker secret create "$secret_name" secret.txt 2>&1; then
                 echo "✅ Created $secret_name"
             else
                 echo "❌ Failed to create secret"
+                echo "Error: Docker secret creation failed. Check if Docker Swarm is initialized."
             fi
         fi
         rm -f secret.txt
