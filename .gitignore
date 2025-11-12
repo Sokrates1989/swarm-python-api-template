@@ -12,8 +12,14 @@ docker-compose.yml
 swarm-stack.yml
 .setup-complete
 
+# Ignore possibly manually created config files.
+swarm-stack.yml.*
+swarm-stack.*.yml
+.env.*
+
 # Ignore backup folders
 backup/
+backups/
 
 # Keep .gitkeep files to ensure empty folders are created
 !postgres_data/.gitkeep
