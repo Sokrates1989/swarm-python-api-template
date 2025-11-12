@@ -218,6 +218,7 @@ if docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; then
         
         echo "Waiting for stack to be fully removed..."
         # Wait for services to be removed
+        sleep 2
         while docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; do
             echo -n "."
             sleep 2
