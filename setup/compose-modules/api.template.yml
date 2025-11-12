@@ -12,7 +12,6 @@
       - "XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX"
     environment:
       PYTHON_VERSION: ${PYTHON_VERSION}
-      IMAGE_TAG: ${IMAGE_VERSION}
       REDIS_URL: ${REDIS_URL}
       PORT: ${PORT}
       DEBUG: ${DEBUG}
