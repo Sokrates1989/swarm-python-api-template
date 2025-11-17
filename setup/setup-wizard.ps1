@@ -18,6 +18,12 @@ Import-Module "$ScriptDir\modules\secret-manager.ps1" -Force
 Import-Module "$ScriptDir\modules\deploy-stack.ps1" -Force
 Import-Module "$ScriptDir\modules\health-check.ps1" -Force
 
+# Source Cognito setup script if available
+$cognitoScript = Join-Path $ScriptDir "modules\cognito_setup.ps1"
+if (Test-Path $cognitoScript) {
+    . $cognitoScript
+}
+
 # =============================================================================
 # WELCOME & SETUP CHECK
 # =============================================================================
@@ -185,6 +191,12 @@ Write-Host ""
 
 # Mark setup as complete
 New-Item -ItemType File -Path ".setup-complete" -Force | Out-Null
+
+# AWS Cognito Configuration (optional)
+if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+    Write-Host ""
+    Invoke-CognitoSetup
+}
 
 # =============================================================================
 # STACK CONFLICT CHECK

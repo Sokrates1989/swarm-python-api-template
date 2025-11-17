@@ -20,6 +20,12 @@ source "$SCRIPT_DIR/modules/secret-manager.sh"
 source "$SCRIPT_DIR/modules/deploy-stack.sh"
 source "$SCRIPT_DIR/modules/health-check.sh"
 
+# Source Cognito setup script if available
+if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/modules/cognito_setup.sh"
+fi
+
 # =============================================================================
 # WELCOME & SETUP CHECK
 # =============================================================================
@@ -194,7 +200,13 @@ echo "✅ Configuration complete"
 echo ""
 
 # Mark setup as complete
-touch .setup-complete
+touch ".setup-complete"
+
+# AWS Cognito Configuration (optional)
+if declare -F run_cognito_setup >/dev/null; then
+    echo ""
+    run_cognito_setup
+fi
 
 # =============================================================================
 # STACK CONFLICT CHECK

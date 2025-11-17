@@ -11,6 +11,12 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Import-Module "$ScriptDir\setup\modules\health-check.ps1" -Force
 Import-Module "$ScriptDir\setup\modules\deploy-stack.ps1" -Force
 
+# Source Cognito setup script if available
+$cognitoScript = Join-Path $ScriptDir "setup\modules\cognito_setup.ps1"
+if (Test-Path $cognitoScript) {
+    . $cognitoScript
+}
+
 Write-Host "Swarm Python API Template - Quick Start" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -161,9 +167,18 @@ Write-Host "5) Scale services" -ForegroundColor Gray
 Write-Host "6) Remove deployment" -ForegroundColor Gray
 Write-Host "7) Re-run setup wizard" -ForegroundColor Gray
 Write-Host "8) Manage Docker secrets" -ForegroundColor Gray
-Write-Host "9) Exit" -ForegroundColor Gray
+if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+    Write-Host "9) Configure AWS Cognito" -ForegroundColor Gray
+    Write-Host "10) Exit" -ForegroundColor Gray
+} else {
+    Write-Host "9) Exit" -ForegroundColor Gray
+}
 Write-Host ""
-$choice = Read-Host "Your choice (1-9)"
+if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+    $choice = Read-Host "Your choice (1-10)"
+} else {
+    $choice = Read-Host "Your choice (1-9)"
+}
 
 switch ($choice) {
     "1" {
@@ -595,6 +610,14 @@ switch ($choice) {
         }
     }
     "9" {
+        if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+            Invoke-CognitoSetup
+        } else {
+            Write-Host "Goodbye!" -ForegroundColor Cyan
+            exit 0
+        }
+    }
+    "10" {
         Write-Host "Goodbye!" -ForegroundColor Cyan
         exit 0
     }

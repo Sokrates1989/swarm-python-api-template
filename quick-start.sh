@@ -17,6 +17,13 @@ source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
 source "${SCRIPT_DIR}/setup/modules/health-check.sh"
 source "${SCRIPT_DIR}/setup/modules/deploy-stack.sh"
 
+# Source Cognito setup script if available
+cognito_script="${SCRIPT_DIR}/setup/modules/cognito_setup.sh"
+if [ -f "$cognito_script" ]; then
+    # shellcheck disable=SC1091
+    source "$cognito_script"
+fi
+
 echo "🚀 Swarm Python API Template - Quick Start"
 echo "==========================================="
 echo ""
@@ -125,9 +132,18 @@ echo "5) Scale services"
 echo "6) Remove deployment"
 echo "7) Re-run setup wizard"
 echo "8) Manage Docker secrets"
-echo "9) Exit"
+if declare -F run_cognito_setup >/dev/null; then
+    echo "9) Configure AWS Cognito"
+    echo "10) Exit"
+else
+    echo "9) Exit"
+fi
 echo ""
-read -p "Your choice (1-9): " choice
+if declare -F run_cognito_setup >/dev/null; then
+    read -p "Your choice (1-10): " choice
+else
+    read -p "Your choice (1-9): " choice
+fi
 
 case $choice in
     1)
@@ -408,6 +424,14 @@ case $choice in
         esac
         ;;
     9)
+        if declare -F run_cognito_setup >/dev/null; then
+            run_cognito_setup
+        else
+            echo "👋 Goodbye!"
+            exit 0
+        fi
+        ;;
+    10)
         echo "👋 Goodbye!"
         exit 0
         ;;
