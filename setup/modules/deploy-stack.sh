@@ -21,6 +21,9 @@ deploy_stack() {
     echo "Stack file: $stack_file"
     echo ""
     
+    # Check for existing stack and offer to remove it
+    check_stack_conflict "$stack_name"
+    
     read -p "Deploy now? (Y/n): " CONFIRM_DEPLOY
     if [[ "$CONFIRM_DEPLOY" =~ ^[Nn]$ ]]; then
         echo "Deployment cancelled."

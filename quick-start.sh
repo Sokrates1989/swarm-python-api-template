@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source modules
 source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
 source "${SCRIPT_DIR}/setup/modules/health-check.sh"
+source "${SCRIPT_DIR}/setup/modules/stack-conflict-check.sh"
 source "${SCRIPT_DIR}/setup/modules/deploy-stack.sh"
 source "${SCRIPT_DIR}/setup/modules/config-builder.sh"
 

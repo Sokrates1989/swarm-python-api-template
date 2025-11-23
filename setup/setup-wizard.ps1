@@ -15,6 +15,7 @@ Import-Module "$ScriptDir\modules\config-builder.ps1" -Force
 Import-Module "$ScriptDir\modules\network-check.ps1" -Force
 Import-Module "$ScriptDir\modules\data-dirs.ps1" -Force
 Import-Module "$ScriptDir\modules\secret-manager.ps1" -Force
+Import-Module "$ScriptDir\modules\stack-conflict-check.ps1" -Force
 Import-Module "$ScriptDir\modules\deploy-stack.ps1" -Force
 Import-Module "$ScriptDir\modules\health-check.ps1" -Force
 
@@ -217,42 +218,7 @@ if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
 # STACK CONFLICT CHECK
 # =============================================================================
 
-Write-Host ""
-Write-Host "🔍 Checking for existing stack..." -ForegroundColor Yellow
-
-$stackExists = docker stack ls --format "{{.Name}}" | Select-String -Pattern "^${StackName}$"
-
-if ($stackExists) {
-    Write-Host "⚠️  WARNING: Stack '$StackName' is already running!" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "This will interfere with Docker secret creation." -ForegroundColor Yellow
-    Write-Host "Secrets cannot be updated while they are in use by a running stack." -ForegroundColor Yellow
-    Write-Host ""
-    $removeStack = Read-Host "Remove existing stack before continuing? (y/N)"
-    
-    if ($removeStack -match '^[Yy]$') {
-        Write-Host ""
-        Write-Host "Removing stack: $StackName" -ForegroundColor Cyan
-        docker stack rm $StackName
-        
-        Write-Host "Waiting for stack to be fully removed..." -ForegroundColor Yellow
-        do {
-            Write-Host "." -NoNewline
-            Start-Sleep -Seconds 2
-            $stackStillExists = docker stack ls --format "{{.Name}}" | Select-String -Pattern "^${StackName}$"
-        } while ($stackStillExists)
-        Write-Host ""
-        Write-Host "✅ Stack removed successfully" -ForegroundColor Green
-        Write-Host ""
-    } else {
-        Write-Host ""
-        Write-Host "⚠️  Continuing with existing stack running." -ForegroundColor Yellow
-        Write-Host "Note: You may encounter errors when creating/updating secrets." -ForegroundColor Yellow
-        Write-Host ""
-    }
-} else {
-    Write-Host "✅ No conflicting stack found" -ForegroundColor Green
-}
+Test-StackConflict -StackName $StackName
 
 # =============================================================================
 # SECRET CREATION

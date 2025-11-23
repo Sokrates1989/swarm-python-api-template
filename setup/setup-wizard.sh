@@ -17,6 +17,7 @@ source "$SCRIPT_DIR/modules/config-builder.sh"
 source "$SCRIPT_DIR/modules/network-check.sh"
 source "$SCRIPT_DIR/modules/data-dirs.sh"
 source "$SCRIPT_DIR/modules/secret-manager.sh"
+source "$SCRIPT_DIR/modules/stack-conflict-check.sh"
 source "$SCRIPT_DIR/modules/deploy-stack.sh"
 source "$SCRIPT_DIR/modules/health-check.sh"
 
@@ -222,41 +223,7 @@ fi
 # STACK CONFLICT CHECK
 # =============================================================================
 
-echo ""
-echo "🔍 Checking for existing stack..."
-
-if docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; then
-    echo "⚠️  WARNING: Stack '$STACK_NAME' is already running!"
-    echo ""
-    echo "This will interfere with Docker secret creation."
-    echo "Secrets cannot be updated while they are in use by a running stack."
-    echo ""
-    read -p "Remove existing stack before continuing? (y/N): " REMOVE_STACK
-    
-    if [[ "$REMOVE_STACK" =~ ^[Yy]$ ]]; then
-        echo ""
-        echo "Removing stack: $STACK_NAME"
-        docker stack rm "$STACK_NAME"
-        
-        echo "Waiting for stack to be fully removed..."
-        # Wait for services to be removed
-        sleep 2
-        while docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; do
-            echo -n "."
-            sleep 2
-        done
-        echo ""
-        echo "✅ Stack removed successfully"
-        echo ""
-    else
-        echo ""
-        echo "⚠️  Continuing with existing stack running."
-        echo "Note: You may encounter errors when creating/updating secrets."
-        echo ""
-    fi
-else
-    echo "✅ No conflicting stack found"
-fi
+check_stack_conflict "$STACK_NAME"
 
 # =============================================================================
 # SECRET CREATION

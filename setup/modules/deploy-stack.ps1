@@ -13,6 +13,9 @@ function Invoke-StackDeploy {
     Write-Host "Stack file: $StackFile"
     Write-Host ""
     
+    # Check for existing stack and offer to remove it
+    Test-StackConflict -StackName $StackName
+    
     $ConfirmDeploy = Read-Host "Deploy now? (Y/n)"
     if ($ConfirmDeploy -eq "n" -or $ConfirmDeploy -eq "N") {
         Write-Host "Deployment cancelled."

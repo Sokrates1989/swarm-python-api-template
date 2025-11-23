@@ -9,6 +9,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Import modules
 Import-Module "$ScriptDir\setup\modules\health-check.ps1" -Force
+Import-Module "$ScriptDir\setup\modules\stack-conflict-check.ps1" -Force
 Import-Module "$ScriptDir\setup\modules\deploy-stack.ps1" -Force
 Import-Module "$ScriptDir\setup\modules\config-builder.ps1" -Force
 
