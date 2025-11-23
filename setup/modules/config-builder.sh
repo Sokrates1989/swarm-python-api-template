@@ -242,7 +242,17 @@ add_cognito_to_stack() {
         fi
         
         # Add Cognito secrets to footer secrets section
-        sed -i "/\".*_BACKUP_DELETE_API_KEY.*\":/a\\  \"$pool_id_secret\":\n    external: true\n  \"$client_id_secret\":\n    external: true\n  \"$access_key_secret\":\n    external: true\n  \"$secret_key_secret\":\n    external: true" "$stack_file"
+        # Insert after the last existing secret declaration
+        sed -i "/\".*_BACKUP_DELETE_API_KEY.*\"/,/external: true/{
+            /external: true/a\\  \"$pool_id_secret\":\\
+    external: true\\
+  \"$client_id_secret\":\\
+    external: true\\
+  \"$access_key_secret\":\\
+    external: true\\
+  \"$secret_key_secret\":\\
+    external: true
+        }" "$stack_file"
     fi
     
     echo "✅ Cognito secrets added to stack file"

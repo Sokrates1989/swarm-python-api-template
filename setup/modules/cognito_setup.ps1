@@ -77,26 +77,17 @@ function Invoke-CognitoSetup {
     
     # Get current values
     $currentRegion = Get-CognitoEnvValue -Key 'AWS_REGION'
-    $currentPool = Get-CognitoEnvValue -Key 'COGNITO_USER_POOL_ID'
-    $currentClient = Get-CognitoEnvValue -Key 'COGNITO_APP_CLIENT_ID'
-    $currentAccessKey = Get-CognitoEnvValue -Key 'AWS_ACCESS_KEY_ID'
-    $currentSecret = Get-CognitoEnvValue -Key 'AWS_SECRET_ACCESS_KEY'
     
     # Check if already configured
-    $hasExisting = (-not [string]::IsNullOrWhiteSpace($currentRegion)) -and 
-                   (-not [string]::IsNullOrWhiteSpace($currentPool))
+    $hasExisting = -not [string]::IsNullOrWhiteSpace($currentRegion)
     
     if ($hasExisting -and -not $Force) {
-        Write-Host "`nExisting Cognito configuration detected:" -ForegroundColor Cyan
+        Write-Host "`n⚠️  Existing AWS Region configuration detected:" -ForegroundColor Yellow
         Write-Host "  AWS_REGION=$currentRegion" -ForegroundColor Gray
-        Write-Host "  COGNITO_USER_POOL_ID=$currentPool" -ForegroundColor Gray
-        if ($currentClient) {
-            Write-Host "  COGNITO_APP_CLIENT_ID=$currentClient" -ForegroundColor Gray
-        }
         
         $overwrite = Read-Host "`nDo you want to overwrite this configuration? (y/N)"
         if ($overwrite -notmatch '^[Yy]$') {
-            Write-Host "Keeping existing Cognito configuration." -ForegroundColor Yellow
+            Write-Host "ℹ️  Keeping existing configuration." -ForegroundColor Yellow
             return $false
         }
     }
@@ -152,51 +143,25 @@ function Invoke-CognitoSetup {
     Write-Host "  - Flutter config: lib/utils/authentication/config/amplifyconfiguration.dart`n" -ForegroundColor Gray
     
     # AWS Region
-    Write-Host "AWS Region" -ForegroundColor Cyan
+    Write-Host "🌍 AWS Region" -ForegroundColor Cyan
     Write-Host "  Example: eu-central-1" -ForegroundColor Gray
     Write-Host "  AWS Console: top-right corner or Pool details" -ForegroundColor Gray
     Write-Host "  Flutter config: look for 'Region' in amplifyconfiguration.dart" -ForegroundColor Gray
     $region = Get-RequiredValue -Prompt "Enter AWS Region" -Current $currentRegion
     
-    # User Pool ID
-    Write-Host "`nCognito User Pool ID" -ForegroundColor Cyan
-    Write-Host "  AWS Console: User pool > Pool details > User pool ID" -ForegroundColor Gray
-    Write-Host "  Flutter config: use CognitoUserPool.Default.PoolId in amplifyconfiguration.dart" -ForegroundColor Gray
-    $pool = Get-RequiredValue -Prompt "Enter Cognito User Pool ID" -Current $currentPool
-    
-    # App Client ID (optional)
-    Write-Host "`nCognito App Client ID (optional)" -ForegroundColor Cyan
-    Write-Host "  AWS Console: User pool > App integration > App client list" -ForegroundColor Gray
-    Write-Host "  Flutter config: look for 'AppClientId' in amplifyconfiguration.dart" -ForegroundColor Gray
-    $client = Get-OptionalValue -Prompt "Enter Cognito App Client ID (optional)" -Current $currentClient
-    
-    # IAM Credentials (optional)
-    Write-Host "`nOptional: IAM credentials (only if backend requires Cognito admin APIs)" -ForegroundColor Gray
-    Write-Host "  AWS Console: IAM > Users > Security credentials tab" -ForegroundColor Gray
-    $accessKey = Get-OptionalValue -Prompt "AWS Access Key ID (optional)" -Current $currentAccessKey
-    
-    Write-Host "  Note: Secret Access Key is only shown when you create/rotate the key" -ForegroundColor Gray
-    $secretDisplay = if ($currentSecret) { '[stored]' } else { $null }
-    $secret = Get-OptionalValue -Prompt "AWS Secret Access Key (optional)" -Current $currentSecret -DisplayValue $secretDisplay
-    
-    # Save values to .env
+    # Save only AWS_REGION to .env (secrets will be stored as Docker secrets only)
     Set-CognitoEnvValue -Key 'AWS_REGION' -Value $region
-    Set-CognitoEnvValue -Key 'COGNITO_USER_POOL_ID' -Value $pool
-    Set-CognitoEnvValue -Key 'COGNITO_APP_CLIENT_ID' -Value $client
-    Set-CognitoEnvValue -Key 'AWS_ACCESS_KEY_ID' -Value $accessKey
-    Set-CognitoEnvValue -Key 'AWS_SECRET_ACCESS_KEY' -Value $secret
     
     # Confirm
-    Write-Host "`nSaved AWS Cognito configuration to $script:CognitoEnvPath" -ForegroundColor Green
+    Write-Host "`n✅ AWS Region saved to $script:CognitoEnvPath" -ForegroundColor Green
     Write-Host "  AWS_REGION=$region" -ForegroundColor Gray
-    Write-Host "  COGNITO_USER_POOL_ID=$pool" -ForegroundColor Gray
-    if ($client) {
-        Write-Host "  COGNITO_APP_CLIENT_ID=$client" -ForegroundColor Gray
-    }
     
     # Create Docker secrets for Cognito configuration
     Write-Host "`n🔑 Creating Docker Secrets for AWS Cognito" -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Cognito secrets must be stored as Docker secrets (not in .env)." -ForegroundColor Gray
+    Write-Host "You'll enter each secret value in Notepad." -ForegroundColor Gray
     Write-Host ""
     
     # Get stack name from .env
@@ -212,15 +177,14 @@ function Invoke-CognitoSetup {
     $accessKeySecret = "${stackNameUpper}_AWS_ACCESS_KEY_ID"
     $secretKeySecret = "${stackNameUpper}_AWS_SECRET_ACCESS_KEY"
     
-    Write-Host "Secret names:" -ForegroundColor Gray
-    Write-Host "  - $poolIdSecret" -ForegroundColor Gray
-    if ($client) {
-        Write-Host "  - $clientIdSecret" -ForegroundColor Gray
-    }
-    if ($accessKey -and $secret) {
-        Write-Host "  - $accessKeySecret" -ForegroundColor Gray
-        Write-Host "  - $secretKeySecret" -ForegroundColor Gray
-    }
+    # Ask which optional secrets to create
+    Write-Host "Which secrets do you want to create?" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Required:"
+    Write-Host "  - $poolIdSecret (Cognito User Pool ID)" -ForegroundColor Gray
+    Write-Host ""
+    $createClient = Read-Host "Create App Client ID secret? (y/N)"
+    $createIam = Read-Host "Create IAM Access Key secrets? (y/N)"
     Write-Host ""
     
     $createSecrets = Read-Host "Create Docker secrets for Cognito configuration? (Y/n)"
@@ -230,14 +194,15 @@ function Invoke-CognitoSetup {
         Write-Host "The secrets will be securely stored in Docker and the temporary files will be deleted." -ForegroundColor Gray
         Write-Host ""
         
-        # Create secrets using file-based approach
+        # Create required secrets
         New-SingleDockerSecret -SecretName $poolIdSecret
         
-        if ($client) {
+        # Create optional secrets
+        if ($createClient -match '^[Yy]$') {
             New-SingleDockerSecret -SecretName $clientIdSecret
         }
         
-        if ($accessKey -and $secret) {
+        if ($createIam -match '^[Yy]$') {
             New-SingleDockerSecret -SecretName $accessKeySecret
             New-SingleDockerSecret -SecretName $secretKeySecret
         }

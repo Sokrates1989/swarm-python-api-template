@@ -29,9 +29,15 @@ deploy_stack() {
     
     echo ""
     echo "Deploying stack..."
-    docker stack deploy -c <(docker-compose -f "$stack_file_abs" --env-file "$env_file" config) "$stack_name"
     
-    if [ $? -ne 0 ]; then
+    # Use temporary file to avoid process substitution issues
+    local temp_config=$(mktemp)
+    docker-compose -f "$stack_file_abs" --env-file "$env_file" config > "$temp_config"
+    docker stack deploy -c "$temp_config" "$stack_name"
+    local deploy_status=$?
+    rm -f "$temp_config"
+    
+    if [ $deploy_status -ne 0 ]; then
         echo "❌ Deployment failed"
         return 1
     fi

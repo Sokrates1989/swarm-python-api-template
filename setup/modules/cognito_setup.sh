@@ -57,29 +57,21 @@ _cognito_setup_update_env() {
 
 
 _run_cognito_prompts() {
-  local current_region current_pool current_client current_key current_secret
+  local current_region
   current_region="$( _cognito_setup_get_env "AWS_REGION" )"
-  current_pool="$( _cognito_setup_get_env "COGNITO_USER_POOL_ID" )"
-  current_client="$( _cognito_setup_get_env "COGNITO_APP_CLIENT_ID" )"
-  current_key="$( _cognito_setup_get_env "AWS_ACCESS_KEY_ID" )"
-  current_secret="$( _cognito_setup_get_env "AWS_SECRET_ACCESS_KEY" )"
 
   local configured="false"
-  if [[ -n "${current_region}" && -n "${current_pool}" ]]; then
+  if [[ -n "${current_region}" ]]; then
     configured="true"
   fi
 
   if [[ "${configured}" == "true" ]]; then
-    echo "⚠️  Existing Cognito configuration detected:"
+    echo "⚠️  Existing AWS Region configuration detected:"
     echo "    AWS_REGION=${current_region}"
-    echo "    COGNITO_USER_POOL_ID=${current_pool}"
-    if [ -n "${current_client}" ]; then
-      echo "    COGNITO_APP_CLIENT_ID=${current_client}"
-    fi
     echo ""
     read -p "Do you want to overwrite this configuration? (y/N): " overwrite_choice
     if [[ ! "${overwrite_choice}" =~ ^[Yy]$ ]]; then
-      echo "ℹ️  Keeping existing Cognito configuration."
+      echo "ℹ️  Keeping existing configuration."
       return 0
     fi
   fi
@@ -93,13 +85,6 @@ _run_cognito_prompts() {
   echo "  • Flutter config → lib/utils/authentication/config/amplifyconfiguration.dart."
 
   local region_prompt="${current_region}"
-  local pool_prompt="${current_pool}"
-  local client_prompt="${current_client}"
-  local key_prompt="${current_key}"
-  local secret_display=""
-  if [ -n "${current_secret}" ]; then
-    secret_display="[stored]"
-  fi
 
   local input_region input_pool input_client input_key input_secret
 
@@ -117,57 +102,20 @@ _run_cognito_prompts() {
     echo "❌ AWS Region cannot be empty."
   done
 
-  echo ""
-  echo "🆔 Cognito User Pool ID"
-  echo "    • AWS Console: User pool → Pool details → User pool ID."
-  echo "    • Flutter config: amplifyconfiguration.dart → CognitoUserPool.Default.PoolId."
-  while true; do
-    read -p "Enter Cognito User Pool ID${pool_prompt:+ [${pool_prompt}]}: " input_pool
-    input_pool="${input_pool:-${pool_prompt}}"
-    if [[ -n "${input_pool}" ]]; then
-      break
-    fi
-    echo "❌ Cognito User Pool ID cannot be empty."
-  done
-
-  echo ""
-  echo "💻 Cognito App Client ID (optional)"
-  echo "    • AWS Console: User pool → App integration → App client list."
-  echo "    • Flutter config: amplifyconfiguration.dart → \"AppClientId\"."
-  read -p "Enter Cognito App Client ID${client_prompt:+ [${client_prompt}] (optional)}: " input_client
-  input_client="${input_client:-${client_prompt}}"
-
-  echo ""
-  echo "Optional: Provide IAM credentials if the backend requires Cognito admin APIs."
-  echo "    • AWS Console: IAM → Users → Security credentials tab."
-  read -p "AWS Access Key ID${key_prompt:+ [${key_prompt}] (optional)}: " input_key
-  input_key="${input_key:-${key_prompt}}"
-
-  echo "    • The Secret Access Key is shown only when you create or rotate the key."
-  read -p "AWS Secret Access Key${secret_display:+ ${secret_display}} (optional): " input_secret
-  if [[ -z "${input_secret}" && -n "${current_secret}" ]]; then
-    input_secret="${current_secret}"
-  fi
-
-  # Write values to .env
+  # Write only AWS_REGION to .env (secrets will be stored as Docker secrets only)
   _cognito_setup_update_env "AWS_REGION" "${input_region}"
-  _cognito_setup_update_env "COGNITO_USER_POOL_ID" "${input_pool}"
-  _cognito_setup_update_env "COGNITO_APP_CLIENT_ID" "${input_client}"
-  _cognito_setup_update_env "AWS_ACCESS_KEY_ID" "${input_key}"
-  _cognito_setup_update_env "AWS_SECRET_ACCESS_KEY" "${input_secret}"
 
   echo ""
-  echo "✅ AWS Cognito configuration saved to ${_env_file}."
+  echo "✅ AWS Region saved to ${_env_file}"
   echo "    AWS_REGION=${input_region}"
-  echo "    COGNITO_USER_POOL_ID=${input_pool}"
-  if [ -n "${input_client}" ]; then
-    echo "    COGNITO_APP_CLIENT_ID=${input_client}"
-  fi
 
   # Create Docker secrets for Cognito configuration
   echo ""
   echo "🔑 Creating Docker Secrets for AWS Cognito"
   echo "=========================================="
+  echo ""
+  echo "Cognito secrets must be stored as Docker secrets (not in .env)."
+  echo "You'll enter each secret value in an editor."
   echo ""
   
   # Get stack name from .env
@@ -185,15 +133,14 @@ _run_cognito_prompts() {
   local access_key_secret="${stack_name_upper}_AWS_ACCESS_KEY_ID"
   local secret_key_secret="${stack_name_upper}_AWS_SECRET_ACCESS_KEY"
   
-  echo "Secret names:"
-  echo "  - ${pool_id_secret}"
-  if [ -n "${input_client}" ]; then
-    echo "  - ${client_id_secret}"
-  fi
-  if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
-    echo "  - ${access_key_secret}"
-    echo "  - ${secret_key_secret}"
-  fi
+  # Ask which optional secrets to create
+  echo "Which secrets do you want to create?"
+  echo ""
+  echo "Required:"
+  echo "  - ${pool_id_secret} (Cognito User Pool ID)"
+  echo ""
+  read -p "Create App Client ID secret? (y/N): " create_client
+  read -p "Create IAM Access Key secrets? (y/N): " create_iam
   echo ""
   
   read -p "Create Docker secrets for Cognito configuration? (Y/n): " create_secrets
@@ -211,10 +158,10 @@ _run_cognito_prompts() {
         echo ""
         echo "Please create secrets manually:"
         echo "  echo 'your-pool-id' | docker secret create ${pool_id_secret} -"
-        if [ -n "${input_client}" ]; then
+        if [[ "${create_client}" =~ ^[Yy]$ ]]; then
           echo "  echo 'your-client-id' | docker secret create ${client_id_secret} -"
         fi
-        if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
+        if [[ "${create_iam}" =~ ^[Yy]$ ]]; then
           echo "  echo 'your-access-key' | docker secret create ${access_key_secret} -"
           echo "  echo 'your-secret-key' | docker secret create ${secret_key_secret} -"
         fi
@@ -226,14 +173,15 @@ _run_cognito_prompts() {
     echo "The secrets will be securely stored in Docker and the temporary files will be deleted."
     echo ""
     
-    # Create secrets using file-based approach
+    # Create required secrets
     create_single_secret "${pool_id_secret}" "${EDITOR}"
     
-    if [ -n "${input_client}" ]; then
+    # Create optional secrets
+    if [[ "${create_client}" =~ ^[Yy]$ ]]; then
       create_single_secret "${client_id_secret}" "${EDITOR}"
     fi
     
-    if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
+    if [[ "${create_iam}" =~ ^[Yy]$ ]]; then
       create_single_secret "${access_key_secret}" "${EDITOR}"
       create_single_secret "${secret_key_secret}" "${EDITOR}"
     fi

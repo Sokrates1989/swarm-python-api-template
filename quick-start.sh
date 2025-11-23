@@ -449,14 +449,21 @@ case $choice in
                     read -p "Redeploy stack to apply Cognito configuration? (Y/n): " REDEPLOY
                     
                     if [[ ! "$REDEPLOY" =~ ^[Nn]$ ]]; then
-                        # Use the deploy-stack module for consistent deployment
+                        # Use temporary file for deployment to avoid process substitution issues
                         STACK_FILE="$(pwd)/swarm-stack.yml"
+                        ENV_FILE="$(pwd)/.env"
+                        TEMP_CONFIG=$(mktemp)
                         
                         echo ""
                         echo "Redeploying stack with Cognito configuration..."
-                        docker stack deploy -c <(docker-compose -f "$STACK_FILE" --env-file "$(pwd)/.env" config) "$STACK_NAME"
                         
-                        if [ $? -eq 0 ]; then
+                        # Generate config and deploy
+                        docker-compose -f "$STACK_FILE" --env-file "$ENV_FILE" config > "$TEMP_CONFIG"
+                        docker stack deploy -c "$TEMP_CONFIG" "$STACK_NAME"
+                        local deploy_status=$?
+                        rm -f "$TEMP_CONFIG"
+                        
+                        if [ $deploy_status -eq 0 ]; then
                             echo ""
                             echo "✅ Stack redeployed successfully"
                             echo ""
