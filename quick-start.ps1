@@ -648,10 +648,12 @@ switch ($choice) {
                             Write-Host ""
                             Write-Host "Redeploying stack with Cognito configuration..." -ForegroundColor Yellow
                             
-                            # Generate config and deploy
-                            $tempConfig = [System.IO.Path]::GetTempFileName()
+                            # Generate config and deploy using temp file
+                            $tempConfig = ".stack-deploy-temp.yml"
                             docker-compose -f $stackFile --env-file $envFile config | Out-File -FilePath $tempConfig -Encoding utf8
-                            docker stack deploy -c $tempConfig $STACK_NAME 2>&1 | Out-Null
+                            if ($LASTEXITCODE -eq 0) {
+                                docker stack deploy -c $tempConfig $STACK_NAME 2>&1 | Out-Null
+                            }
                             Remove-Item $tempConfig -ErrorAction SilentlyContinue
                             
                             if ($LASTEXITCODE -eq 0) {
