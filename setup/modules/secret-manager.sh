@@ -48,9 +48,9 @@ create_single_secret() {
             read -p "Delete and recreate? (y/N): " RECREATE
             if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
                 echo "Removing old secret..."
-                if docker secret rm "$secret_name" 2>&1; then
+                if docker secret rm "$secret_name" >/dev/null 2>&1; then
                     echo "Creating new secret..."
-                    if docker secret create "$secret_name" secret.txt 2>&1; then
+                    if docker secret create "$secret_name" secret.txt >/dev/null 2>&1; then
                         echo "✅ Recreated $secret_name"
                     else
                         echo "❌ Failed to create secret"
@@ -66,7 +66,7 @@ create_single_secret() {
             fi
         else
             echo "Creating secret..."
-            if docker secret create "$secret_name" secret.txt 2>&1; then
+            if docker secret create "$secret_name" secret.txt >/dev/null 2>&1; then
                 echo "✅ Created $secret_name"
             else
                 echo "❌ Failed to create secret"

@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
 source "${SCRIPT_DIR}/setup/modules/health-check.sh"
 source "${SCRIPT_DIR}/setup/modules/deploy-stack.sh"
+source "${SCRIPT_DIR}/setup/modules/config-builder.sh"
 
 # Source Cognito setup script if available
 cognito_script="${SCRIPT_DIR}/setup/modules/cognito_setup.sh"
@@ -428,7 +429,7 @@ case $choice in
             run_cognito_setup
             
             # Check if Cognito was configured
-            local cognito_pool=$(grep "^COGNITO_USER_POOL_ID=" .env 2>/dev/null | cut -d'=' -f2)
+            cognito_pool=$(grep "^COGNITO_USER_POOL_ID=" .env 2>/dev/null | cut -d'=' -f2)
             
             if [ -n "$cognito_pool" ]; then
                 echo ""
@@ -439,8 +440,58 @@ case $choice in
                 add_cognito_to_stack "$(pwd)/swarm-stack.yml" "$(pwd)" "$STACK_NAME_UPPER"
                 
                 echo ""
-                echo "⚠️  Stack file updated. You'll need to redeploy for changes to take effect:"
-                echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
+                echo "🔍 Checking for running stack..."
+                
+                # Check if stack is already running
+                if docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; then
+                    echo "✅ Stack '$STACK_NAME' is currently running"
+                    echo ""
+                    read -p "Redeploy stack to apply Cognito configuration? (Y/n): " REDEPLOY
+                    
+                    if [[ ! "$REDEPLOY" =~ ^[Nn]$ ]]; then
+                        # Use the deploy-stack module for consistent deployment
+                        STACK_FILE="$(pwd)/swarm-stack.yml"
+                        
+                        echo ""
+                        echo "Redeploying stack with Cognito configuration..."
+                        docker stack deploy -c <(docker-compose -f "$STACK_FILE" --env-file "$(pwd)/.env" config) "$STACK_NAME"
+                        
+                        if [ $? -eq 0 ]; then
+                            echo ""
+                            echo "✅ Stack redeployed successfully"
+                            echo ""
+                            
+                            # Run health check
+                            echo "🏥 Running health check..."
+                            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
+                        else
+                            echo "❌ Deployment failed"
+                        fi
+                    else
+                        echo ""
+                        echo "ℹ️  Skipping redeployment. You can redeploy manually with:"
+                        echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
+                    fi
+                else
+                    echo "⚠️  No running stack found"
+                    echo ""
+                    read -p "Deploy stack now with Cognito configuration? (Y/n): " DEPLOY_NOW
+                    
+                    if [[ ! "$DEPLOY_NOW" =~ ^[Nn]$ ]]; then
+                        # Use the deploy-stack module
+                        STACK_FILE="$(pwd)/swarm-stack.yml"
+                        deploy_stack "$STACK_NAME" "$STACK_FILE"
+                        
+                        if [ $? -eq 0 ]; then
+                            # Run health check
+                            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
+                        fi
+                    else
+                        echo ""
+                        echo "ℹ️  Skipping deployment. You can deploy manually with:"
+                        echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
+                    fi
+                fi
             fi
         else
             echo "👋 Goodbye!"

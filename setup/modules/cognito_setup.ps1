@@ -6,6 +6,12 @@ $script:CognitoScriptDir = Split-Path -Parent $PSCommandPath
 $script:CognitoProjectRoot = Split-Path -Parent $script:CognitoScriptDir
 $script:CognitoEnvPath = Join-Path $script:CognitoProjectRoot '.env'
 
+# Import secret-manager module for file-based secret creation
+$secretManagerPath = Join-Path $script:CognitoScriptDir 'secret-manager.ps1'
+if (Test-Path $secretManagerPath) {
+    Import-Module $secretManagerPath -Force
+}
+
 function Get-CognitoEnvValue {
     param([string]$Key)
     
@@ -49,59 +55,6 @@ function Set-CognitoEnvValue {
     Set-Content -Path $script:CognitoEnvPath -Value $content -NoNewline
 }
 
-function New-CognitoSecret {
-    param(
-        [string]$SecretName,
-        [string]$SecretValue
-    )
-    
-    # Check if secret already exists
-    $secretExists = $false
-    try {
-        $null = docker secret inspect $SecretName 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $secretExists = $true
-        }
-    } catch {}
-    
-    if ($secretExists) {
-        Write-Host "⚠️  Secret '$SecretName' already exists" -ForegroundColor Yellow
-        $recreate = Read-Host "Delete and recreate? (y/N)"
-        if ($recreate -match '^[Yy]$') {
-            Write-Host "Removing old secret..." -ForegroundColor Yellow
-            docker secret rm $SecretName 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "Creating new secret..." -ForegroundColor Yellow
-                $SecretValue | docker secret create $SecretName - 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "✅ Recreated $SecretName" -ForegroundColor Green
-                    return $true
-                } else {
-                    Write-Host "❌ Failed to create secret" -ForegroundColor Red
-                    return $false
-                }
-            } else {
-                Write-Host "❌ Failed to remove old secret" -ForegroundColor Red
-                Write-Host "The secret might be in use by a service. Stop the service first." -ForegroundColor Yellow
-                return $false
-            }
-        } else {
-            Write-Host "⏭️  Keeping existing secret" -ForegroundColor Cyan
-            return $true
-        }
-    } else {
-        Write-Host "Creating secret..." -ForegroundColor Yellow
-        $SecretValue | docker secret create $SecretName - 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Created $SecretName" -ForegroundColor Green
-            return $true
-        } else {
-            Write-Host "❌ Failed to create secret" -ForegroundColor Red
-            Write-Host "Error: Docker secret creation failed. Check if Docker Swarm is initialized." -ForegroundColor Yellow
-            return $false
-        }
-    }
-}
 
 function Invoke-CognitoSetup {
     param([switch]$Force)
@@ -272,15 +225,21 @@ function Invoke-CognitoSetup {
     
     $createSecrets = Read-Host "Create Docker secrets for Cognito configuration? (Y/n)"
     if ($createSecrets -notmatch '^[Nn]$') {
-        New-CognitoSecret -SecretName $poolIdSecret -SecretValue $pool
+        Write-Host ""
+        Write-Host "You'll be prompted to enter each secret value in Notepad." -ForegroundColor Gray
+        Write-Host "The secrets will be securely stored in Docker and the temporary files will be deleted." -ForegroundColor Gray
+        Write-Host ""
+        
+        # Create secrets using file-based approach
+        New-SingleDockerSecret -SecretName $poolIdSecret
         
         if ($client) {
-            New-CognitoSecret -SecretName $clientIdSecret -SecretValue $client
+            New-SingleDockerSecret -SecretName $clientIdSecret
         }
         
         if ($accessKey -and $secret) {
-            New-CognitoSecret -SecretName $accessKeySecret -SecretValue $accessKey
-            New-CognitoSecret -SecretName $secretKeySecret -SecretValue $secret
+            New-SingleDockerSecret -SecretName $accessKeySecret
+            New-SingleDockerSecret -SecretName $secretKeySecret
         }
         
         Write-Host ""

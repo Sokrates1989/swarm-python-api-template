@@ -10,6 +10,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Import modules
 Import-Module "$ScriptDir\setup\modules\health-check.ps1" -Force
 Import-Module "$ScriptDir\setup\modules\deploy-stack.ps1" -Force
+Import-Module "$ScriptDir\setup\modules\config-builder.ps1" -Force
 
 # Source Cognito setup script if available
 $cognitoScript = Join-Path $ScriptDir "setup\modules\cognito_setup.ps1"
@@ -629,8 +630,66 @@ switch ($choice) {
                     Add-CognitoToStack -StackFile (Join-Path (Get-Location).Path "swarm-stack.yml") -ProjectRoot (Get-Location).Path -StackNameUpper $stackNameUpper
                     
                     Write-Host ""
-                    Write-Host "⚠️  Stack file updated. You'll need to redeploy for changes to take effect:" -ForegroundColor Yellow
-                    Write-Host "   docker stack deploy -c swarm-stack.yml $STACK_NAME" -ForegroundColor Gray
+                    Write-Host "🔍 Checking for running stack..." -ForegroundColor Yellow
+                    
+                    # Check if stack is already running
+                    $stackExists = (docker stack ls --format "{{.Name}}") -split "`n" | Where-Object { $_ -eq $STACK_NAME }
+                    
+                    if ($stackExists) {
+                        Write-Host "✅ Stack '$STACK_NAME' is currently running" -ForegroundColor Green
+                        Write-Host ""
+                        $redeploy = Read-Host "Redeploy stack to apply Cognito configuration? (Y/n)"
+                        
+                        if ($redeploy -notmatch '^[Nn]$') {
+                            # Use direct deployment for redeployment
+                            $stackFile = Join-Path (Get-Location).Path "swarm-stack.yml"
+                            $envFile = Join-Path (Get-Location).Path ".env"
+                            
+                            Write-Host ""
+                            Write-Host "Redeploying stack with Cognito configuration..." -ForegroundColor Yellow
+                            
+                            # Generate config and deploy
+                            $tempConfig = [System.IO.Path]::GetTempFileName()
+                            docker-compose -f $stackFile --env-file $envFile config | Out-File -FilePath $tempConfig -Encoding utf8
+                            docker stack deploy -c $tempConfig $STACK_NAME 2>&1 | Out-Null
+                            Remove-Item $tempConfig -ErrorAction SilentlyContinue
+                            
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Host ""
+                                Write-Host "✅ Stack redeployed successfully" -ForegroundColor Green
+                                Write-Host ""
+                                
+                                # Run health check
+                                Write-Host "🏥 Running health check..." -ForegroundColor Yellow
+                                Invoke-DeploymentHealthCheck -StackName $STACK_NAME -DbType $DB_TYPE -ProxyType $PROXY_TYPE -ApiUrl $API_URL
+                            } else {
+                                Write-Host "❌ Deployment failed" -ForegroundColor Red
+                            }
+                        } else {
+                            Write-Host ""
+                            Write-Host "ℹ️  Skipping redeployment. You can redeploy manually with:" -ForegroundColor Yellow
+                            Write-Host "   docker stack deploy -c swarm-stack.yml $STACK_NAME" -ForegroundColor Gray
+                        }
+                    } else {
+                        Write-Host "⚠️  No running stack found" -ForegroundColor Yellow
+                        Write-Host ""
+                        $deployNow = Read-Host "Deploy stack now with Cognito configuration? (Y/n)"
+                        
+                        if ($deployNow -notmatch '^[Nn]$') {
+                            # Use the deploy-stack module
+                            $stackFile = Join-Path (Get-Location).Path "swarm-stack.yml"
+                            $deployed = Invoke-StackDeploy -StackName $STACK_NAME -StackFile $stackFile
+                            
+                            if ($deployed) {
+                                # Run health check
+                                Invoke-DeploymentHealthCheck -StackName $STACK_NAME -DbType $DB_TYPE -ProxyType $PROXY_TYPE -ApiUrl $API_URL
+                            }
+                        } else {
+                            Write-Host ""
+                            Write-Host "ℹ️  Skipping deployment. You can deploy manually with:" -ForegroundColor Yellow
+                            Write-Host "   docker stack deploy -c swarm-stack.yml $STACK_NAME" -ForegroundColor Gray
+                        }
+                    }
                 }
             }
         } else {

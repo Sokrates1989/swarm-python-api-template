@@ -9,6 +9,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# Source secret-manager module for file-based secret creation
+source "${SCRIPT_DIR}/secret-manager.sh"
+
 _env_file="${PROJECT_ROOT}/.env"
 
 _cognito_setup_is_macos() {
@@ -52,48 +55,6 @@ _cognito_setup_update_env() {
   fi
 }
 
-_cognito_setup_create_secret() {
-  local secret_name="$1"
-  local secret_value="$2"
-  
-  # Check if secret already exists
-  if docker secret inspect "$secret_name" &>/dev/null; then
-    echo "⚠️  Secret '$secret_name' already exists"
-    read -p "Delete and recreate? (y/N): " RECREATE
-    if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
-      echo "Removing old secret..."
-      if docker secret rm "$secret_name" 2>&1; then
-        echo "Creating new secret..."
-        echo -n "$secret_value" | docker secret create "$secret_name" - 2>&1
-        if [ $? -eq 0 ]; then
-          echo "✅ Recreated $secret_name"
-          return 0
-        else
-          echo "❌ Failed to create secret"
-          return 1
-        fi
-      else
-        echo "❌ Failed to remove old secret"
-        echo "The secret might be in use by a service. Stop the service first."
-        return 1
-      fi
-    else
-      echo "⏭️  Keeping existing secret"
-      return 0
-    fi
-  else
-    echo "Creating secret..."
-    echo -n "$secret_value" | docker secret create "$secret_name" - 2>&1
-    if [ $? -eq 0 ]; then
-      echo "✅ Created $secret_name"
-      return 0
-    else
-      echo "❌ Failed to create secret"
-      echo "Error: Docker secret creation failed. Check if Docker Swarm is initialized."
-      return 1
-    fi
-  fi
-}
 
 _run_cognito_prompts() {
   local current_region current_pool current_client current_key current_secret
@@ -237,15 +198,44 @@ _run_cognito_prompts() {
   
   read -p "Create Docker secrets for Cognito configuration? (Y/n): " create_secrets
   if [[ ! "${create_secrets}" =~ ^[Nn]$ ]]; then
-    _cognito_setup_create_secret "${pool_id_secret}" "${input_pool}"
+    # Detect editor
+    local EDITOR=""
+    if command -v nano &> /dev/null; then
+        EDITOR="nano"
+    elif command -v vim &> /dev/null; then
+        EDITOR="vim"
+    elif command -v vi &> /dev/null; then
+        EDITOR="vi"
+    else
+        echo "❌ No text editor found (nano, vim, or vi required)"
+        echo ""
+        echo "Please create secrets manually:"
+        echo "  echo 'your-pool-id' | docker secret create ${pool_id_secret} -"
+        if [ -n "${input_client}" ]; then
+          echo "  echo 'your-client-id' | docker secret create ${client_id_secret} -"
+        fi
+        if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
+          echo "  echo 'your-access-key' | docker secret create ${access_key_secret} -"
+          echo "  echo 'your-secret-key' | docker secret create ${secret_key_secret} -"
+        fi
+        return 1
+    fi
+    
+    echo ""
+    echo "You'll be prompted to enter each secret value in an editor."
+    echo "The secrets will be securely stored in Docker and the temporary files will be deleted."
+    echo ""
+    
+    # Create secrets using file-based approach
+    create_single_secret "${pool_id_secret}" "${EDITOR}"
     
     if [ -n "${input_client}" ]; then
-      _cognito_setup_create_secret "${client_id_secret}" "${input_client}"
+      create_single_secret "${client_id_secret}" "${EDITOR}"
     fi
     
     if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
-      _cognito_setup_create_secret "${access_key_secret}" "${input_key}"
-      _cognito_setup_create_secret "${secret_key_secret}" "${input_secret}"
+      create_single_secret "${access_key_secret}" "${EDITOR}"
+      create_single_secret "${secret_key_secret}" "${EDITOR}"
     fi
     
     echo ""
