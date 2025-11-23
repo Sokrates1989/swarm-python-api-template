@@ -196,6 +196,21 @@ New-Item -ItemType File -Path ".setup-complete" -Force | Out-Null
 if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
     Write-Host ""
     Invoke-CognitoSetup
+    
+    # Check if Cognito was configured
+    $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+    $cognitoPoolLine = $envContent | Where-Object { $_ -match "^COGNITO_USER_POOL_ID=" }
+    
+    if ($cognitoPoolLine) {
+        $cognitoPool = ($cognitoPoolLine -split "=", 2)[1].Trim()
+        
+        if ($cognitoPool) {
+            Write-Host ""
+            Write-Host "🔧 Updating stack file with Cognito secrets..." -ForegroundColor Cyan
+            # Add Cognito secrets to stack file
+            Add-CognitoToStack -StackFile "$ProjectRoot\swarm-stack.yml" -ProjectRoot $ProjectRoot -StackNameUpper $StackNameUpper
+        }
+    }
 }
 
 # =============================================================================

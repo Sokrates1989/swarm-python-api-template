@@ -176,6 +176,63 @@ function Update-StackNetwork {
     Set-Content -Path $StackFile -Value $content -NoNewline
 }
 
+function Add-CognitoToStack {
+    param(
+        [string]$StackFile,
+        [string]$ProjectRoot,
+        [string]$StackNameUpper
+    )
+    
+    # Generate secret names
+    $poolIdSecret = "${StackNameUpper}_COGNITO_USER_POOL_ID"
+    $clientIdSecret = "${StackNameUpper}_COGNITO_APP_CLIENT_ID"
+    $accessKeySecret = "${StackNameUpper}_AWS_ACCESS_KEY_ID"
+    $secretKeySecret = "${StackNameUpper}_AWS_SECRET_ACCESS_KEY"
+    
+    # Read the stack file
+    $content = Get-Content $StackFile -Raw
+    
+    # Check if Cognito secrets are already added
+    if ($content -match "COGNITO_USER_POOL_ID_FILE") {
+        Write-Host "ℹ️  Cognito configuration already present in stack file" -ForegroundColor Yellow
+        return $true
+    }
+    
+    Write-Host "⚙️  Adding AWS Cognito secrets to stack file..." -ForegroundColor Cyan
+    
+    # Add Cognito secrets to API service secrets section
+    # Find the line with the last secret and add Cognito secrets after it
+    $pattern = '(\s+- ".*_BACKUP_DELETE_API_KEY.*")'
+    $replacement = "`$1`r`n      - `"$poolIdSecret`"`r`n      - `"$clientIdSecret`"`r`n      - `"$accessKeySecret`"`r`n      - `"$secretKeySecret`""
+    $content = $content -replace $pattern, $replacement
+    
+    # Add Cognito environment variables after BACKUP_DELETE_API_KEY_FILE
+    $cognitoEnvSnippet = "$ProjectRoot\setup\compose-modules\snippets\cognito-env.yml"
+    if (Test-Path $cognitoEnvSnippet) {
+        $cognitoEnvContent = Get-Content $cognitoEnvSnippet -Raw
+        # Replace placeholder secret names in snippet
+        $cognitoEnvContent = $cognitoEnvContent -replace 'XXX_CHANGE_ME_COGNITO_USER_POOL_ID_XXX', $poolIdSecret
+        $cognitoEnvContent = $cognitoEnvContent -replace 'XXX_CHANGE_ME_COGNITO_APP_CLIENT_ID_XXX', $clientIdSecret
+        $cognitoEnvContent = $cognitoEnvContent -replace 'XXX_CHANGE_ME_AWS_ACCESS_KEY_ID_XXX', $accessKeySecret
+        $cognitoEnvContent = $cognitoEnvContent -replace 'XXX_CHANGE_ME_AWS_SECRET_ACCESS_KEY_XXX', $secretKeySecret
+        
+        $pattern = '(BACKUP_DELETE_API_KEY_FILE: /run/secrets/.*)'
+        $replacement = "`$1`r`n$cognitoEnvContent"
+        $content = $content -replace $pattern, $replacement
+    }
+    
+    # Add Cognito secrets to footer secrets section
+    $pattern = '(\s+".*_BACKUP_DELETE_API_KEY.*":\s+external: true)'
+    $replacement = "`$1`r`n  `"$poolIdSecret`":`r`n    external: true`r`n  `"$clientIdSecret`":`r`n    external: true`r`n  `"$accessKeySecret`":`r`n    external: true`r`n  `"$secretKeySecret`":`r`n    external: true"
+    $content = $content -replace $pattern, $replacement
+    
+    # Write updated content back to file
+    Set-Content -Path $StackFile -Value $content -NoNewline
+    
+    Write-Host "✅ Cognito secrets added to stack file" -ForegroundColor Green
+    return $true
+}
+
 function Backup-ExistingFiles {
     param([string]$ProjectRoot)
     
@@ -198,4 +255,4 @@ function Backup-ExistingFiles {
     }
 }
 
-Export-ModuleMember -Function New-EnvFile, New-StackFile, Update-EnvValue, Update-StackSecrets, Update-StackNetwork, Backup-ExistingFiles
+Export-ModuleMember -Function New-EnvFile, New-StackFile, Update-EnvValue, Update-StackSecrets, Update-StackNetwork, Add-CognitoToStack, Backup-ExistingFiles

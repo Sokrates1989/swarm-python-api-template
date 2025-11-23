@@ -612,6 +612,27 @@ switch ($choice) {
     "9" {
         if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
             Invoke-CognitoSetup
+            
+            # Check if Cognito was configured
+            $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+            $cognitoPoolLine = $envContent | Where-Object { $_ -match "^COGNITO_USER_POOL_ID=" }
+            
+            if ($cognitoPoolLine) {
+                $cognitoPool = ($cognitoPoolLine -split "=", 2)[1].Trim()
+                
+                if ($cognitoPool) {
+                    Write-Host ""
+                    Write-Host "🔧 Updating stack file with Cognito secrets..." -ForegroundColor Cyan
+                    # Generate stack name upper for secret names
+                    $stackNameUpper = $STACK_NAME.ToUpper() -replace '[^A-Z0-9]', '_'
+                    # Add Cognito secrets to stack file
+                    Add-CognitoToStack -StackFile (Join-Path (Get-Location).Path "swarm-stack.yml") -ProjectRoot (Get-Location).Path -StackNameUpper $stackNameUpper
+                    
+                    Write-Host ""
+                    Write-Host "⚠️  Stack file updated. You'll need to redeploy for changes to take effect:" -ForegroundColor Yellow
+                    Write-Host "   docker stack deploy -c swarm-stack.yml $STACK_NAME" -ForegroundColor Gray
+                }
+            }
         } else {
             Write-Host "Goodbye!" -ForegroundColor Cyan
             exit 0

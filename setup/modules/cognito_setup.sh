@@ -52,6 +52,49 @@ _cognito_setup_update_env() {
   fi
 }
 
+_cognito_setup_create_secret() {
+  local secret_name="$1"
+  local secret_value="$2"
+  
+  # Check if secret already exists
+  if docker secret inspect "$secret_name" &>/dev/null; then
+    echo "⚠️  Secret '$secret_name' already exists"
+    read -p "Delete and recreate? (y/N): " RECREATE
+    if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+      echo "Removing old secret..."
+      if docker secret rm "$secret_name" 2>&1; then
+        echo "Creating new secret..."
+        echo -n "$secret_value" | docker secret create "$secret_name" - 2>&1
+        if [ $? -eq 0 ]; then
+          echo "✅ Recreated $secret_name"
+          return 0
+        else
+          echo "❌ Failed to create secret"
+          return 1
+        fi
+      else
+        echo "❌ Failed to remove old secret"
+        echo "The secret might be in use by a service. Stop the service first."
+        return 1
+      fi
+    else
+      echo "⏭️  Keeping existing secret"
+      return 0
+    fi
+  else
+    echo "Creating secret..."
+    echo -n "$secret_value" | docker secret create "$secret_name" - 2>&1
+    if [ $? -eq 0 ]; then
+      echo "✅ Created $secret_name"
+      return 0
+    else
+      echo "❌ Failed to create secret"
+      echo "Error: Docker secret creation failed. Check if Docker Swarm is initialized."
+      return 1
+    fi
+  fi
+}
+
 _run_cognito_prompts() {
   local current_region current_pool current_client current_key current_secret
   current_region="$( _cognito_setup_get_env "AWS_REGION" )"
@@ -145,6 +188,7 @@ _run_cognito_prompts() {
     input_secret="${current_secret}"
   fi
 
+  # Write values to .env
   _cognito_setup_update_env "AWS_REGION" "${input_region}"
   _cognito_setup_update_env "COGNITO_USER_POOL_ID" "${input_pool}"
   _cognito_setup_update_env "COGNITO_APP_CLIENT_ID" "${input_client}"
@@ -157,6 +201,57 @@ _run_cognito_prompts() {
   echo "    COGNITO_USER_POOL_ID=${input_pool}"
   if [ -n "${input_client}" ]; then
     echo "    COGNITO_APP_CLIENT_ID=${input_client}"
+  fi
+
+  # Create Docker secrets for Cognito configuration
+  echo ""
+  echo "🔑 Creating Docker Secrets for AWS Cognito"
+  echo "=========================================="
+  echo ""
+  
+  # Get stack name from .env
+  local stack_name
+  stack_name="$( _cognito_setup_get_env "STACK_NAME" )"
+  if [ -z "${stack_name}" ]; then
+    stack_name="api_production"
+  fi
+  
+  # Generate secret names
+  local stack_name_upper
+  stack_name_upper=$(echo "$stack_name" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+  local pool_id_secret="${stack_name_upper}_COGNITO_USER_POOL_ID"
+  local client_id_secret="${stack_name_upper}_COGNITO_APP_CLIENT_ID"
+  local access_key_secret="${stack_name_upper}_AWS_ACCESS_KEY_ID"
+  local secret_key_secret="${stack_name_upper}_AWS_SECRET_ACCESS_KEY"
+  
+  echo "Secret names:"
+  echo "  - ${pool_id_secret}"
+  if [ -n "${input_client}" ]; then
+    echo "  - ${client_id_secret}"
+  fi
+  if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
+    echo "  - ${access_key_secret}"
+    echo "  - ${secret_key_secret}"
+  fi
+  echo ""
+  
+  read -p "Create Docker secrets for Cognito configuration? (Y/n): " create_secrets
+  if [[ ! "${create_secrets}" =~ ^[Nn]$ ]]; then
+    _cognito_setup_create_secret "${pool_id_secret}" "${input_pool}"
+    
+    if [ -n "${input_client}" ]; then
+      _cognito_setup_create_secret "${client_id_secret}" "${input_client}"
+    fi
+    
+    if [ -n "${input_key}" ] && [ -n "${input_secret}" ]; then
+      _cognito_setup_create_secret "${access_key_secret}" "${input_key}"
+      _cognito_setup_create_secret "${secret_key_secret}" "${input_secret}"
+    fi
+    
+    echo ""
+    echo "✅ Cognito secrets created"
+  else
+    echo "ℹ️  Skipping secret creation. You can create them manually later."
   fi
 
   return 0

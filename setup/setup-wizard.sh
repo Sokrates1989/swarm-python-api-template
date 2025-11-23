@@ -206,6 +206,16 @@ touch ".setup-complete"
 if declare -F run_cognito_setup >/dev/null; then
     echo ""
     run_cognito_setup
+    
+    # Check if Cognito was configured
+    local cognito_pool=$(grep "^COGNITO_USER_POOL_ID=" .env 2>/dev/null | cut -d'=' -f2)
+    
+    if [ -n "$cognito_pool" ]; then
+        echo ""
+        echo "🔧 Updating stack file with Cognito secrets..."
+        # Add Cognito secrets to stack file
+        add_cognito_to_stack "$PROJECT_ROOT/swarm-stack.yml" "$PROJECT_ROOT" "$STACK_NAME_UPPER"
+    fi
 fi
 
 # =============================================================================

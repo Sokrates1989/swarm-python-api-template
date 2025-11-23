@@ -32,6 +32,13 @@ Small, focused configuration snippets that get injected into the API template:
 - **`proxy-traefik.labels.yml`** - Traefik deployment labels for automatic HTTPS
 - **`proxy-none.ports.yml`** - Direct port mapping (no proxy)
 
+#### AWS Cognito Snippets (`snippets/`)
+- **`cognito-env.yml`** - AWS Cognito environment variables for API service
+- **`cognito-secrets.api.yml`** - Cognito secret references for API service
+- **`cognito-secrets.footer.yml`** - Cognito secret declarations for footer section
+
+**Note**: Cognito configuration is added dynamically when AWS Cognito is configured via the setup wizard or quick-start option 9.
+
 ## How It Works
 
 The setup wizard uses a **template injection** approach:

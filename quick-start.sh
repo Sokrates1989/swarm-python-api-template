@@ -426,6 +426,22 @@ case $choice in
     9)
         if declare -F run_cognito_setup >/dev/null; then
             run_cognito_setup
+            
+            # Check if Cognito was configured
+            local cognito_pool=$(grep "^COGNITO_USER_POOL_ID=" .env 2>/dev/null | cut -d'=' -f2)
+            
+            if [ -n "$cognito_pool" ]; then
+                echo ""
+                echo "🔧 Updating stack file with Cognito secrets..."
+                # Generate stack name upper for secret names
+                STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+                # Add Cognito secrets to stack file
+                add_cognito_to_stack "$(pwd)/swarm-stack.yml" "$(pwd)" "$STACK_NAME_UPPER"
+                
+                echo ""
+                echo "⚠️  Stack file updated. You'll need to redeploy for changes to take effect:"
+                echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
+            fi
         else
             echo "👋 Goodbye!"
             exit 0

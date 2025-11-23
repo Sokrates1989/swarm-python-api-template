@@ -49,6 +49,60 @@ function Set-CognitoEnvValue {
     Set-Content -Path $script:CognitoEnvPath -Value $content -NoNewline
 }
 
+function New-CognitoSecret {
+    param(
+        [string]$SecretName,
+        [string]$SecretValue
+    )
+    
+    # Check if secret already exists
+    $secretExists = $false
+    try {
+        $null = docker secret inspect $SecretName 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $secretExists = $true
+        }
+    } catch {}
+    
+    if ($secretExists) {
+        Write-Host "⚠️  Secret '$SecretName' already exists" -ForegroundColor Yellow
+        $recreate = Read-Host "Delete and recreate? (y/N)"
+        if ($recreate -match '^[Yy]$') {
+            Write-Host "Removing old secret..." -ForegroundColor Yellow
+            docker secret rm $SecretName 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Creating new secret..." -ForegroundColor Yellow
+                $SecretValue | docker secret create $SecretName - 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "✅ Recreated $SecretName" -ForegroundColor Green
+                    return $true
+                } else {
+                    Write-Host "❌ Failed to create secret" -ForegroundColor Red
+                    return $false
+                }
+            } else {
+                Write-Host "❌ Failed to remove old secret" -ForegroundColor Red
+                Write-Host "The secret might be in use by a service. Stop the service first." -ForegroundColor Yellow
+                return $false
+            }
+        } else {
+            Write-Host "⏭️  Keeping existing secret" -ForegroundColor Cyan
+            return $true
+        }
+    } else {
+        Write-Host "Creating secret..." -ForegroundColor Yellow
+        $SecretValue | docker secret create $SecretName - 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Created $SecretName" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "❌ Failed to create secret" -ForegroundColor Red
+            Write-Host "Error: Docker secret creation failed. Check if Docker Swarm is initialized." -ForegroundColor Yellow
+            return $false
+        }
+    }
+}
+
 function Invoke-CognitoSetup {
     param([switch]$Force)
     
@@ -172,7 +226,7 @@ function Invoke-CognitoSetup {
     $secretDisplay = if ($currentSecret) { '[stored]' } else { $null }
     $secret = Get-OptionalValue -Prompt "AWS Secret Access Key (optional)" -Current $currentSecret -DisplayValue $secretDisplay
     
-    # Save values
+    # Save values to .env
     Set-CognitoEnvValue -Key 'AWS_REGION' -Value $region
     Set-CognitoEnvValue -Key 'COGNITO_USER_POOL_ID' -Value $pool
     Set-CognitoEnvValue -Key 'COGNITO_APP_CLIENT_ID' -Value $client
@@ -185,6 +239,54 @@ function Invoke-CognitoSetup {
     Write-Host "  COGNITO_USER_POOL_ID=$pool" -ForegroundColor Gray
     if ($client) {
         Write-Host "  COGNITO_APP_CLIENT_ID=$client" -ForegroundColor Gray
+    }
+    
+    # Create Docker secrets for Cognito configuration
+    Write-Host "`n🔑 Creating Docker Secrets for AWS Cognito" -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Get stack name from .env
+    $stackName = Get-CognitoEnvValue -Key 'STACK_NAME'
+    if (-not $stackName) {
+        $stackName = "api_production"
+    }
+    
+    # Generate secret names
+    $stackNameUpper = $stackName.ToUpper() -replace '[^A-Z0-9]', '_'
+    $poolIdSecret = "${stackNameUpper}_COGNITO_USER_POOL_ID"
+    $clientIdSecret = "${stackNameUpper}_COGNITO_APP_CLIENT_ID"
+    $accessKeySecret = "${stackNameUpper}_AWS_ACCESS_KEY_ID"
+    $secretKeySecret = "${stackNameUpper}_AWS_SECRET_ACCESS_KEY"
+    
+    Write-Host "Secret names:" -ForegroundColor Gray
+    Write-Host "  - $poolIdSecret" -ForegroundColor Gray
+    if ($client) {
+        Write-Host "  - $clientIdSecret" -ForegroundColor Gray
+    }
+    if ($accessKey -and $secret) {
+        Write-Host "  - $accessKeySecret" -ForegroundColor Gray
+        Write-Host "  - $secretKeySecret" -ForegroundColor Gray
+    }
+    Write-Host ""
+    
+    $createSecrets = Read-Host "Create Docker secrets for Cognito configuration? (Y/n)"
+    if ($createSecrets -notmatch '^[Nn]$') {
+        New-CognitoSecret -SecretName $poolIdSecret -SecretValue $pool
+        
+        if ($client) {
+            New-CognitoSecret -SecretName $clientIdSecret -SecretValue $client
+        }
+        
+        if ($accessKey -and $secret) {
+            New-CognitoSecret -SecretName $accessKeySecret -SecretValue $accessKey
+            New-CognitoSecret -SecretName $secretKeySecret -SecretValue $secret
+        }
+        
+        Write-Host ""
+        Write-Host "✅ Cognito secrets created" -ForegroundColor Green
+    } else {
+        Write-Host "ℹ️  Skipping secret creation. You can create them manually later." -ForegroundColor Yellow
     }
     
     return $true
