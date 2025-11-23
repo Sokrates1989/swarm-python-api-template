@@ -192,71 +192,95 @@ add_cognito_to_stack() {
     
     echo "⚙️  Adding Cognito secrets to stack file..."
     
-    # Build lists of secrets to add
-    local api_secrets_to_add=""
-    local footer_secrets_to_add=""
-    local env_vars_to_add=""
+    # Get AWS_REGION from .env
+    local aws_region=""
+    if [ -f "${project_root}/.env" ]; then
+        aws_region=$(grep -E "^AWS_REGION=" "${project_root}/.env" | head -n1 | cut -d'=' -f2-)
+    fi
     
-    # Check each secret and build the additions
+    # Initialize all placeholders as empty (will be replaced individually)
+    local pool_id_secret="" pool_id_env="" pool_id_footer=""
+    local client_id_secret="" client_id_env="" client_id_footer=""
+    local access_key_secret="" access_key_env="" access_key_footer=""
+    local secret_key_secret="" secret_key_env="" secret_key_footer=""
+    local aws_region_env=""
+    
+    # Add AWS_REGION if found
+    if [ -n "$aws_region" ]; then
+        aws_region_env="      AWS_REGION: ${aws_region}"
+    fi
+    
+    # Build content for each created secret
     for secret_name in $COGNITO_CREATED_SECRETS; do
-        # Add to API service secrets list
-        api_secrets_to_add="${api_secrets_to_add}      - \"${secret_name}\"\n"
-        
-        # Add to footer secrets section
-        footer_secrets_to_add="${footer_secrets_to_add}  \"${secret_name}\":\n    external: true\n"
-        
-        # Add corresponding environment variable
         if echo "$secret_name" | grep -q "COGNITO_USER_POOL_ID"; then
-            env_vars_to_add="${env_vars_to_add}      COGNITO_USER_POOL_ID_FILE: /run/secrets/${secret_name}\n"
+            pool_id_secret="      - \"${secret_name}\""
+            pool_id_env="      COGNITO_USER_POOL_ID_FILE: /run/secrets/${secret_name}"
+            pool_id_footer="  \"${secret_name}\":
+    external: true"
         elif echo "$secret_name" | grep -q "COGNITO_APP_CLIENT_ID"; then
-            env_vars_to_add="${env_vars_to_add}      COGNITO_APP_CLIENT_ID_FILE: /run/secrets/${secret_name}\n"
+            client_id_secret="      - \"${secret_name}\""
+            client_id_env="      COGNITO_APP_CLIENT_ID_FILE: /run/secrets/${secret_name}"
+            client_id_footer="  \"${secret_name}\":
+    external: true"
         elif echo "$secret_name" | grep -q "AWS_ACCESS_KEY_ID"; then
-            env_vars_to_add="${env_vars_to_add}      AWS_ACCESS_KEY_ID_FILE: /run/secrets/${secret_name}\n"
+            access_key_secret="      - \"${secret_name}\""
+            access_key_env="      AWS_ACCESS_KEY_ID_FILE: /run/secrets/${secret_name}"
+            access_key_footer="  \"${secret_name}\":
+    external: true"
         elif echo "$secret_name" | grep -q "AWS_SECRET_ACCESS_KEY"; then
-            env_vars_to_add="${env_vars_to_add}      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/${secret_name}\n"
+            secret_key_secret="      - \"${secret_name}\""
+            secret_key_env="      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/${secret_name}"
+            secret_key_footer="  \"${secret_name}\":
+    external: true"
         fi
     done
     
-    # Add secrets to API service (after BACKUP_DELETE_API_KEY)
+    # Replace individual placeholders in stack file
+    # Use different sed syntax based on OS
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "/      - \".*_BACKUP_DELETE_API_KEY.*\"/a\\
-${api_secrets_to_add%\\n}
-" "$stack_file"
-        
-        # Add environment variables (after AWS_REGION)
-        sed -i '' "/      AWS_REGION:/a\\
-${env_vars_to_add%\\n}
-" "$stack_file"
-        
-        # Add to footer secrets section (in secrets: block, not networks)
-        sed -i '' "/^secrets:/,/^[^ ]/{
-            /  \".*_BACKUP_DELETE_API_KEY.*\":/,/    external: true/a\\
-${footer_secrets_to_add%\\n}
-        }" "$stack_file"
+        sed -i '' "s|###AWS_REGION_ENV###|${aws_region_env}|g" "$stack_file"
+        sed -i '' "s|###COGNITO_USER_POOL_ID_SECRET###|${pool_id_secret}|g" "$stack_file"
+        sed -i '' "s|###COGNITO_USER_POOL_ID_ENV###|${pool_id_env}|g" "$stack_file"
+        sed -i '' "s|###COGNITO_USER_POOL_ID_FOOTER###|${pool_id_footer}|g" "$stack_file"
+        sed -i '' "s|###COGNITO_APP_CLIENT_ID_SECRET###|${client_id_secret}|g" "$stack_file"
+        sed -i '' "s|###COGNITO_APP_CLIENT_ID_ENV###|${client_id_env}|g" "$stack_file"
+        sed -i '' "s|###COGNITO_APP_CLIENT_ID_FOOTER###|${client_id_footer}|g" "$stack_file"
+        sed -i '' "s|###AWS_ACCESS_KEY_ID_SECRET###|${access_key_secret}|g" "$stack_file"
+        sed -i '' "s|###AWS_ACCESS_KEY_ID_ENV###|${access_key_env}|g" "$stack_file"
+        sed -i '' "s|###AWS_ACCESS_KEY_ID_FOOTER###|${access_key_footer}|g" "$stack_file"
+        sed -i '' "s|###AWS_SECRET_ACCESS_KEY_SECRET###|${secret_key_secret}|g" "$stack_file"
+        sed -i '' "s|###AWS_SECRET_ACCESS_KEY_ENV###|${secret_key_env}|g" "$stack_file"
+        sed -i '' "s|###AWS_SECRET_ACCESS_KEY_FOOTER###|${secret_key_footer}|g" "$stack_file"
     else
-        # Linux - use awk for reliable multi-line insertions
+        # Linux - escape special characters for sed
+        aws_region_env=$(echo "$aws_region_env" | sed 's/[&/\]/\\&/g')
+        pool_id_secret=$(echo "$pool_id_secret" | sed 's/[&/\]/\\&/g')
+        pool_id_env=$(echo "$pool_id_env" | sed 's/[&/\]/\\&/g')
+        pool_id_footer=$(echo "$pool_id_footer" | sed 's/[&/\]/\\&/g')
+        client_id_secret=$(echo "$client_id_secret" | sed 's/[&/\]/\\&/g')
+        client_id_env=$(echo "$client_id_env" | sed 's/[&/\]/\\&/g')
+        client_id_footer=$(echo "$client_id_footer" | sed 's/[&/\]/\\&/g')
+        access_key_secret=$(echo "$access_key_secret" | sed 's/[&/\]/\\&/g')
+        access_key_env=$(echo "$access_key_env" | sed 's/[&/\]/\\&/g')
+        access_key_footer=$(echo "$access_key_footer" | sed 's/[&/\]/\\&/g')
+        secret_key_secret=$(echo "$secret_key_secret" | sed 's/[&/\]/\\&/g')
+        secret_key_env=$(echo "$secret_key_env" | sed 's/[&/\]/\\&/g')
+        secret_key_footer=$(echo "$secret_key_footer" | sed 's/[&/\]/\\&/g')
         
-        # Add API service secrets
-        awk -v secrets="${api_secrets_to_add}" '
-            /      - ".*_BACKUP_DELETE_API_KEY.*"/ { print; printf "%s", secrets; next }
-            { print }
-        ' "$stack_file" > "${stack_file}.tmp" && mv "${stack_file}.tmp" "$stack_file"
-        
-        # Add environment variables
-        awk -v envs="${env_vars_to_add}" '
-            /      AWS_REGION:/ { print; printf "%s", envs; next }
-            { print }
-        ' "$stack_file" > "${stack_file}.tmp" && mv "${stack_file}.tmp" "$stack_file"
-        
-        # Add footer secrets
-        awk -v secrets="${footer_secrets_to_add}" '
-            in_secrets && /  ".*_BACKUP_DELETE_API_KEY.*":/ { found=1 }
-            found && /    external: true/ { print; printf "%s", secrets; found=0; next }
-            /^secrets:/ { in_secrets=1 }
-            /^[^ ]/ && !/^secrets:/ { in_secrets=0 }
-            { print }
-        ' "$stack_file" > "${stack_file}.tmp" && mv "${stack_file}.tmp" "$stack_file"
+        sed -i "s|###AWS_REGION_ENV###|${aws_region_env}|g" "$stack_file"
+        sed -i "s|###COGNITO_USER_POOL_ID_SECRET###|${pool_id_secret}|g" "$stack_file"
+        sed -i "s|###COGNITO_USER_POOL_ID_ENV###|${pool_id_env}|g" "$stack_file"
+        sed -i "s|###COGNITO_USER_POOL_ID_FOOTER###|${pool_id_footer}|g" "$stack_file"
+        sed -i "s|###COGNITO_APP_CLIENT_ID_SECRET###|${client_id_secret}|g" "$stack_file"
+        sed -i "s|###COGNITO_APP_CLIENT_ID_ENV###|${client_id_env}|g" "$stack_file"
+        sed -i "s|###COGNITO_APP_CLIENT_ID_FOOTER###|${client_id_footer}|g" "$stack_file"
+        sed -i "s|###AWS_ACCESS_KEY_ID_SECRET###|${access_key_secret}|g" "$stack_file"
+        sed -i "s|###AWS_ACCESS_KEY_ID_ENV###|${access_key_env}|g" "$stack_file"
+        sed -i "s|###AWS_ACCESS_KEY_ID_FOOTER###|${access_key_footer}|g" "$stack_file"
+        sed -i "s|###AWS_SECRET_ACCESS_KEY_SECRET###|${secret_key_secret}|g" "$stack_file"
+        sed -i "s|###AWS_SECRET_ACCESS_KEY_ENV###|${secret_key_env}|g" "$stack_file"
+        sed -i "s|###AWS_SECRET_ACCESS_KEY_FOOTER###|${secret_key_footer}|g" "$stack_file"
     fi
     
     echo "✅ Cognito secrets added to stack file"
