@@ -35,7 +35,7 @@ check_stack_conflict() {
             echo "⚠️  Continuing with existing stack running."
             echo "Note: You may encounter errors when creating/updating secrets."
             echo ""
-            return 1
+            return 0
         fi
     else
         echo "✅ No conflicting stack found"

@@ -235,52 +235,29 @@ add_cognito_to_stack() {
         fi
     done
     
-    # Replace individual placeholders in stack file
-    # Use different sed syntax based on OS
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        sed -i '' "s|###AWS_REGION_ENV###|${aws_region_env}|g" "$stack_file"
-        sed -i '' "s|###COGNITO_USER_POOL_ID_SECRET###|${pool_id_secret}|g" "$stack_file"
-        sed -i '' "s|###COGNITO_USER_POOL_ID_ENV###|${pool_id_env}|g" "$stack_file"
-        sed -i '' "s|###COGNITO_USER_POOL_ID_FOOTER###|${pool_id_footer}|g" "$stack_file"
-        sed -i '' "s|###COGNITO_APP_CLIENT_ID_SECRET###|${client_id_secret}|g" "$stack_file"
-        sed -i '' "s|###COGNITO_APP_CLIENT_ID_ENV###|${client_id_env}|g" "$stack_file"
-        sed -i '' "s|###COGNITO_APP_CLIENT_ID_FOOTER###|${client_id_footer}|g" "$stack_file"
-        sed -i '' "s|###AWS_ACCESS_KEY_ID_SECRET###|${access_key_secret}|g" "$stack_file"
-        sed -i '' "s|###AWS_ACCESS_KEY_ID_ENV###|${access_key_env}|g" "$stack_file"
-        sed -i '' "s|###AWS_ACCESS_KEY_ID_FOOTER###|${access_key_footer}|g" "$stack_file"
-        sed -i '' "s|###AWS_SECRET_ACCESS_KEY_SECRET###|${secret_key_secret}|g" "$stack_file"
-        sed -i '' "s|###AWS_SECRET_ACCESS_KEY_ENV###|${secret_key_env}|g" "$stack_file"
-        sed -i '' "s|###AWS_SECRET_ACCESS_KEY_FOOTER###|${secret_key_footer}|g" "$stack_file"
-    else
-        # Linux - escape special characters for sed
-        aws_region_env=$(echo "$aws_region_env" | sed 's/[&/\]/\\&/g')
-        pool_id_secret=$(echo "$pool_id_secret" | sed 's/[&/\]/\\&/g')
-        pool_id_env=$(echo "$pool_id_env" | sed 's/[&/\]/\\&/g')
-        pool_id_footer=$(echo "$pool_id_footer" | sed 's/[&/\]/\\&/g')
-        client_id_secret=$(echo "$client_id_secret" | sed 's/[&/\]/\\&/g')
-        client_id_env=$(echo "$client_id_env" | sed 's/[&/\]/\\&/g')
-        client_id_footer=$(echo "$client_id_footer" | sed 's/[&/\]/\\&/g')
-        access_key_secret=$(echo "$access_key_secret" | sed 's/[&/\]/\\&/g')
-        access_key_env=$(echo "$access_key_env" | sed 's/[&/\]/\\&/g')
-        access_key_footer=$(echo "$access_key_footer" | sed 's/[&/\]/\\&/g')
-        secret_key_secret=$(echo "$secret_key_secret" | sed 's/[&/\]/\\&/g')
-        secret_key_env=$(echo "$secret_key_env" | sed 's/[&/\]/\\&/g')
-        secret_key_footer=$(echo "$secret_key_footer" | sed 's/[&/\]/\\&/g')
-        
-        sed -i "s|###AWS_REGION_ENV###|${aws_region_env}|g" "$stack_file"
-        sed -i "s|###COGNITO_USER_POOL_ID_SECRET###|${pool_id_secret}|g" "$stack_file"
-        sed -i "s|###COGNITO_USER_POOL_ID_ENV###|${pool_id_env}|g" "$stack_file"
-        sed -i "s|###COGNITO_USER_POOL_ID_FOOTER###|${pool_id_footer}|g" "$stack_file"
-        sed -i "s|###COGNITO_APP_CLIENT_ID_SECRET###|${client_id_secret}|g" "$stack_file"
-        sed -i "s|###COGNITO_APP_CLIENT_ID_ENV###|${client_id_env}|g" "$stack_file"
-        sed -i "s|###COGNITO_APP_CLIENT_ID_FOOTER###|${client_id_footer}|g" "$stack_file"
-        sed -i "s|###AWS_ACCESS_KEY_ID_SECRET###|${access_key_secret}|g" "$stack_file"
-        sed -i "s|###AWS_ACCESS_KEY_ID_ENV###|${access_key_env}|g" "$stack_file"
-        sed -i "s|###AWS_ACCESS_KEY_ID_FOOTER###|${access_key_footer}|g" "$stack_file"
-        sed -i "s|###AWS_SECRET_ACCESS_KEY_SECRET###|${secret_key_secret}|g" "$stack_file"
-        sed -i "s|###AWS_SECRET_ACCESS_KEY_ENV###|${secret_key_env}|g" "$stack_file"
-        sed -i "s|###AWS_SECRET_ACCESS_KEY_FOOTER###|${secret_key_footer}|g" "$stack_file"
+    # Replace individual placeholders in stack file using Python (works everywhere, handles multi-line)
+    python3 -c "
+import sys
+content = open('$stack_file', 'r').read()
+content = content.replace('###AWS_REGION_ENV###', '''${aws_region_env}''')
+content = content.replace('###COGNITO_USER_POOL_ID_SECRET###', '''${pool_id_secret}''')
+content = content.replace('###COGNITO_USER_POOL_ID_ENV###', '''${pool_id_env}''')
+content = content.replace('###COGNITO_USER_POOL_ID_FOOTER###', '''${pool_id_footer}''')
+content = content.replace('###COGNITO_APP_CLIENT_ID_SECRET###', '''${client_id_secret}''')
+content = content.replace('###COGNITO_APP_CLIENT_ID_ENV###', '''${client_id_env}''')
+content = content.replace('###COGNITO_APP_CLIENT_ID_FOOTER###', '''${client_id_footer}''')
+content = content.replace('###AWS_ACCESS_KEY_ID_SECRET###', '''${access_key_secret}''')
+content = content.replace('###AWS_ACCESS_KEY_ID_ENV###', '''${access_key_env}''')
+content = content.replace('###AWS_ACCESS_KEY_ID_FOOTER###', '''${access_key_footer}''')
+content = content.replace('###AWS_SECRET_ACCESS_KEY_SECRET###', '''${secret_key_secret}''')
+content = content.replace('###AWS_SECRET_ACCESS_KEY_ENV###', '''${secret_key_env}''')
+content = content.replace('###AWS_SECRET_ACCESS_KEY_FOOTER###', '''${secret_key_footer}''')
+open('$stack_file', 'w').write(content)
+"
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to update stack file with Cognito configuration"
+        return 1
     fi
     
     echo "✅ Cognito secrets added to stack file"

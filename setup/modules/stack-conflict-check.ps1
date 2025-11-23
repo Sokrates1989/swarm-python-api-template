@@ -42,7 +42,7 @@ function Test-StackConflict {
             Write-Host "⚠️  Continuing with existing stack running." -ForegroundColor Yellow
             Write-Host "Note: You may encounter errors when creating/updating secrets."
             Write-Host ""
-            return $false
+            return $true
         }
     }
     else {
