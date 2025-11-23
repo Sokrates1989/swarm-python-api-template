@@ -133,65 +133,92 @@ _run_cognito_prompts() {
   local access_key_secret="${stack_name_upper}_AWS_ACCESS_KEY_ID"
   local secret_key_secret="${stack_name_upper}_AWS_SECRET_ACCESS_KEY"
   
-  # Ask which optional secrets to create
-  echo "Which secrets do you want to create?"
-  echo ""
-  echo "Required:"
-  echo "  - ${pool_id_secret} (Cognito User Pool ID)"
-  echo ""
-  read -p "Create App Client ID secret? (y/N): " create_client
-  read -p "Create IAM Access Key secrets? (y/N): " create_iam
-  echo ""
+  # Detect editor
+  local EDITOR=""
+  if command -v nano &> /dev/null; then
+      EDITOR="nano"
+  elif command -v vim &> /dev/null; then
+      EDITOR="vim"
+  elif command -v vi &> /dev/null; then
+      EDITOR="vi"
+  else
+      echo "❌ No text editor found (nano, vim, or vi required)"
+      echo ""
+      echo "Please create secrets manually:"
+      echo "  echo 'your-pool-id' | docker secret create ${pool_id_secret} -"
+      return 1
+  fi
   
-  read -p "Create Docker secrets for Cognito configuration? (Y/n): " create_secrets
-  if [[ ! "${create_secrets}" =~ ^[Nn]$ ]]; then
-    # Detect editor
-    local EDITOR=""
-    if command -v nano &> /dev/null; then
-        EDITOR="nano"
-    elif command -v vim &> /dev/null; then
-        EDITOR="vim"
-    elif command -v vi &> /dev/null; then
-        EDITOR="vi"
-    else
-        echo "❌ No text editor found (nano, vim, or vi required)"
-        echo ""
-        echo "Please create secrets manually:"
-        echo "  echo 'your-pool-id' | docker secret create ${pool_id_secret} -"
-        if [[ "${create_client}" =~ ^[Yy]$ ]]; then
-          echo "  echo 'your-client-id' | docker secret create ${client_id_secret} -"
-        fi
-        if [[ "${create_iam}" =~ ^[Yy]$ ]]; then
-          echo "  echo 'your-access-key' | docker secret create ${access_key_secret} -"
-          echo "  echo 'your-secret-key' | docker secret create ${secret_key_secret} -"
-        fi
-        return 1
-    fi
-    
-    echo ""
-    echo "You'll be prompted to enter each secret value in an editor."
-    echo "The secrets will be securely stored in Docker and the temporary files will be deleted."
-    echo ""
-    
-    # Create required secrets
-    create_single_secret "${pool_id_secret}" "${EDITOR}"
-    
-    # Create optional secrets
-    if [[ "${create_client}" =~ ^[Yy]$ ]]; then
-      create_single_secret "${client_id_secret}" "${EDITOR}"
-    fi
-    
-    if [[ "${create_iam}" =~ ^[Yy]$ ]]; then
-      create_single_secret "${access_key_secret}" "${EDITOR}"
-      create_single_secret "${secret_key_secret}" "${EDITOR}"
-    fi
-    
-    echo ""
+  echo "🔑 Creating Docker Secrets for AWS Cognito"
+  echo "=========================================="
+  echo ""
+  echo "Cognito secrets must be stored as Docker secrets (not in .env)."
+  echo "You'll enter each secret value in an editor."
+  echo ""
+  echo "💡 Tips:"
+  echo "  • Required: User Pool ID (find in AWS Console → Cognito → User pools)"
+  echo "  • Optional: Leave editor empty (save without typing) to skip a secret"
+  echo "  • IAM keys only needed if using Cognito Admin API features"
+  echo ""
+  read -p "Continue? (Y/n): " continue_choice
+  if [[ "${continue_choice}" =~ ^[Nn]$ ]]; then
+    echo "ℹ️  Skipping secret creation."
+    return 1
+  fi
+  
+  # Track which secrets were created
+  export COGNITO_CREATED_SECRETS=""
+  
+  # Create User Pool ID (required)
+  echo ""
+  echo "📋 Secret 1/4: Cognito User Pool ID (REQUIRED)"
+  echo "    • AWS Console: Cognito → User pools → select pool → copy 'User pool ID'"
+  echo "    • Flutter: amplifyconfiguration.dart → PoolId"
+  echo "    • Example: eu-central-1_AbCdEfGhI"
+  if create_single_secret "${pool_id_secret}" "${EDITOR}"; then
+    COGNITO_CREATED_SECRETS="${COGNITO_CREATED_SECRETS} ${pool_id_secret}"
+  fi
+  
+  # Create App Client ID (optional)
+  echo ""
+  echo "📱 Secret 2/4: App Client ID (OPTIONAL)"
+  echo "    • AWS Console: Cognito → User pools → select pool → App integration → App clients"
+  echo "    • Flutter: amplifyconfiguration.dart → AppClientId"
+  echo "    • Leave empty to skip (not required for basic JWT verification)"
+  if create_single_secret "${client_id_secret}" "${EDITOR}"; then
+    COGNITO_CREATED_SECRETS="${COGNITO_CREATED_SECRETS} ${client_id_secret}"
+  fi
+  
+  # Create AWS Access Key ID (optional)
+  echo ""
+  echo "🔐 Secret 3/4: AWS Access Key ID (OPTIONAL)"
+  echo "    • Only needed for Cognito Admin API (e.g., user management from backend)"
+  echo "    • AWS Console: IAM → Users → Security credentials → Access keys"
+  echo "    • Leave empty to skip (not needed for JWT verification)"
+  if create_single_secret "${access_key_secret}" "${EDITOR}"; then
+    COGNITO_CREATED_SECRETS="${COGNITO_CREATED_SECRETS} ${access_key_secret}"
+  fi
+  
+  # Create AWS Secret Access Key (optional)
+  echo ""
+  echo "🔐 Secret 4/4: AWS Secret Access Key (OPTIONAL)"
+  echo "    • Only needed if you created Access Key ID above"
+  echo "    • AWS Console: IAM → Users → Security credentials → Access keys"
+  echo "    • Leave empty to skip"
+  if create_single_secret "${secret_key_secret}" "${EDITOR}"; then
+    COGNITO_CREATED_SECRETS="${COGNITO_CREATED_SECRETS} ${secret_key_secret}"
+  fi
+  
+  echo ""
+  if [ -n "${COGNITO_CREATED_SECRETS}" ]; then
     echo "✅ Cognito secrets created"
   else
-    echo "ℹ️  Skipping secret creation. You can create them manually later."
+    echo "⚠️  No secrets were created"
+    return 1
   fi
 
+  # Export list of created secrets for use by stack updater
+  export COGNITO_CREATED_SECRETS
   return 0
 }
 

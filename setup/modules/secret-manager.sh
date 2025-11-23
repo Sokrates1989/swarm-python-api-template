@@ -52,31 +52,41 @@ create_single_secret() {
                     echo "Creating new secret..."
                     if docker secret create "$secret_name" secret.txt >/dev/null 2>&1; then
                         echo "✅ Recreated $secret_name"
+                        rm -f secret.txt
+                        return 0
                     else
                         echo "❌ Failed to create secret"
                         echo "Error: Docker secret creation failed. Check if Docker Swarm is initialized."
+                        rm -f secret.txt
+                        return 1
                     fi
                 else
-                    echo "❌ Failed to remove old secret"
-                    echo "The secret might be in use by a service. Stop the service first."
-                    echo "Afterwards run ./quick-start.sh to create the secrets or rerun the complete setup wizard."
+                    echo "❌ Failed to remove old secret (may be in use)"
+                    rm -f secret.txt
+                    return 1
                 fi
             else
                 echo "⏭️  Keeping existing secret"
+                rm -f secret.txt
+                return 0  # Secret exists, so return success
             fi
         else
             echo "Creating secret..."
             if docker secret create "$secret_name" secret.txt >/dev/null 2>&1; then
                 echo "✅ Created $secret_name"
+                rm -f secret.txt
+                return 0
             else
                 echo "❌ Failed to create secret"
                 echo "Error: Docker secret creation failed. Check if Docker Swarm is initialized."
+                rm -f secret.txt
+                return 1
             fi
         fi
-        rm -f secret.txt
     else
         echo "⚠️  Secret file is empty or not saved, skipping"
         rm -f secret.txt
+        return 1  # No secret created
     fi
 }
 

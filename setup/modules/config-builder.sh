@@ -178,81 +178,77 @@ add_cognito_to_stack() {
     local project_root="$2"
     local stack_name_upper="$3"
     
-    # Generate secret names
-    local pool_id_secret="${stack_name_upper}_COGNITO_USER_POOL_ID"
-    local client_id_secret="${stack_name_upper}_COGNITO_APP_CLIENT_ID"
-    local access_key_secret="${stack_name_upper}_AWS_ACCESS_KEY_ID"
-    local secret_key_secret="${stack_name_upper}_AWS_SECRET_ACCESS_KEY"
+    # Check if COGNITO_CREATED_SECRETS is set
+    if [ -z "${COGNITO_CREATED_SECRETS}" ]; then
+        echo "⚠️  No Cognito secrets were created, skipping stack update"
+        return 0
+    fi
     
-    # Read the stack file
-    local content=$(cat "$stack_file")
-    
-    # Check if Cognito secrets are already added
-    if echo "$content" | grep -q "AWS_ACCESS_KEY_ID_FILE"; then
+    # Check if Cognito configuration already exists
+    if grep -q "COGNITO_USER_POOL_ID_FILE" "$stack_file"; then
         echo "ℹ️  Cognito configuration already present in stack file"
         return 0
     fi
     
-    echo "⚙️  Adding AWS Cognito secrets to stack file..."
+    echo "⚙️  Adding Cognito secrets to stack file..."
     
-    # Add Cognito secrets to API service secrets section
-    # Find the line with the last secret and add Cognito secrets after it
+    # Build lists of secrets to add
+    local api_secrets_to_add=""
+    local footer_secrets_to_add=""
+    local env_vars_to_add=""
+    
+    # Check each secret and build the additions
+    for secret_name in $COGNITO_CREATED_SECRETS; do
+        # Add to API service secrets list
+        api_secrets_to_add="${api_secrets_to_add}      - \"${secret_name}\"\n"
+        
+        # Add to footer secrets section
+        footer_secrets_to_add="${footer_secrets_to_add}  \"${secret_name}\":\n    external: true\n"
+        
+        # Add corresponding environment variable
+        if echo "$secret_name" | grep -q "COGNITO_USER_POOL_ID"; then
+            env_vars_to_add="${env_vars_to_add}      COGNITO_USER_POOL_ID_FILE: /run/secrets/${secret_name}\n"
+        elif echo "$secret_name" | grep -q "COGNITO_APP_CLIENT_ID"; then
+            env_vars_to_add="${env_vars_to_add}      COGNITO_APP_CLIENT_ID_FILE: /run/secrets/${secret_name}\n"
+        elif echo "$secret_name" | grep -q "AWS_ACCESS_KEY_ID"; then
+            env_vars_to_add="${env_vars_to_add}      AWS_ACCESS_KEY_ID_FILE: /run/secrets/${secret_name}\n"
+        elif echo "$secret_name" | grep -q "AWS_SECRET_ACCESS_KEY"; then
+            env_vars_to_add="${env_vars_to_add}      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/${secret_name}\n"
+        fi
+    done
+    
+    # Add secrets to API service (after BACKUP_DELETE_API_KEY)
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "/- \".*_BACKUP_DELETE_API_KEY.*\"/a\\
-      - \"$pool_id_secret\"\\
-      - \"$client_id_secret\"\\
-      - \"$access_key_secret\"\\
-      - \"$secret_key_secret\"
+        sed -i '' "/      - \".*_BACKUP_DELETE_API_KEY.*\"/a\\
+${api_secrets_to_add%\\n}
 " "$stack_file"
         
-        # Add Cognito environment variables after BACKUP_DELETE_API_KEY_FILE
-        local cognito_env_snippet="${project_root}/setup/compose-modules/snippets/cognito-env.yml"
-        if [ -f "$cognito_env_snippet" ]; then
-            # Replace placeholder secret names in snippet
-            local temp_snippet="${project_root}/setup/compose-modules/cognito-env.temp.yml"
-            sed "s|XXX_CHANGE_ME_COGNITO_USER_POOL_ID_XXX|$pool_id_secret|g; s|XXX_CHANGE_ME_COGNITO_APP_CLIENT_ID_XXX|$client_id_secret|g; s|XXX_CHANGE_ME_AWS_ACCESS_KEY_ID_XXX|$access_key_secret|g; s|XXX_CHANGE_ME_AWS_SECRET_ACCESS_KEY_XXX|$secret_key_secret|g" "$cognito_env_snippet" > "$temp_snippet"
-            sed -i '' "/BACKUP_DELETE_API_KEY_FILE/r $temp_snippet" "$stack_file"
-            rm -f "$temp_snippet"
-        fi
-        
-        # Add Cognito secrets to footer secrets section
-        sed -i '' "/\".*_BACKUP_DELETE_API_KEY.*\":/a\\
-  \"$pool_id_secret\":\\
-    external: true\\
-  \"$client_id_secret\":\\
-    external: true\\
-  \"$access_key_secret\":\\
-    external: true\\
-  \"$secret_key_secret\":\\
-    external: true
+        # Add environment variables (after AWS_REGION)
+        sed -i '' "/      AWS_REGION:/a\\
+${env_vars_to_add%\\n}
 " "$stack_file"
-    else
-        # Linux
-        sed -i "/- \".*_BACKUP_DELETE_API_KEY.*\"/a\\      - \"$pool_id_secret\"\n      - \"$client_id_secret\"\n      - \"$access_key_secret\"\n      - \"$secret_key_secret\"" "$stack_file"
         
-        # Add Cognito environment variables after BACKUP_DELETE_API_KEY_FILE
-        local cognito_env_snippet="${project_root}/setup/compose-modules/snippets/cognito-env.yml"
-        if [ -f "$cognito_env_snippet" ]; then
-            # Replace placeholder secret names in snippet
-            local temp_snippet="${project_root}/setup/compose-modules/cognito-env.temp.yml"
-            sed "s|XXX_CHANGE_ME_COGNITO_USER_POOL_ID_XXX|$pool_id_secret|g; s|XXX_CHANGE_ME_COGNITO_APP_CLIENT_ID_XXX|$client_id_secret|g; s|XXX_CHANGE_ME_AWS_ACCESS_KEY_ID_XXX|$access_key_secret|g; s|XXX_CHANGE_ME_AWS_SECRET_ACCESS_KEY_XXX|$secret_key_secret|g" "$cognito_env_snippet" > "$temp_snippet"
-            sed -i "/BACKUP_DELETE_API_KEY_FILE/r $temp_snippet" "$stack_file"
-            rm -f "$temp_snippet"
-        fi
-        
-        # Add Cognito secrets to footer secrets section
-        # Insert after the last existing secret declaration
-        sed -i "/\".*_BACKUP_DELETE_API_KEY.*\"/,/external: true/{
-            /external: true/a\\  \"$pool_id_secret\":\\
-    external: true\\
-  \"$client_id_secret\":\\
-    external: true\\
-  \"$access_key_secret\":\\
-    external: true\\
-  \"$secret_key_secret\":\\
-    external: true
+        # Add to footer secrets section (in secrets: block, not networks)
+        sed -i '' "/^secrets:/,/^[^ ]/{
+            /  \".*_BACKUP_DELETE_API_KEY.*\":/,/    external: true/a\\
+${footer_secrets_to_add%\\n}
         }" "$stack_file"
+    else
+        # Linux - use printf to handle newlines properly
+        local api_secrets_formatted=$(printf "${api_secrets_to_add}")
+        local env_vars_formatted=$(printf "${env_vars_to_add}")
+        local footer_secrets_formatted=$(printf "${footer_secrets_to_add}")
+        
+        # Add to API service secrets
+        sed -i "/      - \".*_BACKUP_DELETE_API_KEY.*\"/a\\${api_secrets_formatted}" "$stack_file"
+        
+        # Add environment variables
+        sed -i "/      AWS_REGION:/a\\${env_vars_formatted}" "$stack_file"
+        
+        # Add to footer secrets section
+        sed -i "/^secrets:/,/^[^ ]/{/  \".*_BACKUP_DELETE_API_KEY.*\":/,/    external: true/a\\${footer_secrets_formatted}
+}" "$stack_file"
     fi
     
     echo "✅ Cognito secrets added to stack file"
