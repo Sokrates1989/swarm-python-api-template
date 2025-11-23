@@ -235,20 +235,28 @@ ${env_vars_to_add%\\n}
 ${footer_secrets_to_add%\\n}
         }" "$stack_file"
     else
-        # Linux - use printf to handle newlines properly
-        local api_secrets_formatted=$(printf "${api_secrets_to_add}")
-        local env_vars_formatted=$(printf "${env_vars_to_add}")
-        local footer_secrets_formatted=$(printf "${footer_secrets_to_add}")
+        # Linux - use awk for reliable multi-line insertions
         
-        # Add to API service secrets
-        sed -i "/      - \".*_BACKUP_DELETE_API_KEY.*\"/a\\${api_secrets_formatted}" "$stack_file"
+        # Add API service secrets
+        awk -v secrets="${api_secrets_to_add}" '
+            /      - ".*_BACKUP_DELETE_API_KEY.*"/ { print; printf "%s", secrets; next }
+            { print }
+        ' "$stack_file" > "${stack_file}.tmp" && mv "${stack_file}.tmp" "$stack_file"
         
         # Add environment variables
-        sed -i "/      AWS_REGION:/a\\${env_vars_formatted}" "$stack_file"
+        awk -v envs="${env_vars_to_add}" '
+            /      AWS_REGION:/ { print; printf "%s", envs; next }
+            { print }
+        ' "$stack_file" > "${stack_file}.tmp" && mv "${stack_file}.tmp" "$stack_file"
         
-        # Add to footer secrets section
-        sed -i "/^secrets:/,/^[^ ]/{/  \".*_BACKUP_DELETE_API_KEY.*\":/,/    external: true/a\\${footer_secrets_formatted}
-}" "$stack_file"
+        # Add footer secrets
+        awk -v secrets="${footer_secrets_to_add}" '
+            in_secrets && /  ".*_BACKUP_DELETE_API_KEY.*":/ { found=1 }
+            found && /    external: true/ { print; printf "%s", secrets; found=0; next }
+            /^secrets:/ { in_secrets=1 }
+            /^[^ ]/ && !/^secrets:/ { in_secrets=0 }
+            { print }
+        ' "$stack_file" > "${stack_file}.tmp" && mv "${stack_file}.tmp" "$stack_file"
     fi
     
     echo "✅ Cognito secrets added to stack file"
