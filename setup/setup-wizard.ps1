@@ -197,14 +197,14 @@ if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
     Write-Host ""
     Invoke-CognitoSetup
     
-    # Check if Cognito was configured
+    # Check if Cognito was configured (AWS_REGION indicates Cognito setup was run)
     $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-    $cognitoPoolLine = $envContent | Where-Object { $_ -match "^COGNITO_USER_POOL_ID=" }
+    $cognitoRegionLine = $envContent | Where-Object { $_ -match "^AWS_REGION=" }
     
-    if ($cognitoPoolLine) {
-        $cognitoPool = ($cognitoPoolLine -split "=", 2)[1].Trim()
+    if ($cognitoRegionLine) {
+        $cognitoRegion = ($cognitoRegionLine -split "=", 2)[1].Trim()
         
-        if ($cognitoPool) {
+        if ($cognitoRegion) {
             Write-Host ""
             Write-Host "🔧 Updating stack file with Cognito secrets..." -ForegroundColor Cyan
             # Add Cognito secrets to stack file

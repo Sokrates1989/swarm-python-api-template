@@ -428,10 +428,10 @@ case $choice in
         if declare -F run_cognito_setup >/dev/null; then
             run_cognito_setup
             
-            # Check if Cognito was configured
-            cognito_pool=$(grep "^COGNITO_USER_POOL_ID=" .env 2>/dev/null | cut -d'=' -f2)
+            # Check if Cognito was configured (AWS_REGION indicates Cognito setup was run)
+            cognito_region=$(grep "^AWS_REGION=" .env 2>/dev/null | cut -d'=' -f2)
             
-            if [ -n "$cognito_pool" ]; then
+            if [ -n "$cognito_region" ]; then
                 echo ""
                 echo "🔧 Updating stack file with Cognito secrets..."
                 # Generate stack name upper for secret names

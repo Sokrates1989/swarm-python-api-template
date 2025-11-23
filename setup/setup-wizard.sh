@@ -208,7 +208,7 @@ if declare -F run_cognito_setup >/dev/null; then
     run_cognito_setup
     
     # Check if Cognito was configured
-    local cognito_pool=$(grep "^COGNITO_USER_POOL_ID=" .env 2>/dev/null | cut -d'=' -f2)
+    cognito_pool=$(grep "^AWS_REGION=" .env 2>/dev/null | cut -d'=' -f2)
     
     if [ -n "$cognito_pool" ]; then
         echo ""
