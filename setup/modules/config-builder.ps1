@@ -156,12 +156,16 @@ function Update-StackSecrets {
     param(
         [string]$StackFile,
         [string]$DbPasswordSecret,
-        [string]$AdminApiKeySecret
+        [string]$AdminApiKeySecret,
+        [string]$BackupRestoreApiKeySecret,
+        [string]$BackupDeleteApiKeySecret
     )
     
     $content = Get-Content $StackFile -Raw
     $content = $content -replace 'XXX_CHANGE_ME_DB_PASSWORD_XXX', $DbPasswordSecret
     $content = $content -replace 'XXX_CHANGE_ME_ADMIN_API_KEY_XXX', $AdminApiKeySecret
+    $content = $content -replace 'XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX', $BackupRestoreApiKeySecret
+    $content = $content -replace 'XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX', $BackupDeleteApiKeySecret
     Set-Content -Path $StackFile -Value $content -NoNewline
 }
 

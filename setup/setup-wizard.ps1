@@ -183,7 +183,7 @@ Write-Host "Secret names (auto-generated):"
 Write-Host "  Database password: $DbPasswordSecret"
 Write-Host "  Admin API key: $AdminApiKeySecret"
 
-Update-StackSecrets -StackFile "$ProjectRoot\swarm-stack.yml" -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret
+Update-StackSecrets -StackFile "$ProjectRoot\swarm-stack.yml" -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret -BackupRestoreApiKeySecret $BackupRestoreApiKeySecret -BackupDeleteApiKeySecret $BackupDeleteApiKeySecret
 
 Write-Host ""
 Write-Host "✅ Configuration complete" -ForegroundColor Green
@@ -258,7 +258,7 @@ if ($stackExists) {
 # SECRET CREATION
 # =============================================================================
 
-$secretsCreated = New-DockerSecrets -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret
+$secretsCreated = New-DockerSecrets -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret -BackupRestoreApiKeySecret $BackupRestoreApiKeySecret -BackupDeleteApiKeySecret $BackupDeleteApiKeySecret
 
 # =============================================================================
 # DEPLOYMENT PHASE
