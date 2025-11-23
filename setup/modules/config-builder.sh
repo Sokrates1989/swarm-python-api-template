@@ -236,22 +236,39 @@ add_cognito_to_stack() {
     done
     
     # Replace individual placeholders in stack file using Python (works everywhere, handles multi-line)
+    # Only replace placeholders for secrets that were actually created (non-empty)
     python3 -c "
 import sys
 content = open('$stack_file', 'r').read()
-content = content.replace('###AWS_REGION_ENV###', '''${aws_region_env}''')
-content = content.replace('###COGNITO_USER_POOL_ID_SECRET###', '''${pool_id_secret}''')
-content = content.replace('###COGNITO_USER_POOL_ID_ENV###', '''${pool_id_env}''')
-content = content.replace('###COGNITO_USER_POOL_ID_FOOTER###', '''${pool_id_footer}''')
-content = content.replace('###COGNITO_APP_CLIENT_ID_SECRET###', '''${client_id_secret}''')
-content = content.replace('###COGNITO_APP_CLIENT_ID_ENV###', '''${client_id_env}''')
-content = content.replace('###COGNITO_APP_CLIENT_ID_FOOTER###', '''${client_id_footer}''')
-content = content.replace('###AWS_ACCESS_KEY_ID_SECRET###', '''${access_key_secret}''')
-content = content.replace('###AWS_ACCESS_KEY_ID_ENV###', '''${access_key_env}''')
-content = content.replace('###AWS_ACCESS_KEY_ID_FOOTER###', '''${access_key_footer}''')
-content = content.replace('###AWS_SECRET_ACCESS_KEY_SECRET###', '''${secret_key_secret}''')
-content = content.replace('###AWS_SECRET_ACCESS_KEY_ENV###', '''${secret_key_env}''')
-content = content.replace('###AWS_SECRET_ACCESS_KEY_FOOTER###', '''${secret_key_footer}''')
+
+# Only replace if value is not empty (secret was created)
+if '''${aws_region_env}''':
+    content = content.replace('###AWS_REGION_ENV###', '''${aws_region_env}''')
+if '''${pool_id_secret}''':
+    content = content.replace('###COGNITO_USER_POOL_ID_SECRET###', '''${pool_id_secret}''')
+if '''${pool_id_env}''':
+    content = content.replace('###COGNITO_USER_POOL_ID_ENV###', '''${pool_id_env}''')
+if '''${pool_id_footer}''':
+    content = content.replace('###COGNITO_USER_POOL_ID_FOOTER###', '''${pool_id_footer}''')
+if '''${client_id_secret}''':
+    content = content.replace('###COGNITO_APP_CLIENT_ID_SECRET###', '''${client_id_secret}''')
+if '''${client_id_env}''':
+    content = content.replace('###COGNITO_APP_CLIENT_ID_ENV###', '''${client_id_env}''')
+if '''${client_id_footer}''':
+    content = content.replace('###COGNITO_APP_CLIENT_ID_FOOTER###', '''${client_id_footer}''')
+if '''${access_key_secret}''':
+    content = content.replace('###AWS_ACCESS_KEY_ID_SECRET###', '''${access_key_secret}''')
+if '''${access_key_env}''':
+    content = content.replace('###AWS_ACCESS_KEY_ID_ENV###', '''${access_key_env}''')
+if '''${access_key_footer}''':
+    content = content.replace('###AWS_ACCESS_KEY_ID_FOOTER###', '''${access_key_footer}''')
+if '''${secret_key_secret}''':
+    content = content.replace('###AWS_SECRET_ACCESS_KEY_SECRET###', '''${secret_key_secret}''')
+if '''${secret_key_env}''':
+    content = content.replace('###AWS_SECRET_ACCESS_KEY_ENV###', '''${secret_key_env}''')
+if '''${secret_key_footer}''':
+    content = content.replace('###AWS_SECRET_ACCESS_KEY_FOOTER###', '''${secret_key_footer}''')
+
 open('$stack_file', 'w').write(content)
 "
     
