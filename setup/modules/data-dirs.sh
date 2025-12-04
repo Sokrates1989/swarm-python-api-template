@@ -1,7 +1,38 @@
 #!/bin/bash
-# Data directory creation module
-# Creates required data directories with existence checks
+# ==============================================================================
+# data-dirs.sh - Data directory creation module
+# ==============================================================================
+#
+# This module creates the required data directories for the stack based on
+# the selected database type. It checks for existing directories and only
+# creates those that are missing.
+#
+# Functions:
+#   create_data_directories - Create all required data directories
+#
+# Directory structure created:
+#   $DATA_ROOT/
+#     postgres_data/  (if PostgreSQL)
+#     neo4j_data/     (if Neo4j)
+#     neo4j_logs/     (if Neo4j)
+#     backups/
+#     redis_data/
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# create_data_directories
+# ------------------------------------------------------------------------------
+# Creates the data root and all service-specific subdirectories. Skips
+# directories that already exist.
+#
+# Arguments:
+#   $1 - data_root: absolute path to the data root directory
+#   $2 - db_type: "postgresql" or "neo4j"
+#
+# Returns:
+#   0 on success, 1 if any directory creation fails
+# ------------------------------------------------------------------------------
 create_data_directories() {
     local data_root="$1"
     local db_type="$2"

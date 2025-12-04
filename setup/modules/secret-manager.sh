@@ -1,7 +1,35 @@
 #!/bin/bash
-# Secret manager module
-# Handles Docker secret creation
+# ==============================================================================
+# secret-manager.sh - Docker secrets management module
+# ==============================================================================
+#
+# This module provides functions for creating, listing, and verifying Docker
+# secrets used by the Swarm Python API Template stack. It supports interactive
+# secret creation via nano/vim/vi editors and handles secret lifecycle
+# (create, recreate, skip).
+#
+# Functions:
+#   show_editor_instructions  - Display editor-specific usage tips
+#   create_single_secret      - Create one Docker secret interactively
+#   create_docker_secrets     - Create all required secrets for the stack
+#   list_docker_secrets       - List all Docker secrets in Swarm
+#   verify_secrets_exist      - Check that all required secrets exist
+#
+# Dependencies:
+#   - Docker Swarm initialized (docker secret commands)
+#   - nano, vim, or vi available for interactive editing
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# show_editor_instructions
+# ------------------------------------------------------------------------------
+# Displays usage tips for the selected text editor so users know how to save
+# and exit when entering their secret value.
+#
+# Arguments:
+#   $1 - editor name ("nano", "vim", or "vi")
+# ------------------------------------------------------------------------------
 show_editor_instructions() {
     local editor="$1"
     
@@ -23,6 +51,22 @@ show_editor_instructions() {
     echo ""
 }
 
+# ------------------------------------------------------------------------------
+# create_single_secret
+# ------------------------------------------------------------------------------
+# Prompts the user to enter a secret value in a text editor, then creates (or
+# recreates) the corresponding Docker secret. Handles edge cases:
+#   - Secret already exists: offer to delete and recreate.
+#   - File empty/not saved: skip creation.
+#
+# Arguments:
+#   $1 - secret_name: the Docker secret name to create
+#   $2 - editor: which text editor to use (nano/vim/vi)
+#
+# Returns:
+#   0 on success (secret created or kept existing)
+#   1 on failure (secret not created)
+# ------------------------------------------------------------------------------
 create_single_secret() {
     local secret_name="$1"
     local editor="$2"
@@ -90,6 +134,22 @@ create_single_secret() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# create_docker_secrets
+# ------------------------------------------------------------------------------
+# Entry point for creating all stack secrets interactively. Detects available
+# editors, then iterates through the four required secrets, calling
+# create_single_secret for each.
+#
+# Arguments:
+#   $1 - db_password_secret: name of the database password secret
+#   $2 - admin_api_key_secret: name of the admin API key secret
+#   $3 - backup_restore_api_key_secret: name of the backup restore key secret
+#   $4 - backup_delete_api_key_secret: name of the backup delete key secret
+#
+# Returns:
+#   0 on success (all secrets handled), 1 if no editor found
+# ------------------------------------------------------------------------------
 create_docker_secrets() {
     local db_password_secret="$1"
     local admin_api_key_secret="$2"
@@ -145,6 +205,11 @@ create_docker_secrets() {
     return 0
 }
 
+# ------------------------------------------------------------------------------
+# list_docker_secrets
+# ------------------------------------------------------------------------------
+# Lists all Docker secrets currently registered in the Swarm cluster.
+# ------------------------------------------------------------------------------
 list_docker_secrets() {
     echo "📋 Existing Docker Secrets"
     echo "========================="
@@ -153,6 +218,21 @@ list_docker_secrets() {
     echo ""
 }
 
+# ------------------------------------------------------------------------------
+# verify_secrets_exist
+# ------------------------------------------------------------------------------
+# Checks whether all four required secrets exist in Docker Swarm. Prints status
+# for each secret and returns non-zero if any are missing.
+#
+# Arguments:
+#   $1 - db_password_secret
+#   $2 - admin_api_key_secret
+#   $3 - backup_restore_api_key_secret
+#   $4 - backup_delete_api_key_secret
+#
+# Returns:
+#   0 if all secrets exist, 1 otherwise
+# ------------------------------------------------------------------------------
 verify_secrets_exist() {
     local db_password_secret="$1"
     local admin_api_key_secret="$2"

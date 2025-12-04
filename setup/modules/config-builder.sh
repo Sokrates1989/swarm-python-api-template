@@ -1,7 +1,38 @@
 #!/bin/bash
-# Configuration builder module
-# Builds .env and swarm-stack.yml from templates
+# ==============================================================================
+# config-builder.sh - Configuration file builder module
+# ==============================================================================
+#
+# This module assembles .env and swarm-stack.yml from modular templates based
+# on user selections (database type, database mode, proxy type, SSL mode).
+#
+# Functions:
+#   build_env_file        - Assemble .env from base + db + proxy templates
+#   build_stack_file      - Assemble swarm-stack.yml with snippet injection
+#   update_env_values     - Update a key=value pair in .env
+#   update_stack_secrets  - Replace secret placeholders in stack file
+#   update_stack_network  - Replace Traefik network placeholder
+#   add_cognito_to_stack  - Inject AWS Cognito secret references
+#   backup_existing_files - Backup .env and swarm-stack.yml before changes
+#
+# Dependencies:
+#   - Template files in setup/env-templates/ and setup/compose-modules/
+#   - sed (GNU or BSD), python3 (for Cognito placeholder injection)
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# build_env_file
+# ------------------------------------------------------------------------------
+# Concatenates environment variable templates to produce .env. Selects
+# database and proxy snippets based on db_type, db_mode, and proxy_type.
+#
+# Arguments:
+#   $1 - db_type: "postgresql" or "neo4j"
+#   $2 - db_mode: "local" or "external"
+#   $3 - proxy_type: "traefik" or "none"
+#   $4 - project_root: absolute path to project root
+# ------------------------------------------------------------------------------
 build_env_file() {
     local db_type="$1"
     local db_mode="$2"
@@ -38,6 +69,19 @@ build_env_file() {
     echo "✅ .env file created"
 }
 
+# ------------------------------------------------------------------------------
+# build_stack_file
+# ------------------------------------------------------------------------------
+# Assembles swarm-stack.yml by concatenating base.yml, api.template.yml (with
+# database/proxy snippet injection), optional database service, and footer.yml.
+#
+# Arguments:
+#   $1 - db_type: "postgresql" or "neo4j"
+#   $2 - db_mode: "local" or "external"
+#   $3 - proxy_type: "traefik" or "none"
+#   $4 - project_root: absolute path to project root
+#   $5 - ssl_mode: (optional) "direct" or "letsencrypt" for Traefik labels
+# ------------------------------------------------------------------------------
 build_stack_file() {
     local db_type="$1"
     local db_mode="$2"
@@ -117,6 +161,16 @@ build_stack_file() {
     echo "✅ swarm-stack.yml created"
 }
 
+# ------------------------------------------------------------------------------
+# update_env_values
+# ------------------------------------------------------------------------------
+# Updates a single key=value line in the given .env file using sed.
+#
+# Arguments:
+#   $1 - env_file: path to .env
+#   $2 - key: variable name
+#   $3 - value: new value
+# ------------------------------------------------------------------------------
 update_env_values() {
     local env_file="$1"
     local key="$2"
@@ -136,6 +190,19 @@ update_env_values() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# update_stack_secrets
+# ------------------------------------------------------------------------------
+# Replaces XXX_CHANGE_ME_*_XXX placeholders in swarm-stack.yml with actual
+# secret names derived from the stack name.
+#
+# Arguments:
+#   $1 - stack_file: path to swarm-stack.yml
+#   $2 - db_password_secret
+#   $3 - admin_api_key_secret
+#   $4 - backup_restore_api_key_secret
+#   $5 - backup_delete_api_key_secret
+# ------------------------------------------------------------------------------
 update_stack_secrets() {
     local stack_file="$1"
     local db_password_secret="$2"
@@ -159,6 +226,15 @@ update_stack_secrets() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# update_stack_network
+# ------------------------------------------------------------------------------
+# Replaces the Traefik network placeholder in swarm-stack.yml.
+#
+# Arguments:
+#   $1 - stack_file: path to swarm-stack.yml
+#   $2 - traefik_network: external Traefik network name
+# ------------------------------------------------------------------------------
 update_stack_network() {
     local stack_file="$1"
     local traefik_network="$2"
@@ -173,6 +249,23 @@ update_stack_network() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# add_cognito_to_stack
+# ------------------------------------------------------------------------------
+# Injects AWS Cognito secret references into swarm-stack.yml by replacing
+# ###COGNITO_*### placeholders. Uses python3 for reliable multi-line replace.
+#
+# Arguments:
+#   $1 - stack_file: path to swarm-stack.yml
+#   $2 - project_root: absolute path to project root
+#   $3 - stack_name_upper: uppercase stack name for secret naming
+#
+# Environment:
+#   COGNITO_CREATED_SECRETS - space-separated list of created secret names
+#
+# Returns:
+#   0 on success, 1 on failure
+# ------------------------------------------------------------------------------
 add_cognito_to_stack() {
     local stack_file="$1"
     local project_root="$2"
@@ -281,6 +374,14 @@ open('$stack_file', 'w').write(content)
     return 0
 }
 
+# ------------------------------------------------------------------------------
+# backup_existing_files
+# ------------------------------------------------------------------------------
+# Creates timestamped backups of .env and swarm-stack.yml before modifying them.
+#
+# Arguments:
+#   $1 - project_root: absolute path to project root
+# ------------------------------------------------------------------------------
 backup_existing_files() {
     local project_root="$1"
     local timestamp=$(date +%Y_%m_%d__%H_%M_%S)

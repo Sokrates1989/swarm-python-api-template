@@ -1,6 +1,35 @@
 #!/bin/bash
-# Stack deployment module
+# ==============================================================================
+# deploy-stack.sh - Docker Swarm stack deployment module
+# ==============================================================================
+#
+# This module handles deploying the swarm-stack.yml to Docker Swarm. It resolves
+# absolute paths, checks for existing stacks (via stack-conflict-check.sh), and
+# performs the actual "docker stack deploy" with .env variable interpolation.
+#
+# Functions:
+#   deploy_stack - Deploy the stack to Swarm after confirmation
+#
+# Dependencies:
+#   - stack-conflict-check.sh (check_stack_conflict)
+#   - Docker Compose plugin (docker-compose config)
+#   - Docker Swarm initialized
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# deploy_stack
+# ------------------------------------------------------------------------------
+# Deploys a Docker Swarm stack using docker-compose config for variable
+# interpolation. Prompts for confirmation and checks for existing stacks.
+#
+# Arguments:
+#   $1 - stack_name: the Docker stack name
+#   $2 - stack_file: path to swarm-stack.yml
+#
+# Returns:
+#   0 on success, 1 on failure or cancellation
+# ------------------------------------------------------------------------------
 deploy_stack() {
     local stack_name="$1"
     local stack_file="$2"

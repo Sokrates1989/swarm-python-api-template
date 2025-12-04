@@ -1,6 +1,38 @@
 #!/bin/bash
-# Health check module for deployed stacks
+# ==============================================================================
+# health-check.sh - Stack health check module
+# ==============================================================================
+#
+# This module verifies that a deployed Docker Swarm stack is healthy. It waits
+# for services to reach desired replica counts, inspects logs for errors, and
+# optionally tests the API health endpoint via curl.
+#
+# Functions:
+#   check_deployment_health - Run comprehensive health checks on a stack
+#
+# Dependencies:
+#   - Docker Swarm with the target stack deployed
+#   - curl (optional, for API health endpoint testing)
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# check_deployment_health
+# ------------------------------------------------------------------------------
+# Waits up to 3 minutes for all stack services to become healthy, then prints
+# status, relevant log excerpts, and (if Traefik is used) tests the API /health
+# endpoint.
+#
+# Arguments:
+#   $1 - stack_name: Docker stack name
+#   $2 - db_type: "postgresql" or "neo4j"
+#   $3 - proxy_type: "traefik" or "none"
+#   $4 - api_url: domain for API health endpoint
+#   $5 - wait_seconds: (optional) extra seconds to wait before log inspection
+#
+# Returns:
+#   0 always (informational output only)
+# ------------------------------------------------------------------------------
 check_deployment_health() {
     local stack_name="$1"
     local db_type="$2"

@@ -1,7 +1,40 @@
 #!/bin/bash
-# User prompts module
-# Handles all user input collection
+# ==============================================================================
+# user-prompts.sh - Interactive user input collection module
+# ==============================================================================
+#
+# This module provides functions for gathering user input during the setup
+# wizard. Each prompt function handles a specific configuration aspect and
+# returns the user's selection via stdout.
+#
+# Functions:
+#   prompt_database_type   - Ask for PostgreSQL or Neo4j
+#   prompt_proxy_type      - Ask for Traefik or no proxy
+#   prompt_ssl_mode        - Ask for direct or proxy SSL termination
+#   prompt_database_mode   - Ask for local or external database
+#   prompt_stack_name      - Ask for Docker stack name
+#   prompt_data_root       - Ask for data directory path
+#   prompt_traefik_network - Select or create Traefik overlay network
+#   prompt_api_domain      - Ask for API domain (required for Traefik)
+#   prompt_published_port  - Ask for port when not using Traefik
+#   prompt_docker_image    - Ask for image name/version and verify pull
+#   prompt_replicas        - Ask for service replica count
+#   prompt_secret_names    - Ask for Docker secret names
+#   prompt_yes_no          - Generic yes/no prompt helper
+#
+# Dependencies:
+#   - Docker (for network listing, image pull verification)
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# prompt_database_type
+# ------------------------------------------------------------------------------
+# Prompts the user to choose between PostgreSQL and Neo4j.
+#
+# Returns (stdout):
+#   "postgresql" or "neo4j"
+# ------------------------------------------------------------------------------
 prompt_database_type() {
     echo "🗄️  Database Configuration" >&2
     echo "-------------------------" >&2

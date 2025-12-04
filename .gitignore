@@ -7,6 +7,7 @@ redis_data/*
 # Ignore config files
 .env
 docker-compose.yml
+docker-compose.yml.bak*
 
 # Ignore created files
 swarm-stack.yml

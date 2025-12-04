@@ -1,7 +1,33 @@
 #!/bin/bash
-# Network verification module
-# Checks DNS resolution and confirms with user
+# ==============================================================================
+# network-check.sh - DNS and network verification module
+# ==============================================================================
+#
+# This module verifies that the API domain resolves correctly before
+# deployment. It uses nslookup, dig, or host (whichever is available) to
+# resolve the domain and asks the user to confirm the IP is correct.
+#
+# Functions:
+#   network_verify - Verify DNS resolution for the API domain
+#
+# Dependencies:
+#   - nslookup, dig, or host (at least one required for DNS lookup)
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# network_verify
+# ------------------------------------------------------------------------------
+# Resolves the API domain and asks the user to confirm the IP address. Only
+# runs verification when using Traefik (not needed for direct port exposure).
+#
+# Arguments:
+#   $1 - api_url: the API domain to verify
+#   $2 - proxy_type: "traefik" or "none"
+#
+# Returns:
+#   0 if verified or skipped, 1 if user aborts due to DNS issues
+# ------------------------------------------------------------------------------
 network_verify() {
     local api_url="$1"
     local proxy_type="$2"

@@ -1,5 +1,32 @@
-# Stack conflict check module
+#!/bin/bash
+# ==============================================================================
+# stack-conflict-check.sh - Docker Swarm stack conflict detection
+# ==============================================================================
+#
+# This module checks whether a stack with the given name is already deployed
+# in Docker Swarm. If so, it offers to remove it before continuing, since
+# secrets cannot be updated while in use.
+#
+# Functions:
+#   check_stack_conflict - Detect and optionally remove an existing stack
+#
+# Dependencies:
+#   - Docker Swarm initialized
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# check_stack_conflict
+# ------------------------------------------------------------------------------
+# Checks if a stack with the given name exists. If it does, prompts the user
+# to remove it (useful before secret updates or fresh deployments).
+#
+# Arguments:
+#   $1 - stack_name: the Docker stack name to check
+#
+# Returns:
+#   0 always (continues regardless of user choice)
+# ------------------------------------------------------------------------------
 check_stack_conflict() {
     local stack_name="$1"
     
