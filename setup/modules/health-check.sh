@@ -103,13 +103,21 @@ check_deployment_health() {
             
             if [ "$current" != "$desired" ]; then
                 echo "❌ Service $service has unequal replicas: $replicas"
-                echo "   Checking service tasks..."
-                docker service ps "$service_name" --no-trunc
-                echo ""
             else
                 echo "✅ Service $service is healthy: $replicas"
             fi
         fi
+    done
+    
+    # Show detailed task status for all services
+    echo ""
+    echo "Service task details:"
+    echo ""
+    for service in "${services[@]}"; do
+        local service_name="${stack_name}_${service}"
+        echo "ℹ️  ${service_name}:"
+        docker service ps "$service_name" --no-trunc
+        echo ""
     done
     
     if [ "$all_healthy" = false ]; then

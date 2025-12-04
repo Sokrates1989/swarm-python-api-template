@@ -73,13 +73,21 @@ function Test-DeploymentHealth {
             
             if ($current -ne $desired) {
                 Write-Host "❌ Service $service has unequal replicas: $replicas" -ForegroundColor Red
-                Write-Host "   Checking service tasks..."
-                docker service ps $serviceName --no-trunc
-                Write-Host ""
             } else {
                 Write-Host "✅ Service $service is healthy: $replicas" -ForegroundColor Green
             }
         }
+    }
+    
+    # Show detailed task status for all services
+    Write-Host ""
+    Write-Host "Service task details:"
+    Write-Host ""
+    foreach ($service in $services) {
+        $serviceName = "${StackName}_${service}"
+        Write-Host "ℹ️  ${serviceName}:" -ForegroundColor Cyan
+        docker service ps $serviceName --no-trunc
+        Write-Host ""
     }
     
     if (-not $allHealthy) {
