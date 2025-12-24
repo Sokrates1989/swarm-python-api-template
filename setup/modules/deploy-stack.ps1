@@ -1,6 +1,17 @@
 # Stack deployment module
 
 function Invoke-StackDeploy {
+    <#
+    .SYNOPSIS
+    Deploys the stack by rendering the compose file and running docker stack deploy.
+
+    .DESCRIPTION
+    Uses docker-compose or the Docker Compose plugin (docker compose) to render the stack file with
+    environment variable interpolation from the adjacent .env file, then deploys the rendered config.
+
+    .OUTPUTS
+    System.Boolean
+    #>
     param(
         [string]$StackName,
         [string]$StackFile
@@ -32,7 +43,43 @@ function Invoke-StackDeploy {
     
     # Generate config and deploy (PowerShell doesn't support process substitution)
     $tempConfig = [System.IO.Path]::GetTempFileName()
-    docker-compose -f $stackFileFull --env-file $envFile config | Out-File -FilePath $tempConfig -Encoding utf8
+
+    $renderExit = 1
+    $composeCmd = $null
+    if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+        $composeCmd = @("docker-compose")
+    } else {
+        docker compose version 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Neither docker-compose nor 'docker compose' is available" -ForegroundColor Red
+            Remove-Item $tempConfig -ErrorAction SilentlyContinue
+            return $false
+        }
+        $composeCmd = @("docker", "compose")
+    }
+
+    $prefixArgs = @()
+    if ($composeCmd.Count -gt 1) {
+        $prefixArgs = $composeCmd[1..($composeCmd.Count - 1)]
+    }
+
+    $envArgs = @()
+    if ((Test-Path $envFile)) {
+        $helpText = & $composeCmd[0] @($prefixArgs + @("--help")) 2>$null
+        if ($helpText -match "--env-file") {
+            $envArgs = @("--env-file", $envFile)
+        }
+    }
+
+    & $composeCmd[0] @($prefixArgs + @("-f", $stackFileFull) + $envArgs + @("config")) | Out-File -FilePath $tempConfig -Encoding utf8
+    $renderExit = $LASTEXITCODE
+
+    if ($renderExit -ne 0) {
+        Write-Host "❌ Failed to render config" -ForegroundColor Red
+        Remove-Item $tempConfig -ErrorAction SilentlyContinue
+        return $false
+    }
+
     docker stack deploy -c $tempConfig $StackName
     Remove-Item $tempConfig -ErrorAction SilentlyContinue
     

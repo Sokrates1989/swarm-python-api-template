@@ -89,6 +89,7 @@ function Get-DataRoot {
 function Get-TraefikNetwork {
     $networkSelected = $false
     $networkName = ""
+    $preferredNetworks = @("traefik-public", "traefik_public", "traefik")
     
     while (-not $networkSelected) {
         Write-Host ""
@@ -97,6 +98,7 @@ function Get-TraefikNetwork {
         
         # Get overlay networks
         $networks = docker network ls --filter driver=overlay --format "{{.Name}}" 2>$null | Where-Object { $_ }
+        $networks = @($networks | ForEach-Object { $_.ToString().Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         
         if ($null -eq $networks -or $networks.Count -eq 0) {
             Write-Host "❌ No overlay networks found" -ForegroundColor Red
@@ -126,20 +128,37 @@ function Get-TraefikNetwork {
                 "3" { return $null }
             }
         } else {
+            $detectedNetwork = $null
+            foreach ($p in $preferredNetworks) {
+                if ($networks -contains $p) {
+                    $detectedNetwork = $p
+                    break
+                }
+            }
+
+            $defaultSelection = "1"
+            if ($detectedNetwork) {
+                $defaultSelection = ([array]::IndexOf($networks, $detectedNetwork) + 1).ToString()
+                Write-Host "Auto-detected common Traefik network: $detectedNetwork [RECOMMENDED]" -ForegroundColor Green
+                Write-Host ""
+            }
+
             # Display networks with numbers
             $i = 1
             foreach ($net in $networks) {
-                Write-Host "$i) $net"
+                if ($detectedNetwork -and $net -eq $detectedNetwork) {
+                    Write-Host ("{0}) {1} [RECOMMENDED]" -f $i, $net) -ForegroundColor Green
+                } else {
+                    Write-Host "$i) $net"
+                }
                 $i++
             }
             Write-Host ""
             Write-Host "0) Create new network"
             Write-Host ""
             
-            $selection = Read-Host "Select network (number or name) [1]"
-            if ([string]::IsNullOrWhiteSpace($selection)) {
-                $selection = "1"
-            }
+            $selection = Read-Host "Select network (number or name) [$defaultSelection]"
+            if ([string]::IsNullOrWhiteSpace($selection)) { $selection = $defaultSelection }
             
             # Check if it's a number
             $selectionNum = 0

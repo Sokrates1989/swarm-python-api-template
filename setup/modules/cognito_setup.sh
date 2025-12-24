@@ -6,13 +6,13 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+COGNITO_SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COGNITO_PROJECT_ROOT="$(cd "${COGNITO_SETUP_DIR}/../.." && pwd)"
 
 # Source secret-manager module for file-based secret creation
-source "${SCRIPT_DIR}/secret-manager.sh"
+source "${COGNITO_SETUP_DIR}/secret-manager.sh"
 
-_env_file="${PROJECT_ROOT}/.env"
+_env_file="${COGNITO_PROJECT_ROOT}/.env"
 
 _cognito_setup_is_macos() {
   case "$(uname)" in
@@ -43,6 +43,11 @@ _cognito_setup_get_env() {
 _cognito_setup_update_env() {
   local key="$1"
   local value="$2"
+
+  if declare -F update_env_values >/dev/null 2>&1; then
+    update_env_values "${_env_file}" "${key}" "${value}"
+    return 0
+  fi
 
   if grep -qE "^${key}=" "${_env_file}" 2>/dev/null; then
     if _cognito_setup_is_macos; then

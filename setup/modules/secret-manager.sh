@@ -51,6 +51,93 @@ show_editor_instructions() {
     echo ""
 }
 
+create_secrets_from_file() {
+    local db_password_secret="$1"
+    local admin_api_key_secret="$2"
+    local backup_restore_api_key_secret="$3"
+    local backup_delete_api_key_secret="$4"
+    local secrets_file="${5:-secrets.env}"
+    local template_path="$6"
+
+    echo ""
+    echo "🔐 Create Docker Secrets from File"
+    echo "==================================="
+    echo ""
+
+    if [ ! -f "$secrets_file" ]; then
+        echo "⚠️  $secrets_file not found"
+        echo ""
+
+        if [ -n "$template_path" ] && [ -f "$template_path" ]; then
+            echo "Creating $secrets_file from template..."
+            cp "$template_path" "$secrets_file"
+            echo "✅ Created $secrets_file"
+            echo ""
+            echo "📝 Please edit $secrets_file with your secret values, then run this option again."
+            echo ""
+            return 1
+        fi
+
+        echo "❌ No template found. Please create $secrets_file manually."
+        return 1
+    fi
+
+    local db_password=""
+    local admin_api_key=""
+    local backup_restore_api_key=""
+    local backup_delete_api_key=""
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+        local key="${line%%=*}"
+        local value="${line#*=}"
+        case "$key" in
+            DB_PASSWORD) db_password="$value" ;;
+            ADMIN_API_KEY) admin_api_key="$value" ;;
+            BACKUP_RESTORE_API_KEY) backup_restore_api_key="$value" ;;
+            BACKUP_DELETE_API_KEY) backup_delete_api_key="$value" ;;
+        esac
+    done < "$secrets_file"
+
+    local had_errors=false
+
+    _create_secret_from_value() {
+        local secret_name="$1"
+        local secret_value="$2"
+        local description="$3"
+
+        secret_value="$(echo "$secret_value" | xargs)"
+
+        if docker secret inspect "$secret_name" >/dev/null 2>&1; then
+            read -p "Secret '$secret_name' exists. Delete and recreate? (y/N): " RECREATE
+            if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+                docker secret rm "$secret_name" >/dev/null 2>&1 || return 1
+            else
+                return 0
+            fi
+        fi
+
+        if [ -z "$secret_value" ]; then
+            return 1
+        fi
+
+        printf '%s' "$secret_value" | docker secret create "$secret_name" - >/dev/null 2>&1
+    }
+
+    _create_secret_from_value "$db_password_secret" "$db_password" "DB password" || had_errors=true
+    _create_secret_from_value "$admin_api_key_secret" "$admin_api_key" "Admin API key" || had_errors=true
+    _create_secret_from_value "$backup_restore_api_key_secret" "$backup_restore_api_key" "Backup restore API key" || had_errors=true
+    _create_secret_from_value "$backup_delete_api_key_secret" "$backup_delete_api_key" "Backup delete API key" || had_errors=true
+
+    if [ "$had_errors" = true ]; then
+        return 1
+    fi
+
+    return 0
+}
+
 # ------------------------------------------------------------------------------
 # create_single_secret
 # ------------------------------------------------------------------------------
@@ -239,10 +326,15 @@ verify_secrets_exist() {
     local backup_restore_api_key_secret="$3"
     local backup_delete_api_key_secret="$4"
     
-    local db_exists=$(docker secret ls --filter "name=${db_password_secret}" --format "{{.Name}}" | grep -c "^${db_password_secret}$")
-    local api_exists=$(docker secret ls --filter "name=${admin_api_key_secret}" --format "{{.Name}}" | grep -c "^${admin_api_key_secret}$")
-    local restore_exists=$(docker secret ls --filter "name=${backup_restore_api_key_secret}" --format "{{.Name}}" | grep -c "^${backup_restore_api_key_secret}$")
-    local delete_exists=$(docker secret ls --filter "name=${backup_delete_api_key_secret}" --format "{{.Name}}" | grep -c "^${backup_delete_api_key_secret}$")
+    local db_exists=0
+    local api_exists=0
+    local restore_exists=0
+    local delete_exists=0
+
+    docker secret inspect "$db_password_secret" >/dev/null 2>&1 && db_exists=1
+    docker secret inspect "$admin_api_key_secret" >/dev/null 2>&1 && api_exists=1
+    docker secret inspect "$backup_restore_api_key_secret" >/dev/null 2>&1 && restore_exists=1
+    docker secret inspect "$backup_delete_api_key_secret" >/dev/null 2>&1 && delete_exists=1
     
     if [ "$db_exists" -eq 0 ] || [ "$api_exists" -eq 0 ] || [ "$restore_exists" -eq 0 ] || [ "$delete_exists" -eq 0 ]; then
         echo "⚠️  Required secrets not found:"

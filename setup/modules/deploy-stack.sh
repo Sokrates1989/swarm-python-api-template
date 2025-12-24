@@ -61,7 +61,29 @@ deploy_stack() {
     
     echo ""
     echo "Deploying stack..."
-    docker stack deploy -c <(docker-compose -f "$stack_file_abs" --env-file "$env_file" config) "$stack_name"
+
+    local compose_cmd
+    if command -v docker-compose >/dev/null 2>&1; then
+        compose_cmd=(docker-compose)
+    elif docker compose version >/dev/null 2>&1; then
+        compose_cmd=(docker compose)
+    else
+        echo "❌ Neither docker-compose nor 'docker compose' is available"
+        return 1
+    fi
+
+    local compose_env_opt=()
+    if [ -f "$env_file" ] && "${compose_cmd[@]}" --help 2>/dev/null | grep -q -- '--env-file'; then
+        compose_env_opt=(--env-file "$env_file")
+    fi
+
+    local stack_file_name
+    stack_file_name="$(basename "$stack_file_abs")"
+
+    docker stack deploy -c <(
+        cd "$stack_dir" \
+        && "${compose_cmd[@]}" -f "$stack_file_name" "${compose_env_opt[@]}" config
+    ) "$stack_name"
     
     if [ $? -ne 0 ]; then
         echo "❌ Deployment failed"

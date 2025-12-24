@@ -146,10 +146,32 @@ function Update-EnvValue {
         [string]$Key,
         [string]$Value
     )
-    
-    $content = Get-Content $EnvFile
-    $content = $content -replace "^${Key}=.*", "${Key}=${Value}"
-    Set-Content -Path $EnvFile -Value $content
+
+    if (-not (Test-Path $EnvFile)) {
+        Set-Content -Path $EnvFile -Value "${Key}=${Value}" -NoNewline
+        return
+    }
+
+    $content = Get-Content $EnvFile -ErrorAction SilentlyContinue
+    if (-not $content) {
+        Set-Content -Path $EnvFile -Value "${Key}=${Value}" -NoNewline
+        return
+    }
+
+    $found = $false
+    for ($i = 0; $i -lt $content.Count; $i++) {
+        if ($content[$i] -match "^$Key=") {
+            $content[$i] = "${Key}=${Value}"
+            $found = $true
+            break
+        }
+    }
+
+    if (-not $found) {
+        $content += "${Key}=${Value}"
+    }
+
+    Set-Content -Path $EnvFile -Value $content -NoNewline
 }
 
 function Update-StackSecrets {

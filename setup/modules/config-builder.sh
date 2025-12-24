@@ -21,6 +21,14 @@
 #
 # ==============================================================================
 
+_config_builder_sed_inplace() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
 # ------------------------------------------------------------------------------
 # build_env_file
 # ------------------------------------------------------------------------------
@@ -107,38 +115,38 @@ build_stack_file() {
     
     local db_env_snippet="${project_root}/setup/compose-modules/snippets/db-${db_file_name}-${db_mode}.env.yml"
     if [ -f "$db_env_snippet" ]; then
-        sed -i "/###DATABASE_ENV###/r $db_env_snippet" "$temp_api"
-        sed -i '/###DATABASE_ENV###/d' "$temp_api"
+        _config_builder_sed_inplace "/###DATABASE_ENV###/r $db_env_snippet" "$temp_api"
+        _config_builder_sed_inplace '/###DATABASE_ENV###/d' "$temp_api"
     fi
     
     # Inject proxy network snippet (only for Traefik)
     if [ "$proxy_type" = "traefik" ]; then
         local proxy_network_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik.network.yml"
         if [ -f "$proxy_network_snippet" ]; then
-            sed -i "/###PROXY_NETWORK###/r $proxy_network_snippet" "$temp_api"
+            _config_builder_sed_inplace "/###PROXY_NETWORK###/r $proxy_network_snippet" "$temp_api"
         fi
     fi
-    sed -i '/###PROXY_NETWORK###/d' "$temp_api"
+    _config_builder_sed_inplace '/###PROXY_NETWORK###/d' "$temp_api"
     
     # Inject proxy configuration snippet
     if [ "$proxy_type" = "traefik" ]; then
         # Inject Traefik labels at ###PROXY_LABELS### based on SSL mode
         local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik-${ssl_mode}-ssl.labels.yml"
         if [ -f "$proxy_labels_snippet" ]; then
-            sed -i "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_api"
+            _config_builder_sed_inplace "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_api"
         fi
-        sed -i '/###PROXY_LABELS###/d' "$temp_api"
+        _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_api"
         # Remove ###PROXY_PORTS### placeholder (not used for Traefik)
-        sed -i '/###PROXY_PORTS###/d' "$temp_api"
+        _config_builder_sed_inplace '/###PROXY_PORTS###/d' "$temp_api"
     else
         # Inject ports at ###PROXY_PORTS###
         local proxy_ports_snippet="${project_root}/setup/compose-modules/snippets/proxy-none.ports.yml"
         if [ -f "$proxy_ports_snippet" ]; then
-            sed -i "/###PROXY_PORTS###/r $proxy_ports_snippet" "$temp_api"
+            _config_builder_sed_inplace "/###PROXY_PORTS###/r $proxy_ports_snippet" "$temp_api"
         fi
-        sed -i '/###PROXY_PORTS###/d' "$temp_api"
+        _config_builder_sed_inplace '/###PROXY_PORTS###/d' "$temp_api"
         # Remove ###PROXY_LABELS### placeholder (not used for direct ports)
-        sed -i '/###PROXY_LABELS###/d' "$temp_api"
+        _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_api"
     fi
     
     # Append API service to stack
@@ -175,18 +183,29 @@ update_env_values() {
     local env_file="$1"
     local key="$2"
     local value="$3"
-    
-    # Escape special characters in value for sed
-    local escaped_value=$(printf '%s\n' "$value" | sed 's:[\\/&]:\\&:g;$!s/$/\\/')
-    escaped_value=${escaped_value%\\}
-    
-    # Use different sed syntax based on OS
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        sed -i '' "s|^${key}=.*|${key}=${escaped_value}|" "$env_file"
+
+    local quoted_value
+    quoted_value="$value"
+    quoted_value="${quoted_value//\\/\\\\}"
+    quoted_value="${quoted_value//\"/\\\"}"
+    quoted_value="${quoted_value//\$/\\$}"
+    quoted_value="${quoted_value//\`/\\\`}" 
+    quoted_value="\"${quoted_value}\""
+
+    local line_replacement
+    line_replacement="${key}=${quoted_value}"
+
+    local sed_replacement
+    sed_replacement=$(printf '%s' "$line_replacement" | sed 's/[\\&|]/\\\\&/g')
+
+    if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|^${key}=.*|${sed_replacement}|" "$env_file"
+        else
+            sed -i "s|^${key}=.*|${sed_replacement}|" "$env_file"
+        fi
     else
-        # Linux
-        sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$env_file"
+        printf '%s\n' "$line_replacement" >> "$env_file"
     fi
 }
 

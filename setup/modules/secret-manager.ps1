@@ -112,7 +112,90 @@ function New-DockerSecrets {
     Write-Host "✅ Secret creation complete" -ForegroundColor Green
     Write-Host ""
     
-    return $true
+    return (Test-SecretsExist -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret -BackupRestoreApiKeySecret $BackupRestoreApiKeySecret -BackupDeleteApiKeySecret $BackupDeleteApiKeySecret)
+}
+
+function New-SecretsFromFile {
+    param(
+        [string]$DbPasswordSecret,
+        [string]$AdminApiKeySecret,
+        [string]$BackupRestoreApiKeySecret,
+        [string]$BackupDeleteApiKeySecret,
+        [string]$SecretsFile = "secrets.env",
+        [string]$TemplatePath
+    )
+
+    if (-not (Test-Path $SecretsFile)) {
+        if ($TemplatePath -and (Test-Path $TemplatePath)) {
+            Copy-Item $TemplatePath $SecretsFile -Force
+            Write-Host "Created $SecretsFile from template. Please edit it and rerun." -ForegroundColor Yellow
+            return $false
+        }
+        Write-Host "Secrets file not found: $SecretsFile" -ForegroundColor Red
+        return $false
+    }
+
+    $values = @{
+        DB_PASSWORD = ""
+        ADMIN_API_KEY = ""
+        BACKUP_RESTORE_API_KEY = ""
+        BACKUP_DELETE_API_KEY = ""
+    }
+
+    Get-Content $SecretsFile | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line) { return }
+        if ($line.StartsWith("#")) { return }
+        $parts = $line -split "=", 2
+        if ($parts.Count -ne 2) { return }
+        $k = $parts[0].Trim()
+        $v = $parts[1].Trim()
+        if ($values.ContainsKey($k)) {
+            $values[$k] = $v
+        }
+    }
+
+    function New-SingleSecretFromValue {
+        param(
+            [string]$SecretName,
+            [string]$SecretValue
+        )
+
+        $SecretValue = $SecretValue.Trim()
+        if ([string]::IsNullOrWhiteSpace($SecretValue)) {
+            return $false
+        }
+
+        $exists = $false
+        try {
+            docker secret inspect $SecretName 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { $exists = $true }
+        } catch {}
+
+        if ($exists) {
+            $recreate = Read-Host "Secret '$SecretName' exists. Delete and recreate? (y/N)"
+            if ($recreate -match '^[Yy]$') {
+                docker secret rm $SecretName 2>$null | Out-Null
+            } else {
+                return $true
+            }
+        }
+
+        $SecretValue | docker secret create $SecretName - 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    }
+
+    $ok = $true
+    if (-not (New-SingleSecretFromValue -SecretName $DbPasswordSecret -SecretValue $values.DB_PASSWORD)) { $ok = $false }
+    if (-not (New-SingleSecretFromValue -SecretName $AdminApiKeySecret -SecretValue $values.ADMIN_API_KEY)) { $ok = $false }
+    if (-not (New-SingleSecretFromValue -SecretName $BackupRestoreApiKeySecret -SecretValue $values.BACKUP_RESTORE_API_KEY)) { $ok = $false }
+    if (-not (New-SingleSecretFromValue -SecretName $BackupDeleteApiKeySecret -SecretValue $values.BACKUP_DELETE_API_KEY)) { $ok = $false }
+
+    if (-not $ok) {
+        return $false
+    }
+
+    return (Test-SecretsExist -DbPasswordSecret $DbPasswordSecret -AdminApiKeySecret $AdminApiKeySecret -BackupRestoreApiKeySecret $BackupRestoreApiKeySecret -BackupDeleteApiKeySecret $BackupDeleteApiKeySecret)
 }
 
 function Get-DockerSecrets {
@@ -126,31 +209,26 @@ function Get-DockerSecrets {
 function Test-SecretsExist {
     param(
         [string]$DbPasswordSecret,
-        [string]$AdminApiKeySecret
+        [string]$AdminApiKeySecret,
+        [string]$BackupRestoreApiKeySecret,
+        [string]$BackupDeleteApiKeySecret
     )
-    
-    $dbExists = (docker secret ls --filter "name=${DbPasswordSecret}" --format "{{.Name}}") -eq $DbPasswordSecret
-    $apiExists = (docker secret ls --filter "name=${AdminApiKeySecret}" --format "{{.Name}}") -eq $AdminApiKeySecret
-    
-    if (-not $dbExists -or -not $apiExists) {
-        Write-Host "⚠️  Required secrets not found:" -ForegroundColor Yellow
-        if (-not $dbExists) {
-            Write-Host "   - $DbPasswordSecret (missing)" -ForegroundColor Red
-        } else {
-            Write-Host "   - $DbPasswordSecret (exists)" -ForegroundColor Green
-        }
-        if (-not $apiExists) {
-            Write-Host "   - $AdminApiKeySecret (missing)" -ForegroundColor Red
-        } else {
-            Write-Host "   - $AdminApiKeySecret (exists)" -ForegroundColor Green
-        }
-        Write-Host ""
-        return $false
-    }
-    
-    Write-Host "✅ All required secrets exist" -ForegroundColor Green
-    Write-Host ""
-    return $true
+
+    $missing = $false
+
+    docker secret inspect $DbPasswordSecret 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { $missing = $true }
+
+    docker secret inspect $AdminApiKeySecret 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { $missing = $true }
+
+    docker secret inspect $BackupRestoreApiKeySecret 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { $missing = $true }
+
+    docker secret inspect $BackupDeleteApiKeySecret 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { $missing = $true }
+
+    return (-not $missing)
 }
 
-Export-ModuleMember -Function New-DockerSecrets, Get-DockerSecrets, Test-SecretsExist, New-SingleDockerSecret
+Export-ModuleMember -Function New-DockerSecrets, New-SecretsFromFile, Get-DockerSecrets, Test-SecretsExist, New-SingleDockerSecret

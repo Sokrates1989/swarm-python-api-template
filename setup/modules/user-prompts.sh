@@ -153,18 +153,42 @@ prompt_traefik_network() {
                 3) return 1 ;;
             esac
         else
-            # Display networks with numbers
+            # Auto-detect common Traefik network names and set a better default selection.
+            local default_selection="1"
+            local detected_network=""
+            local preferred_networks=("traefik-public" "traefik_public" "traefik")
+            for preferred in "${preferred_networks[@]}"; do
+                local idx=0
+                for net in "${networks[@]}"; do
+                    if [ "$net" = "$preferred" ]; then
+                        detected_network="$net"
+                        default_selection="$((idx+1))"
+                        break 2
+                    fi
+                    idx=$((idx+1))
+                done
+            done
+
+            if [ -n "$detected_network" ]; then
+                echo "✅ Auto-detected common Traefik network: $detected_network (recommended)" >&2
+            fi
+
+            # Display networks with numbers (highlight recommended one)
             local i=1
             for net in "${networks[@]}"; do
-                echo "$i) $net" >&2
+                if [ -n "$detected_network" ] && [ "$net" = "$detected_network" ]; then
+                    echo "$i) ✅ $net (recommended)" >&2
+                else
+                    echo "$i) $net" >&2
+                fi
                 ((i++))
             done
             echo "" >&2
             echo "0) Create new network" >&2
             echo "" >&2
             
-            read -p "Select network (number or name) [1]: " SELECTION
-            SELECTION="${SELECTION:-1}"
+            read -p "Select network (number or name) [${default_selection}]: " SELECTION
+            SELECTION="${SELECTION:-${default_selection}}"
             
             # Check if it's a number
             if [[ "$SELECTION" =~ ^[0-9]+$ ]]; then
