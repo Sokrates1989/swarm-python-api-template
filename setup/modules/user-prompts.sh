@@ -119,8 +119,12 @@ prompt_traefik_network() {
     
     while [ "$network_selected" = false ]; do
         echo "" >&2
-        echo "🌐 Available Docker Networks (overlay)" >&2
-        echo "------------------------------------" >&2
+        echo "🌐 Traefik Public Overlay Network (overlay)" >&2
+        echo "-----------------------------------------" >&2
+        echo "Select the existing overlay network where your Traefik reverse proxy is running." >&2
+        echo "For most installations this is named 'traefik' or 'traefik-public'." >&2
+        echo "Do NOT create a new network here unless you will also reconfigure Traefik to use it." >&2
+        echo "" >&2
         
         # Get overlay networks
         local networks=($(docker network ls --filter driver=overlay --format "{{.Name}}" 2>/dev/null))
@@ -128,9 +132,12 @@ prompt_traefik_network() {
         if [ ${#networks[@]} -eq 0 ]; then
             echo "❌ No overlay networks found" >&2
             echo "" >&2
-            echo "1) Create 'traefik' network now" >&2
-            echo "2) Enter custom network name" >&2
-            echo "3) Cancel setup" >&2
+            echo "You need a Traefik public overlay network before deploying this stack." >&2
+            echo "Usually this network is created by your Traefik Swarm stack (e.g. 'traefik' or 'traefik-public')." >&2
+            echo "" >&2
+            echo "1) Create 'traefik' network now (advanced; only if you will also attach Traefik to it)" >&2
+            echo "2) Enter existing network name manually" >&2
+            echo "3) Cancel setup and configure Traefik first" >&2
             read -p "Your choice (1-3): " CHOICE
             
             case $CHOICE in
@@ -184,7 +191,9 @@ prompt_traefik_network() {
                 ((i++))
             done
             echo "" >&2
-            echo "0) Create new network" >&2
+            echo "Select the Traefik public overlay network from the list above." >&2
+            echo "Do NOT pick an app-specific network (such as '*_backend')." >&2
+            echo "0) Create new overlay network (advanced; only if you will also reconfigure Traefik)" >&2
             echo "" >&2
             
             read -p "Select network (number or name) [${default_selection}]: " SELECTION
@@ -229,7 +238,7 @@ prompt_traefik_network() {
 prompt_api_domain() {
     local api_url=""
     while [ -z "$api_url" ]; do
-        read -p "API domain (e.g., api.example.com): " api_url
+        read -p "API domain (e.g., api.example.com; if you need to create a new subdomain, see https://wiki.fe-wi.com/en/deployment/create-subdomain): " api_url
         if [ -z "$api_url" ]; then
             echo "⚠️  Domain is required for Traefik"
         fi

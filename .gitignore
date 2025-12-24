@@ -27,3 +27,6 @@ backups/
 !neo4j_data/.gitkeep
 !neo4j_logs/.gitkeep
 !redis_data/.gitkeep
+
+# Ignore macOS system files
+.DS_Store
