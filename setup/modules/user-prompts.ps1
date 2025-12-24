@@ -92,8 +92,11 @@ function Get-TraefikNetwork {
     
     while (-not $networkSelected) {
         Write-Host ""
-        Write-Host "🌐 Available Docker Networks (overlay)" -ForegroundColor Cyan
-        Write-Host "------------------------------------"
+        Write-Host "🌐 Traefik Public Overlay Network (overlay)" -ForegroundColor Cyan
+        Write-Host "-----------------------------------------"
+        Write-Host "Select the existing overlay network where your Traefik reverse proxy is running." -ForegroundColor Gray
+        Write-Host "For most installations this is named 'traefik' or 'traefik-public'." -ForegroundColor Gray
+        Write-Host "Do NOT create a new network here unless you will also reconfigure Traefik to use it." -ForegroundColor Yellow
         
         # Get overlay networks
         $networks = docker network ls --filter driver=overlay --format "{{.Name}}" 2>$null | Where-Object { $_ }
@@ -101,9 +104,12 @@ function Get-TraefikNetwork {
         if ($null -eq $networks -or $networks.Count -eq 0) {
             Write-Host "❌ No overlay networks found" -ForegroundColor Red
             Write-Host ""
-            Write-Host "1) Create 'traefik' network now"
-            Write-Host "2) Enter custom network name"
-            Write-Host "3) Cancel setup"
+            Write-Host "You need a Traefik public overlay network before deploying this stack." -ForegroundColor Yellow
+            Write-Host "Usually this network is created by your Traefik Swarm stack (e.g. 'traefik' or 'traefik-public')." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "1) Create 'traefik' network now (advanced; only if you will also attach Traefik to it)"
+            Write-Host "2) Enter existing network name manually"
+            Write-Host "3) Cancel setup and configure Traefik first"
             $choice = Read-Host "Your choice (1-3)"
             
             switch ($choice) {
@@ -133,10 +139,12 @@ function Get-TraefikNetwork {
                 $i++
             }
             Write-Host ""
-            Write-Host "0) Create new network"
+            Write-Host "Select the Traefik public overlay network from the list above." -ForegroundColor Gray
+            Write-Host "Do NOT pick an app-specific network (such as '*_backend')." -ForegroundColor Gray
+            Write-Host "0) Create new overlay network (advanced; only if you will also reconfigure Traefik)"
             Write-Host ""
             
-            $selection = Read-Host "Select network (number or name) [1]"
+            $selection = Read-Host "Traefik network (number or name) [1]"
             if ([string]::IsNullOrWhiteSpace($selection)) {
                 $selection = "1"
             }
@@ -182,7 +190,7 @@ function Get-TraefikNetwork {
 function Get-ApiDomain {
     $ApiUrl = ""
     while ([string]::IsNullOrWhiteSpace($ApiUrl)) {
-        $ApiUrl = Read-Host "API domain (e.g., api.example.com)"
+        $ApiUrl = Read-Host "API domain (e.g., api.example.com; if you need to create a new subdomain, see https://wiki.fe-wi.com/en/deployment/create-subdomain)"
         if ([string]::IsNullOrWhiteSpace($ApiUrl)) {
             Write-Host "⚠️  Domain is required for Traefik" -ForegroundColor Yellow
         }
