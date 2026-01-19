@@ -1,5 +1,100 @@
 #!/bin/bash
 
+# Source formatting helpers
+MENU_HANDLERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${MENU_HANDLERS_DIR}/menu_formatting.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu_formatting.sh"
+fi
+
+# _env_value_or_default
+# Reads a dotenv key with a fallback default value.
+#
+# Arguments:
+# - $1: env file path
+# - $2: key name
+# - $3: default value
+# Output:
+# - prints the resolved value
+_env_value_or_default() {
+    local env_file="$1"
+    local key="$2"
+    local default_value="$3"
+
+    if [ ! -f "$env_file" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local line
+    line=$(grep "^${key}=" "$env_file" 2>/dev/null | head -n 1 || true)
+    if [ -z "$line" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    echo "${line#*=}" | tr -d '"' | tr -d '\r'
+}
+
+# _stack_running
+# Checks if a Docker stack is running.
+#
+# Arguments:
+# - $1: stack name
+_stack_running() {
+    local stack_name="$1"
+    docker stack ls --format '{{.Name}}' 2>/dev/null | grep -qx "${stack_name}"
+}
+
+# show_deployment_overview
+# Displays a boxed deployment overview for the current stack.
+#
+# Arguments:
+# - $1: env file path
+show_deployment_overview() {
+    local env_file="${1:-.env}"
+    local stack_name
+    stack_name="$(_env_value_or_default "$env_file" "STACK_NAME" "api_production")"
+    local proxy_type
+    proxy_type="$(_env_value_or_default "$env_file" "PROXY_TYPE" "none")"
+    local db_type
+    db_type="$(_env_value_or_default "$env_file" "DB_TYPE" "postgresql")"
+    local api_url
+    api_url="$(_env_value_or_default "$env_file" "API_URL" "api.example.com")"
+    local image_name
+    image_name="$(_env_value_or_default "$env_file" "IMAGE_NAME" "your-username/your-api-name")"
+    local image_version
+    image_version="$(_env_value_or_default "$env_file" "IMAGE_VERSION" "latest")"
+
+    local stack_state="not running"
+    if _stack_running "$stack_name"; then
+        stack_state="running"
+    fi
+
+    local ok_icon="✅"
+    local off_icon="⏹️"
+    local stack_status="${off_icon} not running"
+    local image_icon="${off_icon}"
+    if [ "$stack_state" = "running" ]; then
+        stack_status="${ok_icon} running"
+        image_icon="${ok_icon}"
+    fi
+
+    _box_rule
+    _box_line "Deployment Overview"
+    _box_rule
+    _box_line "Stack    : ${stack_name} (${stack_status})"
+    _box_line "Proxy    : ${proxy_type}"
+    _box_line "DB Type  : ${db_type}"
+    if [ -n "$api_url" ]; then
+        _box_line "Domain   : ${api_url}"
+    fi
+    _box_line "Images   :"
+    _box_line_list "${image_icon} ${image_name}:${image_version}"
+    _box_rule
+    echo ""
+}
+
 show_main_menu() {
     # show_main_menu
     # Main interactive menu loop.
@@ -41,6 +136,9 @@ show_main_menu() {
         echo ""
         echo "================ Main Menu ================"
         echo ""
+        if declare -F _box_rule >/dev/null; then
+            show_deployment_overview ".env"
+        fi
 
         echo "Setup:"
         echo "  ${MENU_SETUP_WIZARD}) Re-run setup wizard"
