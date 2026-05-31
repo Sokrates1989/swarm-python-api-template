@@ -7,6 +7,12 @@ if [ -f "${MENU_HANDLERS_DIR}/menu_formatting.sh" ]; then
     source "${MENU_HANDLERS_DIR}/menu_formatting.sh"
 fi
 
+# Source auth provider module
+if [ -f "${MENU_HANDLERS_DIR}/auth_provider.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/auth_provider.sh"
+fi
+
 # _env_value_or_default
 # Reads a dotenv key with a fallback default value.
 #
@@ -108,9 +114,9 @@ show_main_menu() {
         MENU_NEXT=$((MENU_NEXT+1))
         local MENU_SETUP_SECRETS=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_SETUP_COGNITO=""
-        if declare -F run_cognito_setup >/dev/null; then
-            MENU_SETUP_COGNITO=$MENU_NEXT
+        local MENU_SETUP_AUTH=""
+        if declare -F setup_auth_provider >/dev/null; then
+            MENU_SETUP_AUTH=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         fi
 
@@ -143,8 +149,8 @@ show_main_menu() {
         echo "Setup:"
         echo "  ${MENU_SETUP_WIZARD}) Re-run setup wizard"
         echo "  ${MENU_SETUP_SECRETS}) Manage Docker secrets"
-        if [ -n "$MENU_SETUP_COGNITO" ]; then
-            echo "  ${MENU_SETUP_COGNITO}) Configure AWS Cognito"
+        if [ -n "$MENU_SETUP_AUTH" ]; then
+            echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
         fi
         echo ""
 
@@ -172,87 +178,14 @@ show_main_menu() {
             read -r -p "Your choice (1-${MENU_EXIT}): " choice
         fi
 
-        if [ -n "$MENU_SETUP_COGNITO" ] && [ "$choice" = "$MENU_SETUP_COGNITO" ]; then
-            run_cognito_setup
+        if [ -n "$MENU_SETUP_AUTH" ] && [ "$choice" = "$MENU_SETUP_AUTH" ]; then
+            setup_auth_provider
 
-            cognito_region=$(grep "^AWS_REGION=" .env 2>/dev/null | cut -d'=' -f2)
-
-            if [ -n "$cognito_region" ]; then
-                echo ""
-                echo "🔧 Updating stack file with Cognito secrets..."
-                STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
-                add_cognito_to_stack "$(pwd)/swarm-stack.yml" "$(pwd)" "$STACK_NAME_UPPER"
-
-                echo ""
-                echo "🔍 Checking for running stack..."
-
-                if docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; then
-                    echo "✅ Stack '$STACK_NAME' is currently running"
-                    echo ""
-                    if [[ -r /dev/tty ]]; then
-                        read -r -p "Redeploy stack to apply Cognito configuration? (Y/n): " REDEPLOY < /dev/tty
-                    else
-                        read -r -p "Redeploy stack to apply Cognito configuration? (Y/n): " REDEPLOY
-                    fi
-
-                    if [[ ! "$REDEPLOY" =~ ^[Nn]$ ]]; then
-                        STACK_FILE="$(pwd)/swarm-stack.yml"
-                        ENV_FILE="$(pwd)/.env"
-
-                        echo ""
-                        echo "Redeploying stack with Cognito configuration..."
-
-                        local compose_cmd
-                        if command -v docker-compose >/dev/null 2>&1; then
-                            compose_cmd=(docker-compose)
-                        elif docker compose version >/dev/null 2>&1; then
-                            compose_cmd=(docker compose)
-                        else
-                            echo "❌ Neither docker-compose nor 'docker compose' is available"
-                            continue
-                        fi
-
-                        docker stack deploy -c <("${compose_cmd[@]}" -f "$STACK_FILE" --env-file "$ENV_FILE" config) "$STACK_NAME"
-
-                        if [ $? -eq 0 ]; then
-                            echo ""
-                            echo "✅ Stack redeployed successfully"
-                            echo ""
-
-                            echo "🏥 Running health check..."
-                            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
-                        else
-                            echo "❌ Deployment failed"
-                        fi
-                    else
-                        echo ""
-                        echo "ℹ️  Skipping redeployment. You can redeploy manually with:"
-                        echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
-                    fi
-                else
-                    echo "⚠️  No running stack found"
-                    echo ""
-                    if [[ -r /dev/tty ]]; then
-                        read -r -p "Deploy stack now with Cognito configuration? (Y/n): " DEPLOY_NOW < /dev/tty
-                    else
-                        read -r -p "Deploy stack now with Cognito configuration? (Y/n): " DEPLOY_NOW
-                    fi
-
-                    if [[ ! "$DEPLOY_NOW" =~ ^[Nn]$ ]]; then
-                        STACK_FILE="$(pwd)/swarm-stack.yml"
-                        deploy_stack "$STACK_NAME" "$STACK_FILE"
-
-                        if [ $? -eq 0 ]; then
-                            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
-                        fi
-                    else
-                        echo ""
-                        echo "ℹ️  Skipping deployment. You can deploy manually with:"
-                        echo "   docker stack deploy -c swarm-stack.yml $STACK_NAME"
-                    fi
-                fi
-            fi
+            # Show updated status
             echo ""
+            show_auth_status
+            echo ""
+            read -r -p "Press Enter to continue..."
             continue
         fi
 

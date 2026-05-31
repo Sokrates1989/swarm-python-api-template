@@ -1,3 +1,7 @@
+if (Test-Path "$PSScriptRoot\auth_provider.ps1") {
+    . "$PSScriptRoot\auth_provider.ps1"
+}
+
 function Show-MainMenu {
     <#
     .SYNOPSIS
@@ -17,6 +21,7 @@ function Show-MainMenu {
     )
 
     $hasCognito = [bool](Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue)
+    $hasAuthProvider = [bool](Get-Command Set-AuthProvider -ErrorAction SilentlyContinue)
 
     while ($true) {
         $menuNext = 1
@@ -24,6 +29,8 @@ function Show-MainMenu {
         $MENU_SETUP_SECRETS = $menuNext; $menuNext++
         $MENU_SETUP_COGNITO = $null
         if ($hasCognito) { $MENU_SETUP_COGNITO = $menuNext; $menuNext++ }
+        $MENU_SETUP_AUTH = $null
+        if ($hasAuthProvider) { $MENU_SETUP_AUTH = $menuNext; $menuNext++ }
         $MENU_DEPLOY = $menuNext; $menuNext++
         $MENU_STATUS = $menuNext; $menuNext++
         $MENU_LOGS = $menuNext; $menuNext++
@@ -42,6 +49,9 @@ function Show-MainMenu {
         Write-Host "  $MENU_SETUP_SECRETS) Manage Docker secrets" -ForegroundColor Gray
         if ($hasCognito) {
             Write-Host "  $MENU_SETUP_COGNITO) Configure AWS Cognito" -ForegroundColor Gray
+        }
+        if ($hasAuthProvider) {
+            Write-Host "  $MENU_SETUP_AUTH) Configure Authentication Provider (Cognito/Keycloak/Dual)" -ForegroundColor Gray
         }
         Write-Host "" 
 
@@ -68,6 +78,16 @@ function Show-MainMenu {
 
         if ($hasCognito -and ($choice -eq "$MENU_SETUP_COGNITO")) {
             Invoke-CognitoSetup
+            Write-Host "" 
+            continue
+        }
+
+        if ($hasAuthProvider -and ($choice -eq "$MENU_SETUP_AUTH")) {
+            Set-AuthProvider
+            if (Get-Command Show-AuthStatus -ErrorAction SilentlyContinue) {
+                Write-Host "" 
+                Show-AuthStatus
+            }
             Write-Host "" 
             continue
         }
