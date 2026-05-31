@@ -156,7 +156,8 @@ if [ "$CONFIG_MODE" = "1" ]; then
 		[ -z "$PUBLISHED_PORT" ] && PUBLISHED_PORT="8000"
 	fi
 else
-	STACK_NAME=$(prompt_stack_name)
+	SITE_NAME=$(prompt_site_name "$PROJECT_ROOT")
+	STACK_NAME=$SITE_NAME
 	DATA_ROOT=$(prompt_data_root "$(pwd)")
 
 	if [ "$PROXY_TYPE" = "traefik" ]; then

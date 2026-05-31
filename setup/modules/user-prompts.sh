@@ -107,6 +107,59 @@ prompt_stack_name() {
     echo "${STACK_NAME:-python-api-template}"
 }
 
+prompt_site_name() {
+    local project_root="${1:-.}"
+    local deployments_dir="${project_root}/deployments"
+    
+    echo "" >&2
+    echo "[CONFIG] Site Name" >&2
+    echo "------------------" >&2
+    echo "Enter the site name (must match a directory in deployments/)." >&2
+    
+    # List available sites
+    if [ -d "$deployments_dir" ]; then
+        local sites=()
+        for dir in "$deployments_dir"/*/; do
+            if [ -d "$dir" ]; then
+                local site_name=$(basename "$dir")
+                # Skip _base directory
+                if [ "$site_name" != "_base" ]; then
+                    sites+=("$site_name")
+                fi
+            fi
+        done
+        
+        if [ ${#sites[@]} -gt 0 ]; then
+            echo "" >&2
+            echo "Available sites:" >&2
+            for site in "${sites[@]}"; do
+                echo "  - $site" >&2
+            done
+        else
+            echo "" >&2
+            echo "No existing sites found. Create a new one or use example:" >&2
+            echo "  - api-demo" >&2
+            echo "  - api-staging" >&2
+        fi
+    fi
+    
+    echo "" >&2
+    read -p "Site name: " SITE_NAME
+    
+    # Validate site exists
+    if [ -n "$SITE_NAME" ] && [ -d "${deployments_dir}/${SITE_NAME}" ]; then
+        echo "[OK] Selected site: ${SITE_NAME}" >&2
+    elif [ -n "$SITE_NAME" ]; then
+        echo "[WARN] Site directory not found: ${deployments_dir}/${SITE_NAME}" >&2
+        echo "[WARN] Will create new site configuration" >&2
+    else
+        echo "[ERROR] Site name is required" >&2
+        return 1
+    fi
+    
+    echo "$SITE_NAME"
+}
+
 prompt_data_root() {
     local default_path="$1"
     read -p "Data root directory [$default_path]: " DATA_ROOT

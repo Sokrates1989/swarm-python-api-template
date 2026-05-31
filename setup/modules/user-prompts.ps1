@@ -76,6 +76,56 @@ function Get-StackName {
     return $StackName
 }
 
+function Get-SiteName {
+    param([string]$ProjectRoot = ".")
+    
+    $deploymentsDir = Join-Path $ProjectRoot "deployments"
+    
+    Write-Host ""
+    Write-Host "[CONFIG] Site Name" -ForegroundColor Cyan
+    Write-Host "------------------" -ForegroundColor Cyan
+    Write-Host "Enter the site name (must match a directory in deployments/)." -ForegroundColor Gray
+    
+    # List available sites
+    if (Test-Path $deploymentsDir) {
+        $sites = Get-ChildItem -Path $deploymentsDir -Directory | 
+                 Where-Object { $_.Name -ne "_base" } |
+                 Select-Object -ExpandProperty Name
+        
+        if ($sites.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Available sites:" -ForegroundColor Yellow
+            foreach ($site in $sites) {
+                Write-Host "  - $site" -ForegroundColor Gray
+            }
+        } else {
+            Write-Host ""
+            Write-Host "No existing sites found. Create a new one or use example:" -ForegroundColor Yellow
+            Write-Host "  - api-demo" -ForegroundColor Gray
+            Write-Host "  - api-staging" -ForegroundColor Gray
+        }
+    }
+    
+    Write-Host ""
+    $siteName = Read-Host "Site name"
+    
+    # Validate site exists
+    if (-not [string]::IsNullOrWhiteSpace($siteName)) {
+        $siteDir = Join-Path $deploymentsDir $siteName
+        if (Test-Path $siteDir) {
+            Write-Host "[OK] Selected site: $siteName" -ForegroundColor Green
+        } else {
+            Write-Warning "Site directory not found: $siteDir"
+            Write-Warning "Will create new site configuration"
+        }
+    } else {
+        Write-Error "Site name is required"
+        return $null
+    }
+    
+    return $siteName
+}
+
 function Get-DataRoot {
     param([string]$DefaultPath)
     

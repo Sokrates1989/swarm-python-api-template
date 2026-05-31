@@ -141,7 +141,8 @@ if ($configMode -eq "1") {
     }
 }
 else {
-    $StackName = Get-StackName
+    $SiteName = Get-SiteName -ProjectRoot $ProjectRoot
+    $StackName = $SiteName
     $DataRoot = Get-DataRoot (Get-Location).Path
 
     if ($ProxyType -eq "traefik") {
