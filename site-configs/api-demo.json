@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "siteId": "api-demo",
+  "name": "Demo API",
+  "description": "Demo API for testing multi-site deployment",
+  "domain": "api-demo.example.com",
+  "database": {
+    "type": "postgresql",
+    "mode": "local"
+  },
+  "proxy": {
+    "type": "traefik",
+    "ssl": true
+  },
+  "ports": {
+    "api": 8081,
+    "postgres": 5433,
+    "pgAdmin": 5051
+  },
+  "resources": {
+    "apiReplicas": 1,
+    "memoryLimit": "512M"
+  },
+  "backendAppId": "demo_app",
+  "envOverrides": {
+    "DEBUG": "true"
+  }
+}

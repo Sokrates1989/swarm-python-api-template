@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "siteId": "api-staging",
+  "name": "Staging API",
+  "description": "Staging environment for API testing",
+  "domain": "api-staging.example.com",
+  "database": {
+    "type": "postgresql",
+    "mode": "local"
+  },
+  "proxy": {
+    "type": "traefik",
+    "ssl": true
+  },
+  "ports": {
+    "api": 8082,
+    "postgres": 5434,
+    "pgAdmin": 5052
+  },
+  "resources": {
+    "apiReplicas": 2,
+    "memoryLimit": "1G"
+  },
+  "backendAppId": "template_app",
+  "envOverrides": {
+    "DEBUG": "true",
+    "LOG_LEVEL": "debug"
+  }
+}

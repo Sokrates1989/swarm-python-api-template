@@ -1,0 +1,27 @@
+{
+  "$schema": "site-config-schema",
+  "version": "1.0",
+  "siteId": "api-example",
+  "name": "Example API",
+  "description": "Example API deployment",
+  "domain": "api.example.com",
+  "database": {
+    "type": "postgresql",
+    "mode": "local"
+  },
+  "proxy": {
+    "type": "traefik",
+    "ssl": true
+  },
+  "ports": {
+    "api": 8080,
+    "postgres": 5432,
+    "pgAdmin": 5050
+  },
+  "resources": {
+    "apiReplicas": 2,
+    "memoryLimit": "512M"
+  },
+  "backendAppId": "demo_app",
+  "envOverrides": {}
+}

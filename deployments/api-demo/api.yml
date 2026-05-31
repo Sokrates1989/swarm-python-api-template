@@ -1,0 +1,50 @@
+# Site: api-demo - API Service
+# This file defines the API service for this specific site
+
+services:
+  api:
+    image: ${IMAGE_NAME:-sokrates1989/python-api-template}:${IMAGE_VERSION:-latest}
+    environment:
+      # Site identity
+      - SITE_ID=${SITE_ID}
+      - BACKEND_APP_ID=${BACKEND_APP_ID}
+      
+      # Database
+      - DB_TYPE=${DB_TYPE}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD_FILE=${POSTGRES_PASSWORD_FILE}
+      
+      # Redis
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      
+      # API settings
+      - DEBUG=${DEBUG:-false}
+    secrets:
+      - source: ${SECRETS_PREFIX}postgres_password
+        target: /run/secrets/${SECRETS_PREFIX}postgres_password
+      - source: ${SECRETS_PREFIX}jwt_secret
+        target: /run/secrets/${SECRETS_PREFIX}jwt_secret
+    networks:
+      - backend
+    deploy:
+      mode: replicated
+      replicas: ${API_REPLICAS:-1}
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT:-512M}
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_NAME}.rule=${TRAEFIK_RULE}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_NAME}.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_NAME}.tls.certresolver=${TRAEFIK_TLS_CERTRESOLVER:-letsencrypt}"
+        - "traefik.http.services.${TRAEFIK_ROUTER_NAME}.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
