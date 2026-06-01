@@ -12,7 +12,7 @@
     "database": true
   },
   "image": {
-    "name": "sokrates1989/python-api-mongo_db_test",
+    "name": "sokrates1989/python-api-mongo-db-test",
     "defaultVersion": "latest"
   },
   "resources": {

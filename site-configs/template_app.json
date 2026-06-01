@@ -12,7 +12,7 @@
     "database": true
   },
   "image": {
-    "name": "sokrates1989/python-api-template_app",
+    "name": "sokrates1989/python-api-template-app",
     "defaultVersion": "latest"
   },
   "resources": {

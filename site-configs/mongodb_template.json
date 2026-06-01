@@ -12,7 +12,7 @@
     "database": true
   },
   "image": {
-    "name": "sokrates1989/python-api-mongodb_template",
+    "name": "sokrates1989/python-api-mongodb-template",
     "defaultVersion": "latest"
   },
   "resources": {

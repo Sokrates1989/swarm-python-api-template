@@ -13,7 +13,7 @@
     "database": true
   },
   "image": {
-    "name": "sokrates1989/python-api-postgres_template",
+    "name": "sokrates1989/python-api-postgres-template",
     "defaultVersion": "latest"
   },
   "resources": {
