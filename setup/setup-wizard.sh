@@ -138,8 +138,13 @@ echo ""
 echo "These values are specific to THIS deployment instance."
 echo ""
 
-# Stack name
-DEFAULT_STACK_NAME="${EXISTING_STACK_NAME:-${APP_ID}}"
+# Stack name - generate from app name if no existing value
+if [ -n "$EXISTING_STACK_NAME" ]; then
+    DEFAULT_STACK_NAME="$EXISTING_STACK_NAME"
+else
+    # Convert app name to stack-friendly format (lowercase, spaces to hyphens)
+    DEFAULT_STACK_NAME=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr '_' '-')
+fi
 read -p "Docker stack name [${DEFAULT_STACK_NAME}]: " STACK_NAME
 STACK_NAME="${STACK_NAME:-$DEFAULT_STACK_NAME}"
 
