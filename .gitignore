@@ -1,32 +1,33 @@
-# Ignore data directories
-postgres_data/*
-neo4j_data/*
-neo4j_logs/*
-redis_data/*
-
-# Ignore config files
+# ==============================================================================
+# Deployment artifacts (generated at runtime, never committed)
+# ==============================================================================
 .env
-docker-compose.yml
-docker-compose.yml.bak*
-
-# Ignore created files
 swarm-stack.yml
 .setup-complete
 
-# Ignore possibly manually created config files.
-swarm-stack.yml.*
-swarm-stack.*.yml
-.env.*
+# ==============================================================================
+# Data directories (host-mounted volumes created on the server)
+# ==============================================================================
+postgres_data/
+mongodb_data/
+neo4j_data/
+neo4j_logs/
+redis_data/
 
-# Ignore backup folders
+# ==============================================================================
+# Secrets (never commit)
+# ==============================================================================
+secrets.env
+
+# ==============================================================================
+# Backup folders
+# ==============================================================================
 backup/
 backups/
 
-# Keep .gitkeep files to ensure empty folders are created
-!postgres_data/.gitkeep
-!neo4j_data/.gitkeep
-!neo4j_logs/.gitkeep
-!redis_data/.gitkeep
-
-# Ignore macOS system files
+# ==============================================================================
+# OS / editor artifacts
+# ==============================================================================
 .DS_Store
+*.swp
+*~

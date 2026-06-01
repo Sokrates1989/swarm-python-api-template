@@ -1,27 +1,35 @@
 {
   "$schema": "site-config-schema",
-  "version": "1.0",
-  "siteId": "api-example",
-  "name": "Example API",
-  "description": "Example API deployment",
-  "domain": "api.example.com",
+  "version": "3.0",
+  "appId": "example_app",
+  "name": "Example App",
+  "description": "Human-readable description of this backend app",
   "database": {
     "type": "postgresql",
-    "mode": "local"
+    "defaultMode": "local"
   },
-  "proxy": {
-    "type": "traefik",
-    "ssl": true
+  "services": {
+    "redis": true,
+    "database": true
   },
-  "ports": {
-    "api": 8080,
-    "postgres": 5432,
-    "pgAdmin": 5050
+  "image": {
+    "name": "your-username/your-api-image",
+    "defaultVersion": "latest"
   },
   "resources": {
-    "apiReplicas": 2,
-    "memoryLimit": "512M"
+    "defaultReplicas": 1,
+    "defaultMemoryLimit": "512M"
   },
-  "backendAppId": "demo_app",
-  "envOverrides": {}
+  "secrets": [
+    "DB_PASSWORD",
+    "ADMIN_API_KEY",
+    "BACKUP_RESTORE_API_KEY",
+    "BACKUP_DELETE_API_KEY"
+  ],
+  "envKeys": [
+    "BACKEND_APP_ID",
+    "DB_TYPE",
+    "DB_MODE"
+  ],
+  "notes": "This is a template. Copy it to create a manifest for your app."
 }

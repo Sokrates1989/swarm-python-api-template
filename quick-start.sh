@@ -2,27 +2,38 @@
 #
 # quick-start.sh
 #
-# Quick start tool for Swarm Python API Template:
-# 1. Checks Docker installation
-# 2. Runs interactive setup if needed
-# 3. Provides deployment and management options
+# Main entry point for Swarm Python API Template deployment management.
+#
+# In this model, each git clone of this repo IS one deployment instance.
+# The .env, swarm-stack.yml, and data directories live at PROJECT ROOT.
+#
+# Flow:
+#   1. Validate Docker and jq prerequisites.
+#   2. Check if root .env exists (i.e. setup has been run).
+#   3. If not, offer to run the setup wizard.
+#   4. Load root .env and show deployment overview.
+#   5. Open the operations menu.
 
 set -e
 
-# Get script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get script directory (repository root)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ===========================================================================
 # Source modules
-source "${SCRIPT_DIR}/setup/modules/secret-manager.sh"
-source "${SCRIPT_DIR}/setup/modules/health-check.sh"
-source "${SCRIPT_DIR}/setup/modules/stack-conflict-check.sh"
-source "${SCRIPT_DIR}/setup/modules/deploy-stack.sh"
-source "${SCRIPT_DIR}/setup/modules/config-builder.sh"
-source "${SCRIPT_DIR}/setup/modules/ci-cd-github.sh"
-source "${SCRIPT_DIR}/setup/modules/menu_handlers.sh"
+# ===========================================================================
+
+source "${PROJECT_ROOT}/setup/modules/site_helpers.sh"
+source "${PROJECT_ROOT}/setup/modules/secret-manager.sh"
+source "${PROJECT_ROOT}/setup/modules/health-check.sh"
+source "${PROJECT_ROOT}/setup/modules/stack-conflict-check.sh"
+source "${PROJECT_ROOT}/setup/modules/deploy-stack.sh"
+source "${PROJECT_ROOT}/setup/modules/config-builder.sh"
+source "${PROJECT_ROOT}/setup/modules/ci-cd-github.sh"
+source "${PROJECT_ROOT}/setup/modules/menu_handlers.sh"
 
 # Source Cognito setup script if available
-cognito_script="${SCRIPT_DIR}/setup/modules/cognito_setup.sh"
+cognito_script="${PROJECT_ROOT}/setup/modules/cognito_setup.sh"
 if [ -f "$cognito_script" ]; then
     # shellcheck disable=SC1091
     source "$cognito_script"
@@ -32,7 +43,10 @@ echo "🚀 Swarm Python API Template - Quick Start"
 echo "==========================================="
 echo ""
 
-# Docker availability check
+# ===========================================================================
+# Docker prerequisite checks
+# ===========================================================================
+
 echo "🔍 Checking Docker installation..."
 if ! command -v docker &> /dev/null; then
     echo "❌ Docker is not installed!"
@@ -40,14 +54,12 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Docker daemon check
 if ! docker info &> /dev/null; then
     echo "❌ Docker daemon is not running!"
     echo "🔄 Please start Docker Desktop or the Docker service"
     exit 1
 fi
 
-# Docker Compose check
 if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
     echo "❌ Docker Compose is not available!"
     echo "📥 Please install Docker Compose v1 (docker-compose) or a current Docker version with the Compose plugin"
@@ -57,73 +69,64 @@ fi
 echo "✅ Docker is installed and running"
 echo ""
 
-# Check if initial setup is needed (same logic as setup wizard)
-SETUP_DONE=false
-if [ -f .setup-complete ]; then
-    SETUP_DONE=true
-elif [ -f .env ] && [ -f swarm-stack.yml ]; then
-    SETUP_DONE=true
+# ===========================================================================
+# jq dependency check
+# ===========================================================================
+
+if ! command -v jq &> /dev/null; then
+    echo "❌ jq is not installed!"
+    echo "📥 Install it with:  sudo apt-get install jq  (Debian/Ubuntu)"
+    echo "   or:               sudo yum install jq      (RHEL/CentOS)"
+    echo "   or:               brew install jq           (macOS)"
+    exit 1
 fi
 
-if [ "$SETUP_DONE" = false ]; then
-    echo "🚀 First-time setup detected!"
+# ===========================================================================
+# Check for existing deployment (.env at root)
+# ===========================================================================
+
+if [ ! -f "${PROJECT_ROOT}/.env" ]; then
+    echo "ℹ️  No .env found — this deployment has not been configured yet."
     echo ""
-    echo "This appears to be your first time setting up this deployment."
-    echo "Would you like to run the interactive setup wizard?"
+    echo "  1) Run setup wizard"
+    echo "  2) Exit"
     echo ""
-    echo "The setup wizard will help you configure:"
-    echo "  - Database type (PostgreSQL or Neo4j)"
-    echo "  - Proxy type (Traefik or no-proxy)"
-    echo "  - Database mode (local or external)"
-    echo "  - Docker image and version"
-    echo "  - Domain/port configuration"
-    echo "  - Swarm stack settings"
-    echo ""
-    
-    read -p "Run setup wizard now? (Y/n): " runSetup
-    if [[ ! "$runSetup" =~ ^[Nn]$ ]]; then
+    read -r -p "Your choice [1]: " INIT_CHOICE
+    INIT_CHOICE="${INIT_CHOICE:-1}"
+
+    if [ "$INIT_CHOICE" = "1" ]; then
+        "${PROJECT_ROOT}/setup/setup-wizard.sh"
         echo ""
-        echo "Starting setup wizard..."
-        ./setup/setup-wizard.sh
-        echo ""
+        # Re-check after wizard
+        if [ ! -f "${PROJECT_ROOT}/.env" ]; then
+            echo "⚠️  Setup wizard did not create .env. Exiting."
+            exit 1
+        fi
     else
-        echo ""
-        echo "⚠️  Setup wizard skipped."
-        echo "You'll need to manually configure .env and swarm-stack.yml"
-        echo "See README.md for manual setup instructions."
-        echo ""
+        echo "👋 Goodbye!"
         exit 0
     fi
-    echo ""
 fi
 
-# Check if configuration files exist
-if [ ! -f .env ]; then
-    echo "❌ .env file not found!"
-    echo "Please run the setup wizard or create .env manually."
-    exit 1
-fi
+# ===========================================================================
+# Load root .env
+# ===========================================================================
 
-if [ ! -f swarm-stack.yml ]; then
-    echo "❌ swarm-stack.yml not found!"
-    echo "Please run the setup wizard or create swarm-stack.yml manually."
-    exit 1
-fi
+load_root_env "$PROJECT_ROOT"
 
-# Read configuration from .env
-STACK_NAME=$(grep "^STACK_NAME=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "api_production")
-API_URL=$(grep "^API_URL=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "api.example.com")
-DB_TYPE=$(grep "^DB_TYPE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "postgresql")
-PROXY_TYPE=$(grep "^PROXY_TYPE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "none")
-IMAGE_NAME=$(grep "^IMAGE_NAME=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "")
-IMAGE_VERSION=$(grep "^IMAGE_VERSION=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "")
+# ===========================================================================
+# Show deployment overview and open the operations menu
+# ===========================================================================
 
-echo "📋 Current Configuration"
+echo ""
+echo "📋 Deployment Overview"
 echo "========================"
-echo "Stack Name:     $STACK_NAME"
-echo "API Domain:     $API_URL"
-echo "Database Type:  $DB_TYPE"
-echo "Docker Image:   $IMAGE_NAME:$IMAGE_VERSION"
+echo "Stack Name:     ${STACK_NAME:-not set}"
+echo "Backend App:    ${BACKEND_APP_ID:-not set}"
+echo "Domain:         ${DOMAIN:-not set}"
+echo "Database:       ${DB_TYPE:-not set} (${DB_MODE:-not set})"
+echo "Proxy:          ${PROXY_TYPE:-not set}"
+echo "Image:          ${IMAGE_NAME:-not set}:${IMAGE_VERSION:-latest}"
 echo ""
 
 # Main menu
