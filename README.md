@@ -15,10 +15,10 @@ postgres_data/      ← persistent volume data (gitignored)
 redis_data/         ← persistent volume data (gitignored)
 ```
 
-`site-configs/` holds **app deployment manifests** — JSON files describing
-what a backend app needs (database type, services, image name, secret keys).
-These are development-time facts committed to the repo. The setup wizard
-reads them to provide sensible defaults.
+`site-configs/` holds **deployment profiles** — JSON files describing what a
+deployment instance needs by default (backend app, database type, services,
+image name, secret keys). These are development-time defaults committed to the
+repo. The setup wizard reads them to provide sensible defaults.
 
 ## Deployment Model
 
@@ -61,7 +61,7 @@ The quick-start script will:
 
 The wizard:
 
-1. Lets you select which **app config** to use (from `site-configs/`).
+1. Lets you select which **deployment profile** to use (from `site-configs/`).
 2. Asks for deployment-time values: domain, stack name, proxy, SSL, image
    version, secret prefix, data root path.
 3. Generates the root `.env`.
@@ -91,7 +91,7 @@ quick-start.sh                     ← main entry point
 setup/
   setup-wizard.sh                  ← deployment configuration wizard
   modules/
-    site_helpers.sh                ← app config loading, root .env parsing
+    site_helpers.sh                ← deployment profile loading, root .env parsing
     menu_handlers.sh               ← operations menu
     user-prompts.sh                ← interactive input functions
     config-builder.sh              ← env update utilities
@@ -110,18 +110,19 @@ scripts/
   build-site-stack.sh              ← merge compose modules → swarm-stack.yml
 site-configs/
   _template.json                   ← v3 schema reference
-  <appId>.json                     ← app deployment manifests
+  <profileId>.json                 ← deployment profile manifests
 old/
   deprecated-windows-server-deploy-scripts/  ← archived PowerShell scripts
 ```
 
-## App Deployment Manifest (v3)
+## Deployment Profile Manifest (v3)
 
-Each `site-configs/<appId>.json` describes what a backend app **needs**:
+Each `site-configs/<profileId>.json` describes what a deployment profile
+**needs by default**:
 
 | Field | Description |
 |-------|-------------|
-| `appId` | Backend app identifier |
+| `appId` | Backend app identifier selected by the deployment profile |
 | `name` | Human-readable name |
 | `database.type` | `postgresql`, `mongodb`, `neo4j`, or `none` |
 | `database.defaultMode` | `local` or `external` |

@@ -193,19 +193,19 @@ show_app_selector() {
 
     echo "" >&2
     echo "============================================" >&2
-    echo "  Select App Configuration" >&2
+    echo "  Select Deployment Profile" >&2
     echo "============================================" >&2
     echo "" >&2
 
     if [ ${#configs[@]} -eq 0 ]; then
-        echo "  No app configs found in site-configs/." >&2
+        echo "  No deployment profiles found in site-configs/." >&2
         echo "  Create a JSON manifest first (see site-configs/_template.json)." >&2
         echo "" >&2
         echo "EXIT"
         return 0
     fi
 
-    echo "  Available app configs:" >&2
+    echo "  Available deployment profiles:" >&2
     echo "" >&2
 
     local i
@@ -293,6 +293,7 @@ load_root_env() {
     export API_REPLICAS="$(_env_val API_REPLICAS)"
     export MEMORY_LIMIT="$(_env_val MEMORY_LIMIT)"
     export SECRET_PREFIX="$(_env_val SECRETS_PREFIX)"
+    export DEPLOYMENT_PROFILE_ID="$(_env_val DEPLOYMENT_PROFILE_ID)"
     export BACKEND_APP_ID="$(_env_val BACKEND_APP_ID)"
     export DATA_ROOT="$(_env_val DATA_ROOT)"
 

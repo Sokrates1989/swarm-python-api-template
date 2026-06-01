@@ -14,7 +14,7 @@
 #   2. swarm-stack.yml exists.
 #   3. Compose module templates exist for the configured DB type.
 #   4. Expected Docker secrets exist.
-#   5. App config referenced by BACKEND_APP_ID exists.
+#   5. Deployment profile referenced by .env exists.
 #
 # Exit codes:
 #   0 - All checks passed.
@@ -96,6 +96,7 @@ STACK_NAME="$(_env_val STACK_NAME)"
 DB_TYPE="$(_env_val DB_TYPE)"
 DB_MODE="$(_env_val DB_MODE)"
 PROXY_TYPE="$(_env_val PROXY_TYPE)"
+DEPLOYMENT_PROFILE_ID="$(_env_val DEPLOYMENT_PROFILE_ID)"
 BACKEND_APP_ID="$(_env_val BACKEND_APP_ID)"
 SECRETS_PREFIX="$(_env_val SECRETS_PREFIX)"
 
@@ -168,11 +169,17 @@ else
     _warn "No SECRETS_PREFIX in .env; skipping secret validation"
 fi
 
-# --- Check 5: App config reference ---
+# --- Check 5: Deployment profile reference ---
 echo ""
-echo "  [App Config]"
-if [ -n "$BACKEND_APP_ID" ]; then
-    # Look for a matching app config
+echo "  [Deployment Profile]"
+if [ -n "$DEPLOYMENT_PROFILE_ID" ]; then
+    profile_file="${PROJECT_ROOT}/site-configs/${DEPLOYMENT_PROFILE_ID}.json"
+    if [ -f "$profile_file" ]; then
+        _pass "Deployment profile found: ${DEPLOYMENT_PROFILE_ID}"
+    else
+        _warn "Deployment profile not found: ${profile_file}"
+    fi
+elif [ -n "$BACKEND_APP_ID" ]; then
     app_config_found=false
     for cfg in "${PROJECT_ROOT}/site-configs/"*.json; do
         [ -f "$cfg" ] || continue
@@ -182,20 +189,20 @@ if [ -n "$BACKEND_APP_ID" ]; then
             app_id=$(jq -r '.appId // empty' "$cfg" 2>/dev/null)
             if [ "$app_id" = "$BACKEND_APP_ID" ]; then
                 app_config_found=true
-                _pass "App config found for BACKEND_APP_ID='${BACKEND_APP_ID}': $(basename "$cfg")"
+                _pass "Deployment profile found for BACKEND_APP_ID='${BACKEND_APP_ID}': $(basename "$cfg")"
                 break
             fi
         fi
     done
     if [ "$app_config_found" = false ]; then
         if command -v jq &>/dev/null; then
-            _warn "No app config found matching BACKEND_APP_ID='${BACKEND_APP_ID}'"
+            _warn "No deployment profile found matching BACKEND_APP_ID='${BACKEND_APP_ID}'"
         else
-            _warn "jq not installed; cannot verify app config reference"
+            _warn "jq not installed; cannot verify deployment profile reference"
         fi
     fi
 else
-    _warn "BACKEND_APP_ID not set in .env"
+    _warn "Neither DEPLOYMENT_PROFILE_ID nor BACKEND_APP_ID is set in .env"
 fi
 
 # ===========================================================================

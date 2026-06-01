@@ -112,12 +112,12 @@ prompt_site_name() {
     local configs_dir="${project_root}/site-configs"
     
     echo "" >&2
-    echo "[CONFIG] App Selection" >&2
-    echo "----------------------" >&2
-    echo "Select which backend app config to use for this deployment." >&2
+    echo "[CONFIG] Deployment Profile Selection" >&2
+    echo "------------------------------------" >&2
+    echo "Select which deployment profile to use for this deployment." >&2
     echo "" >&2
     
-    # List available app configs
+    # List available deployment profiles
     if [ -d "$configs_dir" ]; then
         local configs=()
         for cfg in "$configs_dir"/*.json; do
@@ -128,25 +128,25 @@ prompt_site_name() {
         done
         
         if [ ${#configs[@]} -gt 0 ]; then
-            echo "Available app configs:" >&2
+            echo "Available deployment profiles:" >&2
             for cfg in "${configs[@]}"; do
                 echo "  - $cfg" >&2
             done
         else
-            echo "No app configs found in site-configs/." >&2
+            echo "No deployment profiles found in site-configs/." >&2
         fi
     fi
     
     echo "" >&2
-    read -p "App config name: " SITE_NAME
+    read -p "Deployment profile name: " SITE_NAME
     
     # Validate config exists
     if [ -n "$SITE_NAME" ] && [ -f "${configs_dir}/${SITE_NAME}.json" ]; then
-        echo "[OK] Selected config: ${SITE_NAME}" >&2
+        echo "[OK] Selected deployment profile: ${SITE_NAME}" >&2
     elif [ -n "$SITE_NAME" ]; then
-        echo "[WARN] Config not found: ${configs_dir}/${SITE_NAME}.json" >&2
+        echo "[WARN] Deployment profile not found: ${configs_dir}/${SITE_NAME}.json" >&2
     else
-        echo "[ERROR] App config name is required" >&2
+        echo "[ERROR] Deployment profile name is required" >&2
         return 1
     fi
     

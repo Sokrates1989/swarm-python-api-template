@@ -57,7 +57,7 @@ show_deployment_overview() {
     local api_url="${DOMAIN:-}"
     local image_name="${IMAGE_NAME:-}"
     local image_version="${IMAGE_VERSION:-latest}"
-    local backend_app="${BACKEND_APP_ID:-}"
+    local deployment_profile="${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-}}"
 
     local stack_state="not running"
     if _stack_running "$stack_name"; then
@@ -77,8 +77,8 @@ show_deployment_overview() {
     _box_line "Deployment Overview"
     _box_rule
     _box_line "Stack    : ${stack_name} (${stack_status})"
-    if [ -n "$backend_app" ]; then
-        _box_line "App      : ${backend_app}"
+    if [ -n "$deployment_profile" ]; then
+        _box_line "Profile  : ${deployment_profile}"
     fi
     _box_line "Proxy    : ${proxy_type}"
     _box_line "DB Type  : ${db_type}"
