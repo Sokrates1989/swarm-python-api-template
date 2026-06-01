@@ -153,8 +153,8 @@ build_stack_file() {
     cat "$temp_api" >> "${project_root}/swarm-stack.yml"
     rm -f "$temp_api"
     
-    # Add database service if local deployment
-    if [ "$db_mode" = "local" ]; then
+    # Add database service if local deployment and database type is not "none"
+    if [ "$db_mode" = "local" ] && [ "$db_type" != "none" ]; then
         # Map postgresql -> postgres for file names
         local db_file_name="$db_type"
         if [ "$db_type" = "postgresql" ]; then

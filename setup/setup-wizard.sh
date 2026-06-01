@@ -1,8 +1,31 @@
 #!/bin/bash
-
-# Swarm Python API Template - Setup Wizard
-# Interactive setup script for Linux/Mac
-# This script uses modular components for maintainability
+# ==============================================================================
+# setup-wizard.sh - Interactive deployment setup wizard
+# ==============================================================================
+#
+# Configures this deployment instance by collecting user input and generating
+# the root .env and root swarm-stack.yml.
+#
+# The wizard reads an app deployment manifest from site-configs/ to know what
+# the backend app needs (database type, services, image). It then asks for
+# deployment-time values (domain, proxy, secrets, image version) that are
+# only known on the actual server.
+#
+# Flow:
+#   1. Select which app config to use (from site-configs/).
+#   2. Collect deployment-time values (domain, stack name, proxy, SSL, image
+#      version, secret prefix, data root).
+#   3. Generate root .env.
+#   4. Build root swarm-stack.yml (from compose modules).
+#   5. Offer final actions: save only / create data dirs / create secrets /
+#      deploy.
+#
+# Dependencies:
+#   - jq
+#   - Docker (for secrets, deploy)
+#   - Modules: site_helpers, user-prompts, config-builder, data-dirs,
+#     secret-manager, stack-conflict-check, deploy-stack, health-check
+# ==============================================================================
 
 set -e
 
@@ -11,7 +34,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
-# Source all modules
+# ===========================================================================
+# Source modules
+# ===========================================================================
+
+source "$SCRIPT_DIR/modules/site_helpers.sh"
 source "$SCRIPT_DIR/modules/user-prompts.sh"
 source "$SCRIPT_DIR/modules/config-builder.sh"
 source "$SCRIPT_DIR/modules/network-check.sh"
@@ -27,350 +54,390 @@ if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
     source "${SCRIPT_DIR}/modules/cognito_setup.sh"
 fi
 
+# ===========================================================================
+# jq check
+# ===========================================================================
+
+if ! command -v jq &>/dev/null; then
+    echo "❌ jq is required but not installed."
+    echo "   Install it with: sudo apt-get install jq"
+    exit 1
+fi
+
 # =============================================================================
-# WELCOME & SETUP CHECK
+# WELCOME
 # =============================================================================
 
+echo ""
 echo "🚀 Swarm Python API Template - Setup Wizard"
+echo "============================================="
+echo ""
+echo "This wizard configures this deployment instance."
+echo "Each clone of this repo IS one deployed API."
+echo ""
+echo "  • .env and swarm-stack.yml are generated at the project root."
+echo "  • site-configs/ holds app manifests describing what the backend needs."
+echo ""
+
+# =============================================================================
+# STEP 1: Select App Config
+# =============================================================================
+
+echo "Step 1: Select the backend app this instance will run."
+echo ""
+
+SELECTED_CONFIG=$(show_app_selector "$PROJECT_ROOT")
+
+if [ "$SELECTED_CONFIG" = "EXIT" ] || [ -z "$SELECTED_CONFIG" ]; then
+    echo "No app selected. Exiting."
+    exit 0
+fi
+
+# Load app manifest for defaults
+load_app_config "$PROJECT_ROOT" "$SELECTED_CONFIG"
+
+echo ""
+echo "✅ Selected app: ${APP_NAME} (${APP_ID})"
+echo "   Database: ${APP_DB_TYPE}, Image: ${APP_IMAGE_NAME}:${APP_IMAGE_DEFAULT_VERSION}"
+echo ""
+
+# Load existing .env values as defaults (if re-running wizard)
+EXISTING_STACK_NAME=""
+EXISTING_DOMAIN=""
+EXISTING_PROXY_TYPE=""
+EXISTING_SSL_MODE=""
+EXISTING_IMAGE_VERSION=""
+EXISTING_SECRET_PREFIX=""
+EXISTING_DATA_ROOT=""
+EXISTING_DB_MODE=""
+
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    load_root_env "$PROJECT_ROOT"
+    EXISTING_STACK_NAME="$STACK_NAME"
+    EXISTING_DOMAIN="$DOMAIN"
+    EXISTING_PROXY_TYPE="$PROXY_TYPE"
+    EXISTING_IMAGE_VERSION="$IMAGE_VERSION"
+    EXISTING_SECRET_PREFIX="$SECRET_PREFIX"
+    EXISTING_DB_MODE="$DB_MODE"
+    EXISTING_DATA_ROOT="$DATA_ROOT"
+    echo "ℹ️  Existing .env found. Press Enter to keep current values."
+    echo ""
+fi
+
+# =============================================================================
+# STEP 2: Deployment-Time Configuration
+# =============================================================================
+#
+# These are values only known at deployment time — the wizard asks for them
+# and uses app manifest defaults where applicable.
+
+echo ""
+echo "📋 Step 2: Deployment Configuration"
+echo "===================================="
+echo ""
+echo "These values are specific to THIS deployment instance."
+echo ""
+
+# Stack name
+DEFAULT_STACK_NAME="${EXISTING_STACK_NAME:-${APP_ID}}"
+read -p "Docker stack name [${DEFAULT_STACK_NAME}]: " STACK_NAME
+STACK_NAME="${STACK_NAME:-$DEFAULT_STACK_NAME}"
+
+# Domain
+DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
+read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
+DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
+
+# Secret prefix
+DEFAULT_SECRET_PREFIX="${EXISTING_SECRET_PREFIX:-$(echo "$STACK_NAME" | tr '-' '_')}"
+read -p "Secret prefix [${DEFAULT_SECRET_PREFIX}]: " SECRET_PREFIX
+SECRET_PREFIX="${SECRET_PREFIX:-$DEFAULT_SECRET_PREFIX}"
+
+# Database mode (app manifest knows the type, user picks mode)
+DB_TYPE="$APP_DB_TYPE"
+echo ""
+echo "Database type (from app config): ${DB_TYPE}"
+
+DB_MODE="$APP_DB_DEFAULT_MODE"
+if [ "$DB_TYPE" != "none" ]; then
+    echo ""
+    echo "Database mode:"
+    echo "  1) Local (deploy in swarm)"
+    echo "  2) External (existing server)"
+    echo ""
+    case "${EXISTING_DB_MODE:-$APP_DB_DEFAULT_MODE}" in
+        external) dbm_default="2" ;;
+        *)        dbm_default="1" ;;
+    esac
+    read -p "Your choice (1-2) [$dbm_default]: " DBM_CHOICE
+    DBM_CHOICE="${DBM_CHOICE:-$dbm_default}"
+    case "$DBM_CHOICE" in
+        2) DB_MODE="external" ;;
+        *) DB_MODE="local" ;;
+    esac
+    echo "✅ DB mode: $DB_MODE"
+fi
+
+# Proxy
+echo ""
+echo "Proxy type:"
+echo "  1) Traefik (automatic HTTPS)"
+echo "  2) None (direct port)"
+echo ""
+case "${EXISTING_PROXY_TYPE:-traefik}" in
+    none) proxy_default="2" ;;
+    *)    proxy_default="1" ;;
+esac
+read -p "Your choice (1-2) [$proxy_default]: " PROXY_CHOICE
+PROXY_CHOICE="${PROXY_CHOICE:-$proxy_default}"
+case "$PROXY_CHOICE" in
+    2) PROXY_TYPE="none" ;;
+    *) PROXY_TYPE="traefik" ;;
+esac
+echo "✅ Proxy: $PROXY_TYPE"
+
+# SSL mode (Traefik only)
+SSL_MODE="letsencrypt"
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    echo ""
+    echo "SSL mode:"
+    echo "  1) letsencrypt (Traefik obtains certificate)"
+    echo "  2) proxy (SSL terminated upstream, e.g. Cloudflare)"
+    echo ""
+    read -p "Your choice (1-2) [1]: " SSL_CHOICE
+    SSL_CHOICE="${SSL_CHOICE:-1}"
+    case "$SSL_CHOICE" in
+        2) SSL_MODE="proxy" ;;
+        *) SSL_MODE="letsencrypt" ;;
+    esac
+    echo "✅ SSL: $SSL_MODE"
+fi
+
+# Docker image
+echo ""
+echo "🐳 Docker Image"
+DEFAULT_IMAGE_NAME="${APP_IMAGE_NAME}"
+DEFAULT_IMAGE_VERSION="${EXISTING_IMAGE_VERSION:-$APP_IMAGE_DEFAULT_VERSION}"
+read -p "Image name [$DEFAULT_IMAGE_NAME]: " IMAGE_NAME
+IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"
+read -p "Image version [$DEFAULT_IMAGE_VERSION]: " IMAGE_VERSION
+IMAGE_VERSION="${IMAGE_VERSION:-$DEFAULT_IMAGE_VERSION}"
+echo "✅ Image: $IMAGE_NAME:$IMAGE_VERSION"
+
+# Resources
+echo ""
+DEFAULT_REPLICAS="${APP_DEFAULT_REPLICAS}"
+DEFAULT_MEMORY="${APP_DEFAULT_MEMORY_LIMIT}"
+read -p "API replicas [$DEFAULT_REPLICAS]: " API_REPLICAS
+API_REPLICAS="${API_REPLICAS:-$DEFAULT_REPLICAS}"
+read -p "Memory limit [$DEFAULT_MEMORY]: " MEMORY_LIMIT
+MEMORY_LIMIT="${MEMORY_LIMIT:-$DEFAULT_MEMORY}"
+
+# Data root
+echo ""
+DEFAULT_DATA_ROOT="${EXISTING_DATA_ROOT:-$PROJECT_ROOT}"
+read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
+DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
+
+# =============================================================================
+# STEP 3: Generate root .env
+# =============================================================================
+
+echo ""
+echo "📝 Generating .env at project root..."
+
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+{
+    echo "# Generated by setup-wizard.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "# App config: ${SELECTED_CONFIG}"
+    echo ""
+    echo "# Deployment Identity"
+    echo "STACK_NAME=${STACK_NAME}"
+    echo "DOMAIN=${DOMAIN}"
+    echo "BACKEND_APP_ID=${APP_ID}"
+    echo ""
+    echo "# Database"
+    echo "DB_TYPE=${DB_TYPE}"
+    echo "DB_MODE=${DB_MODE}"
+} > "$ENV_FILE"
+
+# Database-specific env vars
+if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
+    {
+        echo "POSTGRES_HOST=postgres"
+        echo "POSTGRES_PORT=5432"
+        echo "POSTGRES_DB=${STACK_NAME//-/_}_db"
+        echo "POSTGRES_USER=${STACK_NAME//-/_}_user"
+        echo "POSTGRES_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_DB_PASSWORD"
+    } >> "$ENV_FILE"
+elif [ "$DB_TYPE" = "mongodb" ] && [ "$DB_MODE" = "local" ]; then
+    {
+        echo "MONGODB_HOST=mongodb"
+        echo "MONGODB_PORT=27017"
+        echo "MONGODB_DB=${STACK_NAME//-/_}_db"
+        echo "MONGODB_USER=${STACK_NAME//-/_}_user"
+        echo "MONGODB_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_DB_PASSWORD"
+    } >> "$ENV_FILE"
+elif [ "$DB_TYPE" = "neo4j" ] && [ "$DB_MODE" = "local" ]; then
+    {
+        echo "NEO4J_HOST=neo4j"
+        echo "NEO4J_PORT=7687"
+        echo "NEO4J_AUTH_FILE=/run/secrets/${SECRET_PREFIX}_DB_PASSWORD"
+    } >> "$ENV_FILE"
+fi
+
+{
+    echo ""
+    echo "# Redis"
+    echo "REDIS_HOST=redis"
+    echo "REDIS_PORT=6379"
+    echo ""
+    echo "# Docker Image"
+    echo "IMAGE_NAME=${IMAGE_NAME}"
+    echo "IMAGE_VERSION=${IMAGE_VERSION}"
+    echo ""
+    echo "# Resources"
+    echo "API_REPLICAS=${API_REPLICAS}"
+    echo "MEMORY_LIMIT=${MEMORY_LIMIT}"
+    echo ""
+    echo "# Data"
+    echo "DATA_ROOT=${DATA_ROOT}"
+    echo ""
+    echo "# Proxy"
+    echo "PROXY_TYPE=${PROXY_TYPE}"
+} >> "$ENV_FILE"
+
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    {
+        echo "TRAEFIK_ROUTER_NAME=${STACK_NAME}"
+        echo "TRAEFIK_RULE=Host(\`${DOMAIN}\`)"
+        echo "TRAEFIK_ENTRYPOINT=websecure"
+        if [ "$SSL_MODE" = "letsencrypt" ]; then
+            echo "TRAEFIK_TLS_CERTRESOLVER=letsencrypt"
+        fi
+    } >> "$ENV_FILE"
+fi
+
+{
+    echo ""
+    echo "# Secrets"
+    echo "SECRETS_PREFIX=${SECRET_PREFIX}_"
+} >> "$ENV_FILE"
+
+echo "✅ .env written: $ENV_FILE"
+
+# =============================================================================
+# STEP 4: Build swarm-stack.yml
+# =============================================================================
+
+echo ""
+echo "📝 Building swarm-stack.yml..."
+
+STACK_FILE="${PROJECT_ROOT}/swarm-stack.yml"
+
+if [ -x "${PROJECT_ROOT}/scripts/build-site-stack.sh" ]; then
+    "${PROJECT_ROOT}/scripts/build-site-stack.sh" || true
+else
+    echo "⚠️  build-site-stack.sh not found. You can build manually later."
+fi
+
+# =============================================================================
+# STEP 5: Final Actions Menu
+# =============================================================================
+
+echo ""
+echo "============================================"
+echo "  ✅ Configuration complete!"
 echo "============================================"
 echo ""
-echo "This wizard will guide you through the complete setup and deployment."
+echo "  Stack Name:   $STACK_NAME"
+echo "  Domain:       $DOMAIN"
+echo "  App:          $APP_NAME ($APP_ID)"
+echo "  Database:     $DB_TYPE ($DB_MODE)"
+echo "  Image:        $IMAGE_NAME:$IMAGE_VERSION"
+echo "  .env:         $ENV_FILE"
 echo ""
-
-# Check if setup is already complete
-SETUP_ALREADY_DONE=false
-
-if [ -f .setup-complete ]; then
-    SETUP_ALREADY_DONE=true
-    echo "⚠️  Setup has already been completed."
-elif [ -f .env ] && [ -f swarm-stack.yml ]; then
-    SETUP_ALREADY_DONE=true
-    echo "⚠️  Setup appears to have been done manually."
-fi
-
-if [ "$SETUP_ALREADY_DONE" = true ]; then
-    if ! prompt_yes_no "Run setup again? This will overwrite configuration" "N"; then
-        echo "Setup cancelled."
-        exit 0
-    fi
-    echo ""
-fi
-
-# Backup existing files
-backup_existing_files "$PROJECT_ROOT"
-
+echo "What would you like to do next?"
+echo "  1) Done (save only)"
+echo "  2) Create data directories"
+echo "  3) Create Docker secrets"
+echo "  4) Deploy to Docker Swarm"
+echo "  5) Full deploy (data dirs + secrets + deploy)"
 echo ""
-echo "Let's configure your deployment!"
-echo ""
+read -p "Your choice (1-5) [1]: " FINAL_ACTION
+FINAL_ACTION="${FINAL_ACTION:-1}"
 
-# =============================================================================
-# CONFIGURATION PHASE - Collect User Input
-# =============================================================================
+# Derive secret names
+PREFIX_UPPER=$(echo "$SECRET_PREFIX" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+DB_PASSWORD_SECRET="${PREFIX_UPPER}_DB_PASSWORD"
+ADMIN_API_KEY_SECRET="${PREFIX_UPPER}_ADMIN_API_KEY"
+BACKUP_RESTORE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY"
+BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
 
-# Database Type
-DB_TYPE=$(prompt_database_type)
-echo "✅ Selected: $DB_TYPE"
-echo ""
-
-# Proxy Type
-PROXY_TYPE=$(prompt_proxy_type)
-echo "✅ Selected: $PROXY_TYPE"
-echo ""
-
-# SSL Mode (only for Traefik)
-if [ "$PROXY_TYPE" = "traefik" ]; then
-    SSL_MODE=$(prompt_ssl_mode)
-    echo "✅ Selected: $SSL_MODE SSL"
-    echo ""
-else
-    SSL_MODE="direct"  # Default for non-Traefik
-fi
-
-# Database Mode
-DB_MODE=$(prompt_database_mode)
-echo "✅ Selected: $DB_MODE"
-echo ""
-
-if [ "$DB_MODE" = "local" ]; then
-    DEPLOY_DATABASE=true
-else
-    DEPLOY_DATABASE=false
-fi
-
-# Build configuration files
-echo "⚙️  Building configuration files..."
-build_env_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT"
-build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
-
-echo ""
-
-# Collect deployment parameters
-echo "📝 Deployment Configuration"
-echo "==========================="
-echo ""
-
-echo "How would you like to configure deployment settings?"
-echo "1) Edit .env file (built from templates) and let the wizard read values from it"
-echo "2) Answer questions interactively now (recommended)"
-echo ""
-read -p "Your choice (1-2) [2]: " CONFIG_MODE
-CONFIG_MODE="${CONFIG_MODE:-2}"
-
-ENV_FILE="$PROJECT_ROOT/.env"
-
-if [ "$CONFIG_MODE" = "1" ]; then
-	EDITOR_CMD="${EDITOR:-nano}"
-	if ! command -v "$EDITOR_CMD" >/dev/null 2>&1; then
-		EDITOR_CMD="vi"
-	fi
-	echo "Opening .env in editor: $EDITOR_CMD"
-	"$EDITOR_CMD" "$ENV_FILE"
-	echo ""
-
-	STACK_NAME=$(grep '^STACK_NAME=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-	DATA_ROOT=$(grep '^DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-	IMAGE_NAME=$(grep '^IMAGE_NAME=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-	IMAGE_VERSION=$(grep '^IMAGE_VERSION=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-	DEBUG_MODE=$(grep '^DEBUG=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-
-	[ -z "$STACK_NAME" ] && STACK_NAME="python-api-template"
-	[ -z "$DATA_ROOT" ] && DATA_ROOT="/gluster_storage/swarm/python-api-template/api.example.com"
-	[ -z "$IMAGE_NAME" ] && IMAGE_NAME="your-username/your-api-name"
-	[ -z "$IMAGE_VERSION" ] && IMAGE_VERSION="latest"
-	[ -z "$DEBUG_MODE" ] && DEBUG_MODE="false"
-
-	if [ "$PROXY_TYPE" = "traefik" ]; then
-		API_URL=$(grep '^API_URL=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-		TRAEFIK_NETWORK=$(grep '^TRAEFIK_NETWORK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-
-		if [ -z "$API_URL" ]; then
-			API_URL=$(prompt_api_domain)
-			update_env_values "$ENV_FILE" "API_URL" "$API_URL"
-		fi
-		if [ -z "$TRAEFIK_NETWORK" ]; then
-			TRAEFIK_NETWORK=$(prompt_traefik_network)
-			update_env_values "$ENV_FILE" "TRAEFIK_NETWORK" "$TRAEFIK_NETWORK"
-		fi
-	else
-		PUBLISHED_PORT=$(grep '^PUBLISHED_PORT=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d ' "')
-		[ -z "$PUBLISHED_PORT" ] && PUBLISHED_PORT="8000"
-	fi
-else
-	SITE_NAME=$(prompt_site_name "$PROJECT_ROOT")
-	STACK_NAME=$SITE_NAME
-	DATA_ROOT=$(prompt_data_root "$(pwd)")
-
-	if [ "$PROXY_TYPE" = "traefik" ]; then
-		API_URL=$(prompt_api_domain)
-		TRAEFIK_NETWORK=$(prompt_traefik_network)
-	else
-		PUBLISHED_PORT=$(prompt_published_port)
-	fi
-
-	# Docker image
-	IMAGE_INFO=$(prompt_docker_image)
-	if [ $? -ne 0 ]; then
-		echo "Setup cancelled."
-		exit 1
-	fi
-	IMAGE_NAME=$(echo "$IMAGE_INFO" | cut -d':' -f1)
-	IMAGE_VERSION=$(echo "$IMAGE_INFO" | cut -d':' -f2)
-
-	# Debug mode
-	echo ""
-	read -p "Enable debug mode? (y/N): " ENABLE_DEBUG
-	if [[ "$ENABLE_DEBUG" =~ ^[Yy]$ ]]; then
-		DEBUG_MODE="true"
-		echo "✅ Debug mode enabled"
-	else
-		DEBUG_MODE="false"
-		echo "✅ Debug mode disabled"
-	fi
-
-	# Update .env with collected values
-	update_env_values "$ENV_FILE" "STACK_NAME" "$STACK_NAME"
-	update_env_values "$ENV_FILE" "DATA_ROOT" "$DATA_ROOT"
-	update_env_values "$ENV_FILE" "IMAGE_NAME" "$IMAGE_NAME"
-	update_env_values "$ENV_FILE" "IMAGE_VERSION" "$IMAGE_VERSION"
-	update_env_values "$ENV_FILE" "DEBUG" "$DEBUG_MODE"
-
-	if [ "$PROXY_TYPE" = "traefik" ]; then
-		update_env_values "$ENV_FILE" "TRAEFIK_NETWORK" "$TRAEFIK_NETWORK"
-		update_env_values "$ENV_FILE" "API_URL" "$API_URL"
-	else
-		update_env_values "$ENV_FILE" "PUBLISHED_PORT" "$PUBLISHED_PORT"
-	fi
-fi
-
-# Replace Traefik network placeholder if using Traefik
-if [ "$PROXY_TYPE" = "traefik" ]; then
-    update_stack_network "$PROJECT_ROOT/swarm-stack.yml" "$TRAEFIK_NETWORK"
-fi
-
-# Replicas
-echo ""
-if [ "$CONFIG_MODE" != "1" ]; then
-	API_REPLICAS=$(prompt_replicas "API" 1)
-	update_env_values "$PROJECT_ROOT/.env" "API_REPLICAS" "$API_REPLICAS"
-
-	if [ "$DB_MODE" = "local" ]; then
-	    DB_REPLICAS=$(prompt_replicas "Database" 1)
-	    
-	    if [ "$DB_TYPE" = "postgresql" ]; then
-	        update_env_values "$PROJECT_ROOT/.env" "POSTGRES_REPLICAS" "$DB_REPLICAS"
-	    elif [ "$DB_TYPE" = "neo4j" ]; then
-	        update_env_values "$PROJECT_ROOT/.env" "NEO4J_REPLICAS" "$DB_REPLICAS"
-	    fi
-	fi
-
-	REDIS_REPLICAS=$(prompt_replicas "Redis" 1)
-	update_env_values "$PROJECT_ROOT/.env" "REDIS_REPLICAS" "$REDIS_REPLICAS"
-fi
-
-# Auto-generate secret names from stack name
-echo ""
-STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
-DB_PASSWORD_SECRET="${STACK_NAME_UPPER}_DB_PASSWORD"
-ADMIN_API_KEY_SECRET="${STACK_NAME_UPPER}_ADMIN_API_KEY"
-BACKUP_RESTORE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_RESTORE_API_KEY"
-BACKUP_DELETE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_DELETE_API_KEY"
-
-echo "Secret names (auto-generated):"
-echo "  Database password: $DB_PASSWORD_SECRET"
-echo "  Admin API key: $ADMIN_API_KEY_SECRET"
-echo "  Backup restore API key: $BACKUP_RESTORE_API_KEY_SECRET"
-echo "  Backup delete API key: $BACKUP_DELETE_API_KEY_SECRET"
-
-update_stack_secrets "$PROJECT_ROOT/swarm-stack.yml" "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
-
-echo ""
-echo "✅ Configuration complete"
-echo ""
-
-# AWS Cognito Configuration (optional)
-if declare -F run_cognito_setup >/dev/null; then
-    echo ""
-    run_cognito_setup
-    
-    # Check if Cognito was configured
-    cognito_pool=$(grep "^AWS_REGION=" .env 2>/dev/null | cut -d'=' -f2)
-    
-    if [ -n "$cognito_pool" ]; then
-        echo ""
-        echo "🔧 Updating stack file with Cognito secrets..."
-        # Add Cognito secrets to stack file
-        add_cognito_to_stack "$PROJECT_ROOT/swarm-stack.yml" "$PROJECT_ROOT" "$STACK_NAME_UPPER"
-    fi
-fi
-
-# =============================================================================
-# STACK CONFLICT CHECK
-# =============================================================================
-
-check_stack_conflict "$STACK_NAME"
-
-# =============================================================================
-# SECRET CREATION
-# =============================================================================
-
-echo ""
-echo "🔐 Secrets Setup"
-echo "================"
-echo ""
-echo "How would you like to configure secrets?"
-echo "1) Edit secrets.env from template and create secrets from file now"
-echo "2) Enter secrets interactively now (recommended)"
-echo ""
-read -p "Your choice (1-2) [2]: " SECRETS_MODE
-SECRETS_MODE="${SECRETS_MODE:-2}"
-
-SECRETS_FILE="$PROJECT_ROOT/secrets.env"
-SECRETS_TEMPLATE="$PROJECT_ROOT/setup/templates/secrets.env.template"
-
-case "$SECRETS_MODE" in
+case "$FINAL_ACTION" in
     1)
         echo ""
-        echo "📝 Editing secrets.env before creation"
-        echo "-------------------------------------"
-        if [ ! -f "$SECRETS_FILE" ]; then
-            if [ -f "$SECRETS_TEMPLATE" ]; then
-                cp "$SECRETS_TEMPLATE" "$SECRETS_FILE"
-                echo "Created $SECRETS_FILE from template."
-            else
-                echo "❌ Template $SECRETS_TEMPLATE not found; cannot bootstrap secrets.env"
-                exit 1
-            fi
-        fi
-        EDITOR_CMD="${EDITOR:-nano}"
-        if ! command -v "$EDITOR_CMD" >/dev/null 2>&1; then
-            EDITOR_CMD="vi"
-        fi
-        echo "Opening $SECRETS_FILE in editor: $EDITOR_CMD"
-        "$EDITOR_CMD" "$SECRETS_FILE"
+        echo "✅ Configuration saved. No further actions taken."
         echo ""
-        if ! create_secrets_from_file "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET" "$SECRETS_FILE" "$SECRETS_TEMPLATE"; then
-            echo "❌ Secret creation failed. Please fix the issues and try again."
-            exit 1
-        fi
+        echo "Next steps you can do manually:"
+        echo "  • Create data dirs:   mkdir -p ${DATA_ROOT}/{postgres_data,redis_data}"
+        echo "  • Create secrets:     ./quick-start.sh → Manage Docker secrets"
+        echo "  • Deploy:             docker stack deploy -c swarm-stack.yml $STACK_NAME"
         ;;
     2)
+        echo ""
+        create_data_directories "$DATA_ROOT" "$DB_TYPE"
+        echo ""
+        echo "✅ Data directories initialized."
+        ;;
+    3)
+        echo ""
+        echo "🔐 Creating secrets with prefix: ${PREFIX_UPPER}_*"
         create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+        echo ""
+        echo "✅ Secrets created."
+        ;;
+    4)
+        echo ""
+        echo "� Deploying..."
+        if [ -f "$STACK_FILE" ]; then
+            check_stack_conflict "$STACK_NAME"
+            deploy_stack "$STACK_NAME" "$STACK_FILE"
+            echo ""
+            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN" 20
+        else
+            echo "⚠️  swarm-stack.yml not found. Build it first."
+        fi
+        ;;
+    5)
+        echo ""
+        echo "🚀 Full deploy sequence"
+        echo ""
+
+        echo "--- Step 1/3: Data directories ---"
+        create_data_directories "$DATA_ROOT" "$DB_TYPE"
+        echo ""
+
+        echo "--- Step 2/3: Secrets ---"
+        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+        echo ""
+
+        echo "--- Step 3/3: Deploy ---"
+        if [ -f "$STACK_FILE" ]; then
+            check_stack_conflict "$STACK_NAME"
+            deploy_stack "$STACK_NAME" "$STACK_FILE"
+            echo ""
+            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN" 20
+        else
+            echo "⚠️  swarm-stack.yml not found at root. Build it first."
+        fi
         ;;
     *)
-        echo "Invalid choice, defaulting to interactive secrets setup."
-        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+        echo "Invalid choice. No action taken."
         ;;
 esac
 
-if ! verify_secrets_exist "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"; then
-    echo "❌ Required secrets are missing. Cannot proceed with deployment."
-    exit 1
-fi
-
-# =============================================================================
-# DEPLOYMENT PHASE
-# =============================================================================
-
-# Network verification
-network_verify "$API_URL" "$PROXY_TYPE"
-if [ $? -ne 0 ]; then
-    echo "❌ Network verification failed"
-    exit 1
-fi
-
-# Create data directories
-create_data_directories "$DATA_ROOT" "$DB_TYPE"
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to create data directories"
-    exit 1
-fi
-
-# Deploy stack
-deploy_stack "$STACK_NAME" "swarm-stack.yml"
-if [ $? -ne 0 ]; then
-    echo "❌ Deployment failed"
-    exit 1
-fi
-
-# Health check (with 20 second wait for initialization)
-check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL" 20
-
-# Mark setup as complete
-touch ".setup-complete"
-
 echo ""
-echo "🎉 Setup and deployment complete!"
-echo ""
-echo "Configuration files created:"
-echo "  - .env"
-echo "  - swarm-stack.yml"
-echo ""
-echo "Next steps:"
-echo "  - Monitor services: docker stack services $STACK_NAME"
-echo "  - View logs: docker service logs ${STACK_NAME}_api"
-if [ "$PROXY_TYPE" = "traefik" ]; then
-    echo "  - Access API: https://${API_URL}"
-else
-    echo "  - Access API: http://localhost:${PUBLISHED_PORT}"
-fi
+echo "🎉 Setup wizard complete!"
 echo ""

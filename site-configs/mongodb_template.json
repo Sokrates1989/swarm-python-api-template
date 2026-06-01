@@ -1,0 +1,36 @@
+{
+  "version": "3.0",
+  "appId": "mongodb_template",
+  "name": "MongoDB Template",
+  "description": "MongoDB-based API backend app",
+  "database": {
+    "type": "mongodb",
+    "defaultMode": "local"
+  },
+  "services": {
+    "redis": true,
+    "database": true
+  },
+  "image": {
+    "name": "sokrates1989/python-api-template",
+    "defaultVersion": "latest"
+  },
+  "resources": {
+    "defaultReplicas": 1,
+    "defaultMemoryLimit": "512M"
+  },
+  "secrets": [
+    "DB_PASSWORD",
+    "ADMIN_API_KEY",
+    "BACKUP_RESTORE_API_KEY",
+    "BACKUP_DELETE_API_KEY"
+  ],
+  "envKeys": [
+    "BACKEND_APP_ID",
+    "DB_TYPE",
+    "DB_MODE",
+    "MONGODB_DB",
+    "MONGODB_USER"
+  ],
+  "notes": ""
+}

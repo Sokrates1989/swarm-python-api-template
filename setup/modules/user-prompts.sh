@@ -109,51 +109,44 @@ prompt_stack_name() {
 
 prompt_site_name() {
     local project_root="${1:-.}"
-    local deployments_dir="${project_root}/deployments"
+    local configs_dir="${project_root}/site-configs"
     
     echo "" >&2
-    echo "[CONFIG] Site Name" >&2
-    echo "------------------" >&2
-    echo "Enter the site name (must match a directory in deployments/)." >&2
+    echo "[CONFIG] App Selection" >&2
+    echo "----------------------" >&2
+    echo "Select which backend app config to use for this deployment." >&2
+    echo "" >&2
     
-    # List available sites
-    if [ -d "$deployments_dir" ]; then
-        local sites=()
-        for dir in "$deployments_dir"/*/; do
-            if [ -d "$dir" ]; then
-                local site_name=$(basename "$dir")
-                # Skip _base directory
-                if [ "$site_name" != "_base" ]; then
-                    sites+=("$site_name")
-                fi
-            fi
+    # List available app configs
+    if [ -d "$configs_dir" ]; then
+        local configs=()
+        for cfg in "$configs_dir"/*.json; do
+            [ -f "$cfg" ] || continue
+            local cfg_name=$(basename "$cfg" .json)
+            [ "$cfg_name" = "_template" ] && continue
+            configs+=("$cfg_name")
         done
         
-        if [ ${#sites[@]} -gt 0 ]; then
-            echo "" >&2
-            echo "Available sites:" >&2
-            for site in "${sites[@]}"; do
-                echo "  - $site" >&2
+        if [ ${#configs[@]} -gt 0 ]; then
+            echo "Available app configs:" >&2
+            for cfg in "${configs[@]}"; do
+                echo "  - $cfg" >&2
             done
         else
-            echo "" >&2
-            echo "No existing sites found. Create a new one or use example:" >&2
-            echo "  - api-demo" >&2
-            echo "  - api-staging" >&2
+            echo "No app configs found in site-configs/." >&2
         fi
     fi
     
     echo "" >&2
-    read -p "Site name: " SITE_NAME
+    read -p "App config name: " SITE_NAME
     
-    # Validate site exists
-    if [ -n "$SITE_NAME" ] && [ -d "${deployments_dir}/${SITE_NAME}" ]; then
-        echo "[OK] Selected site: ${SITE_NAME}" >&2
+    # Validate config exists
+    if [ -n "$SITE_NAME" ] && [ -f "${configs_dir}/${SITE_NAME}.json" ]; then
+        echo "[OK] Selected config: ${SITE_NAME}" >&2
     elif [ -n "$SITE_NAME" ]; then
-        echo "[WARN] Site directory not found: ${deployments_dir}/${SITE_NAME}" >&2
-        echo "[WARN] Will create new site configuration" >&2
+        echo "[WARN] Config not found: ${configs_dir}/${SITE_NAME}.json" >&2
     else
-        echo "[ERROR] Site name is required" >&2
+        echo "[ERROR] App config name is required" >&2
         return 1
     fi
     

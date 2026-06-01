@@ -39,12 +39,16 @@ The template supports these combinations:
 | Neo4j | Local | None | Neo4j deployed in swarm with direct port |
 | Neo4j | External | Traefik | Connect to external Neo4j with Traefik routing |
 | Neo4j | External | None | Connect to external Neo4j with direct port |
+| MongoDB | Local | Traefik | MongoDB deployed in swarm with Traefik routing |
+| MongoDB | Local | None | MongoDB deployed in swarm with direct port |
+| MongoDB | External | Traefik | Connect to external MongoDB with Traefik routing |
+| MongoDB | External | None | Connect to external MongoDB with direct port |
 
-**Total combinations**: 8
+**Total combinations**: 12
 
-**Without modular approach**: Would require 8 complete template files
+**Without modular approach**: Would require 12 complete template files
 
-**With modular approach**: Only 8 small module files + 1 base template
+**With modular approach**: Only 12 small module files + 1 base template
 
 ## File Structure
 

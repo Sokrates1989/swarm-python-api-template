@@ -1,4 +1,23 @@
 #!/bin/bash
+# ==============================================================================
+# menu_handlers.sh - Main operations menu for deployment management
+# ==============================================================================
+#
+# Provides the interactive menu loop used by quick-start.sh. All actions
+# operate on ROOT-LEVEL artifacts (.env, swarm-stack.yml, data dirs).
+#
+# Expects load_root_env to have been called so that STACK_NAME, DB_TYPE,
+# PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION, DOMAIN, SECRET_PREFIX, etc.
+# are exported.
+#
+# Dependencies:
+#   - site_helpers.sh (load_root_env)
+#   - secret-manager.sh (create_docker_secrets, list_docker_secrets)
+#   - deploy-stack.sh (deploy_stack)
+#   - health-check.sh (check_deployment_health)
+#   - stack-conflict-check.sh (check_stack_conflict)
+#   - config-builder.sh (update_env_values)
+# ==============================================================================
 
 # Source formatting helpers
 MENU_HANDLERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,64 +32,32 @@ if [ -f "${MENU_HANDLERS_DIR}/auth_provider.sh" ]; then
     source "${MENU_HANDLERS_DIR}/auth_provider.sh"
 fi
 
-# _env_value_or_default
-# Reads a dotenv key with a fallback default value.
-#
-# Arguments:
-# - $1: env file path
-# - $2: key name
-# - $3: default value
-# Output:
-# - prints the resolved value
-_env_value_or_default() {
-    local env_file="$1"
-    local key="$2"
-    local default_value="$3"
-
-    if [ ! -f "$env_file" ]; then
-        echo "$default_value"
-        return 0
-    fi
-
-    local line
-    line=$(grep "^${key}=" "$env_file" 2>/dev/null | head -n 1 || true)
-    if [ -z "$line" ]; then
-        echo "$default_value"
-        return 0
-    fi
-
-    echo "${line#*=}" | tr -d '"' | tr -d '\r'
-}
-
 # _stack_running
 # Checks if a Docker stack is running.
 #
 # Arguments:
-# - $1: stack name
+#   $1 - stack_name: name of the Docker stack
+#
+# Returns:
+#   0 if running, 1 otherwise
 _stack_running() {
     local stack_name="$1"
     docker stack ls --format '{{.Name}}' 2>/dev/null | grep -qx "${stack_name}"
 }
 
 # show_deployment_overview
-# Displays a boxed deployment overview for the current stack.
+# Displays a boxed deployment overview using globals from load_root_env.
 #
 # Arguments:
-# - $1: env file path
+#   (none — reads exported globals)
 show_deployment_overview() {
-    local env_file="${1:-.env}"
-    local stack_name
-    stack_name="$(_env_value_or_default "$env_file" "STACK_NAME" "api_production")"
-    local proxy_type
-    proxy_type="$(_env_value_or_default "$env_file" "PROXY_TYPE" "none")"
-    local db_type
-    db_type="$(_env_value_or_default "$env_file" "DB_TYPE" "postgresql")"
-    local api_url
-    api_url="$(_env_value_or_default "$env_file" "API_URL" "api.example.com")"
-    local image_name
-    image_name="$(_env_value_or_default "$env_file" "IMAGE_NAME" "your-username/your-api-name")"
-    local image_version
-    image_version="$(_env_value_or_default "$env_file" "IMAGE_VERSION" "latest")"
+    local stack_name="${STACK_NAME:-unknown}"
+    local proxy_type="${PROXY_TYPE:-none}"
+    local db_type="${DB_TYPE:-postgresql}"
+    local api_url="${DOMAIN:-}"
+    local image_name="${IMAGE_NAME:-}"
+    local image_version="${IMAGE_VERSION:-latest}"
+    local backend_app="${BACKEND_APP_ID:-}"
 
     local stack_state="not running"
     if _stack_running "$stack_name"; then
@@ -90,6 +77,9 @@ show_deployment_overview() {
     _box_line "Deployment Overview"
     _box_rule
     _box_line "Stack    : ${stack_name} (${stack_status})"
+    if [ -n "$backend_app" ]; then
+        _box_line "App      : ${backend_app}"
+    fi
     _box_line "Proxy    : ${proxy_type}"
     _box_line "DB Type  : ${db_type}"
     if [ -n "$api_url" ]; then
@@ -101,12 +91,18 @@ show_deployment_overview() {
     echo ""
 }
 
+# ==============================================================================
+# show_main_menu
+# ==============================================================================
+# Main interactive menu loop. Operates on root-level deployment artifacts.
+#
+# Expects quick-start.sh to have called load_root_env so STACK_NAME, DB_TYPE,
+# PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION, DOMAIN, SECRET_PREFIX are set.
+# ==============================================================================
 show_main_menu() {
-    # show_main_menu
-    # Main interactive menu loop.
-    # Notes:
-    # - Expects quick-start.sh to have sourced required modules and set STACK_NAME/API_URL/DB_TYPE/PROXY_TYPE/IMAGE_NAME/IMAGE_VERSION.
     local choice
+    local env_file="${PROJECT_ROOT:-.}/.env"
+    local stack_file="${PROJECT_ROOT:-.}/swarm-stack.yml"
 
     while true; do
         local MENU_NEXT=1
@@ -134,6 +130,12 @@ show_main_menu() {
         local MENU_REMOVE=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
 
+        local MENU_BUILD_STACK=$MENU_NEXT
+        MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_INSPECT=$MENU_NEXT
+        MENU_NEXT=$((MENU_NEXT+1))
+
         local MENU_CICD=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
 
@@ -143,7 +145,7 @@ show_main_menu() {
         echo "================ Main Menu ================"
         echo ""
         if declare -F _box_rule >/dev/null; then
-            show_deployment_overview ".env"
+            show_deployment_overview
         fi
 
         echo "Setup:"
@@ -164,6 +166,8 @@ show_main_menu() {
         echo "  ${MENU_UPDATE_IMAGE}) Update API image"
         echo "  ${MENU_SCALE}) Scale services"
         echo "  ${MENU_REMOVE}) Remove deployment"
+        echo "  ${MENU_BUILD_STACK}) Rebuild swarm stack"
+        echo "  ${MENU_INSPECT}) Inspect deployment artifacts"
         echo ""
 
         echo "CI/CD:"
@@ -180,8 +184,6 @@ show_main_menu() {
 
         if [ -n "$MENU_SETUP_AUTH" ] && [ "$choice" = "$MENU_SETUP_AUTH" ]; then
             setup_auth_provider
-
-            # Show updated status
             echo ""
             show_auth_status
             echo ""
@@ -199,13 +201,17 @@ show_main_menu() {
             echo "   - Created data directories"
             echo ""
 
-            STACK_FILE="$(pwd)/swarm-stack.yml"
-            deploy_stack "$STACK_NAME" "$STACK_FILE"
+            if [ ! -f "$stack_file" ]; then
+                echo "⚠️  swarm-stack.yml not found at project root."
+                echo "   Run 'Rebuild swarm stack' or the setup wizard first."
+            else
+                deploy_stack "$STACK_NAME" "$stack_file"
+            fi
             ;;
         ${MENU_STATUS})
             echo "🏥 Running deployment health check..."
             echo ""
-            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$API_URL"
+            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN"
             ;;
         ${MENU_LOGS})
             echo "📜 Service Logs"
@@ -227,7 +233,9 @@ show_main_menu() {
                     docker service logs -f "${STACK_NAME}_api"
                     ;;
                 2)
-                    if [ "$DB_TYPE" = "neo4j" ]; then
+                    if [ "$DB_TYPE" = "mongodb" ]; then
+                        docker service logs -f "${STACK_NAME}_mongodb"
+                    elif [ "$DB_TYPE" = "neo4j" ]; then
                         docker service logs -f "${STACK_NAME}_neo4j"
                     else
                         docker service logs -f "${STACK_NAME}_postgres"
@@ -272,12 +280,12 @@ show_main_menu() {
             echo "Updating service..."
             docker service update --image "$IMAGE_NAME:$new_version" "${STACK_NAME}_api"
 
-            if [ -f .env ]; then
-                update_env_values ".env" "IMAGE_VERSION" "$new_version"
+            # Persist to .env
+            if [ -f "$env_file" ]; then
+                update_env_values "$env_file" "IMAGE_VERSION" "$new_version"
                 echo "Saved IMAGE_VERSION=$new_version to .env"
-            else
-                echo "⚠️  .env not found; skipping persistence of IMAGE_VERSION"
             fi
+            IMAGE_VERSION="$new_version"
 
             echo ""
             echo "✅ Service update initiated!"
@@ -291,6 +299,8 @@ show_main_menu() {
             echo "2) Redis"
             if [ "$DB_TYPE" = "postgresql" ]; then
                 echo "3) PostgreSQL"
+            elif [ "$DB_TYPE" = "mongodb" ]; then
+                echo "3) MongoDB"
             elif [ "$DB_TYPE" = "neo4j" ]; then
                 echo "3) Neo4j"
             fi
@@ -310,31 +320,21 @@ show_main_menu() {
             case $scale_choice in
                 1)
                     docker service scale "${STACK_NAME}_api=$replicas"
-                    if [ -f .env ]; then
-                        update_env_values ".env" "API_REPLICAS" "$replicas"
+                    if [ -f "$env_file" ]; then
+                        update_env_values "$env_file" "API_REPLICAS" "$replicas"
                         echo "Saved API_REPLICAS=$replicas to .env"
                     fi
                     ;;
                 2)
                     docker service scale "${STACK_NAME}_redis=$replicas"
-                    if [ -f .env ]; then
-                        update_env_values ".env" "REDIS_REPLICAS" "$replicas"
-                        echo "Saved REDIS_REPLICAS=$replicas to .env"
-                    fi
                     ;;
                 3)
                     if [ "$DB_TYPE" = "neo4j" ]; then
                         docker service scale "${STACK_NAME}_neo4j=$replicas"
-                        if [ -f .env ]; then
-                            update_env_values ".env" "NEO4J_REPLICAS" "$replicas"
-                            echo "Saved NEO4J_REPLICAS=$replicas to .env"
-                        fi
+                    elif [ "$DB_TYPE" = "mongodb" ]; then
+                        docker service scale "${STACK_NAME}_mongodb=$replicas"
                     else
                         docker service scale "${STACK_NAME}_postgres=$replicas"
-                        if [ -f .env ]; then
-                            update_env_values ".env" "POSTGRES_REPLICAS" "$replicas"
-                            echo "Saved POSTGRES_REPLICAS=$replicas to .env"
-                        fi
                     fi
                     ;;
                 *)
@@ -345,7 +345,7 @@ show_main_menu() {
         ${MENU_REMOVE})
             echo "🗑️  Remove Deployment"
             echo ""
-            echo "⚠️  WARNING: This will remove all services in the stack."
+            echo "⚠️  WARNING: This will remove all services in the '${STACK_NAME}' stack."
             echo "Data in volumes will be preserved."
             echo ""
             if [[ -r /dev/tty ]]; then
@@ -367,44 +367,49 @@ show_main_menu() {
         ${MENU_SETUP_WIZARD})
             echo "🔄 Re-running setup wizard..."
             echo ""
-            ./setup/setup-wizard.sh
+            "${PROJECT_ROOT:-.}/setup/setup-wizard.sh"
+            # Reload .env after wizard
+            load_root_env "${PROJECT_ROOT:-.}"
             ;;
         ${MENU_SETUP_SECRETS})
             echo "🔑 Manage Docker Secrets"
             echo ""
 
-            STACK_NAME_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+            # Derive prefix from SECRET_PREFIX or STACK_NAME
+            local prefix_upper
+            prefix_upper=$(echo "${SECRET_PREFIX:-$STACK_NAME}" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
 
-            DB_PASSWORD_SECRET="${STACK_NAME_UPPER}_DB_PASSWORD"
-            ADMIN_API_KEY_SECRET="${STACK_NAME_UPPER}_ADMIN_API_KEY"
-            BACKUP_RESTORE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_RESTORE_API_KEY"
-            BACKUP_DELETE_API_KEY_SECRET="${STACK_NAME_UPPER}_BACKUP_DELETE_API_KEY"
+            local DB_PASSWORD_SECRET="${prefix_upper}DB_PASSWORD"
+            local ADMIN_API_KEY_SECRET="${prefix_upper}ADMIN_API_KEY"
+            local BACKUP_RESTORE_API_KEY_SECRET="${prefix_upper}BACKUP_RESTORE_API_KEY"
+            local BACKUP_DELETE_API_KEY_SECRET="${prefix_upper}BACKUP_DELETE_API_KEY"
 
-            echo "📋 Current Secret Status:"
+            echo "📋 Secret Status:"
+            echo "  Prefix: ${prefix_upper}*"
             echo "------------------------"
 
             if docker secret inspect "$DB_PASSWORD_SECRET" &>/dev/null; then
-                echo "✅ Database password secret exists"
+                echo "✅ ${DB_PASSWORD_SECRET}"
             else
-                echo "❌ Database password secret missing"
+                echo "❌ ${DB_PASSWORD_SECRET} (missing)"
             fi
 
             if docker secret inspect "$ADMIN_API_KEY_SECRET" &>/dev/null; then
-                echo "✅ Admin API key secret exists"
+                echo "✅ ${ADMIN_API_KEY_SECRET}"
             else
-                echo "❌ Admin API key secret missing"
+                echo "❌ ${ADMIN_API_KEY_SECRET} (missing)"
             fi
 
             if docker secret inspect "$BACKUP_RESTORE_API_KEY_SECRET" &>/dev/null; then
-                echo "✅ Backup restore API key secret exists"
+                echo "✅ ${BACKUP_RESTORE_API_KEY_SECRET}"
             else
-                echo "❌ Backup restore API key secret missing"
+                echo "❌ ${BACKUP_RESTORE_API_KEY_SECRET} (missing)"
             fi
 
             if docker secret inspect "$BACKUP_DELETE_API_KEY_SECRET" &>/dev/null; then
-                echo "✅ Backup delete API key secret exists"
+                echo "✅ ${BACKUP_DELETE_API_KEY_SECRET}"
             else
-                echo "❌ Backup delete API key secret missing"
+                echo "❌ ${BACKUP_DELETE_API_KEY_SECRET} (missing)"
             fi
 
             echo ""
@@ -424,7 +429,7 @@ show_main_menu() {
                     echo ""
                     echo "🔍 Checking for running stack..."
 
-                    if docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; then
+                    if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
                         echo "⚠️  WARNING: Stack '$STACK_NAME' is currently running!"
                         echo ""
                         echo "Secrets cannot be updated while in use by a running stack."
@@ -441,7 +446,7 @@ show_main_menu() {
                             docker stack rm "$STACK_NAME"
 
                             echo "Waiting for stack to be fully removed..."
-                            while docker stack ls --format "{{.Name}}" | grep -q "^${STACK_NAME}$"; do
+                            while docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; do
                                 echo -n "."
                                 sleep 2
                             done
@@ -472,6 +477,41 @@ show_main_menu() {
                     echo "Invalid choice"
                     ;;
             esac
+            ;;
+        ${MENU_BUILD_STACK})
+            echo "🔨 Rebuilding swarm-stack.yml..."
+            echo ""
+            local build_script="${PROJECT_ROOT:-.}/scripts/build-site-stack.sh"
+            if [ -x "$build_script" ]; then
+                "$build_script"
+            else
+                echo "⚠️  build-site-stack.sh not found or not executable."
+                echo "   Expected at: $build_script"
+            fi
+            ;;
+        ${MENU_INSPECT})
+            echo ""
+            echo "🔍 Deployment Artifacts"
+            echo "===================================="
+            echo ""
+            echo "  .env:             ${env_file}"
+            echo "  swarm-stack.yml:  ${stack_file}"
+            echo ""
+
+            if [ -f "$stack_file" ]; then
+                echo "  Stack file:     ✅ exists"
+            else
+                echo "  Stack file:     ❌ not built yet"
+            fi
+
+            echo ""
+            echo "--- .env contents ---"
+            if [ -f "$env_file" ]; then
+                cat "$env_file"
+            else
+                echo "  (not generated yet)"
+            fi
+            echo ""
             ;;
         ${MENU_CICD})
             run_ci_cd_github_helper

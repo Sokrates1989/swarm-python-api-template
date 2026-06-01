@@ -1,0 +1,36 @@
+{
+  "version": "3.0",
+  "appId": "demo_app",
+  "name": "Demo App",
+  "description": "Demo API backend app for testing with MongoDB",
+  "database": {
+    "type": "mongodb",
+    "defaultMode": "local"
+  },
+  "services": {
+    "redis": true,
+    "database": true
+  },
+  "image": {
+    "name": "sokrates1989/python-api-template",
+    "defaultVersion": "latest"
+  },
+  "resources": {
+    "defaultReplicas": 1,
+    "defaultMemoryLimit": "512M"
+  },
+  "secrets": [
+    "DB_PASSWORD",
+    "ADMIN_API_KEY",
+    "BACKUP_RESTORE_API_KEY",
+    "BACKUP_DELETE_API_KEY"
+  ],
+  "envKeys": [
+    "BACKEND_APP_ID",
+    "DB_TYPE",
+    "DB_MODE",
+    "MONGODB_DB",
+    "MONGODB_USER"
+  ],
+  "notes": "Demo app with MongoDB backend"
+}

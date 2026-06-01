@@ -1,0 +1,33 @@
+# MongoDB local database deployment
+# Use this when deploying MongoDB in the swarm
+# NOTE: This file is concatenated into swarm-stack.yml - no top-level 'services:' key
+  mongodb:
+    image: mongo:7
+    volumes:
+      - ${DATA_ROOT}/mongodb_data:/data/db
+      - ${DATA_ROOT}/mongodb_config:/data/configdb
+    networks:
+      - backend
+    secrets:
+      - "XXX_CHANGE_ME_DB_PASSWORD_XXX"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USER}
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX
+      MONGO_INITDB_DATABASE: ${DB_NAME}
+    deploy:
+      mode: replicated
+      replicas: ${MONGODB_REPLICAS}
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s

@@ -18,8 +18,7 @@ swarm-python-api-template/
 │   │   ├── footer.yml            # Networks and secrets definitions
 │   │   ├── postgres-local.yml    # PostgreSQL local deployment
 │   │   ├── neo4j-local.yml       # Neo4j local deployment
-│   │   ├── proxy-traefik.yml     # Traefik proxy configuration (deprecated)
-│   │   ├── proxy-none.yml        # Direct port exposure (deprecated)
+│   │   ├── mongodb-local.yml     # MongoDB local deployment
 │   │   └── snippets/             # Configuration snippets for injection
 │   │       ├── db-postgresql-local.env.yml
 │   │       ├── db-postgresql-external.env.yml
@@ -36,6 +35,8 @@ swarm-python-api-template/
 │   │   ├── .env.postgres-external.template # PostgreSQL external settings
 │   │   ├── .env.neo4j-local.template       # Neo4j local settings
 │   │   ├── .env.neo4j-external.template    # Neo4j external settings
+│   │   ├── .env.mongodb-local.template     # MongoDB local settings
+│   │   └── .env.mongodb-external.template  # MongoDB external settings
 │   │   ├── .env.proxy-traefik.template     # Traefik settings
 │   │   └── .env.proxy-none.template        # No-proxy settings
 │   │

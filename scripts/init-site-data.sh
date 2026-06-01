@@ -1,57 +1,81 @@
 #!/bin/bash
-
-# Initialize data directories for a site
-# Creates the necessary directory structure for site data
+# ==============================================================================
+# init-site-data.sh - Initialize data directories for deployment
+# ==============================================================================
+#
+# Reads DATA_ROOT and DB_TYPE from the root .env and creates the necessary
+# persistent volume directories.
+#
+# Usage:
+#   ./scripts/init-site-data.sh
+#
+# Dependencies:
+#   - Root .env with DATA_ROOT and DB_TYPE
+# ==============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <site-id>"
-    echo "Example: $0 api-demo"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Error: Root .env not found. Run setup-wizard.sh first."
     exit 1
 fi
 
-SITE_ID="$1"
-DEPLOYMENT_DIR="${PROJECT_ROOT}/deployments/${SITE_ID}"
-DATA_DIR="${DEPLOYMENT_DIR}/data"
+# Read values from .env
+_env_val() {
+    grep "^${1}=" "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
+}
 
-# Check if site exists
-if [ ! -f "${PROJECT_ROOT}/site-configs/${SITE_ID}.json" ]; then
-    echo "Error: Site '${SITE_ID}' not found in site-configs/"
-    exit 1
+DATA_ROOT="$(_env_val DATA_ROOT)"
+DB_TYPE="$(_env_val DB_TYPE)"
+DB_MODE="$(_env_val DB_MODE)"
+
+if [ -z "$DATA_ROOT" ]; then
+    DATA_ROOT="$PROJECT_ROOT"
 fi
 
-# Load database type from config
-DB_TYPE=$(jq -r '.database.type' "${PROJECT_ROOT}/site-configs/${SITE_ID}.json")
-
-echo "Initializing data directories for site: ${SITE_ID}"
-echo "  Database type: ${DB_TYPE}"
+echo "📁 Initializing data directories"
+echo "  Data root: ${DATA_ROOT}"
+echo "  Database:  ${DB_TYPE} (${DB_MODE})"
 echo ""
 
-# Create base directories
-mkdir -p "${DATA_DIR}/logs"
-mkdir -p "${DATA_DIR}/redis"
+# Always create redis data
+mkdir -p "${DATA_ROOT}/redis_data"
+echo "  ✅ ${DATA_ROOT}/redis_data"
 
-# Create database-specific directories
-case "$DB_TYPE" in
-    postgresql)
-        mkdir -p "${DATA_DIR}/postgres"
-        echo "  Created: ${DATA_DIR}/postgres"
-        ;;
-    mongodb)
-        mkdir -p "${DATA_DIR}/mongodb"
-        echo "  Created: ${DATA_DIR}/mongodb"
-        ;;
-    *)
-        echo "Warning: Unknown database type '${DB_TYPE}'"
-        ;;
-esac
+# Always create backups
+mkdir -p "${DATA_ROOT}/backups"
+echo "  ✅ ${DATA_ROOT}/backups"
 
-echo "  Created: ${DATA_DIR}/redis"
-echo "  Created: ${DATA_DIR}/logs"
+# Create database-specific directories (only for local mode)
+if [ "$DB_MODE" = "local" ]; then
+    case "$DB_TYPE" in
+        postgresql)
+            mkdir -p "${DATA_ROOT}/postgres_data"
+            echo "  ✅ ${DATA_ROOT}/postgres_data"
+            ;;
+        mongodb)
+            mkdir -p "${DATA_ROOT}/mongodb_data"
+            echo "  ✅ ${DATA_ROOT}/mongodb_data"
+            ;;
+        neo4j)
+            mkdir -p "${DATA_ROOT}/neo4j_data"
+            mkdir -p "${DATA_ROOT}/neo4j_logs"
+            echo "  ✅ ${DATA_ROOT}/neo4j_data"
+            echo "  ✅ ${DATA_ROOT}/neo4j_logs"
+            ;;
+        none)
+            echo "  ℹ️  No database directories needed (DB_TYPE=none)"
+            ;;
+        *)
+            echo "  ⚠️  Unknown DB_TYPE '${DB_TYPE}'; skipping database dirs"
+            ;;
+    esac
+fi
 
 echo ""
-echo "Data directories initialized for ${SITE_ID}"
+echo "✅ Data directories initialized."

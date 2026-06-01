@@ -1,8 +1,22 @@
 #!/bin/bash
-
-# Build Docker Swarm stack for a specific site
-# Reads site configuration from site-configs/{SiteId}.json
-# Generates deployments/{SiteId}/swarm-stack.yml
+# ==============================================================================
+# build-site-stack.sh - Build root swarm-stack.yml from compose modules
+# ==============================================================================
+#
+# Reads the root .env to determine DB_TYPE, DB_MODE, PROXY_TYPE, and SSL_MODE,
+# then calls the config-builder.sh build_stack_file function to assemble
+# swarm-stack.yml from compose-module templates + snippets.
+#
+# Output: PROJECT_ROOT/swarm-stack.yml
+#
+# Usage:
+#   ./scripts/build-site-stack.sh
+#
+# Dependencies:
+#   - Root .env file with DB_TYPE, DB_MODE, PROXY_TYPE
+#   - setup/modules/config-builder.sh
+#   - setup/compose-modules/ templates and snippets
+# ==============================================================================
 
 set -e
 
@@ -10,100 +24,87 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Check arguments
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <site-id>"
-    echo "Example: $0 api-demo"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+# Source config-builder module
+source "${PROJECT_ROOT}/setup/modules/config-builder.sh"
+
+# Verify .env exists
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Error: Root .env not found. Run setup-wizard.sh first."
     exit 1
 fi
 
-SITE_ID="$1"
-CONFIG_PATH="${PROJECT_ROOT}/site-configs/${SITE_ID}.json"
-DEPLOYMENT_DIR="${PROJECT_ROOT}/deployments/${SITE_ID}"
-ENV_FILE="${DEPLOYMENT_DIR}/.env"
-OUTPUT_FILE="${DEPLOYMENT_DIR}/swarm-stack.yml"
+# Read key values from .env
+_env_val() {
+    grep "^${1}=" "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
+}
 
-# Verify site config exists
-if [ ! -f "$CONFIG_PATH" ]; then
-    echo "Error: Site configuration not found: $CONFIG_PATH"
-    exit 1
+DB_TYPE="$(_env_val DB_TYPE)"
+DB_MODE="$(_env_val DB_MODE)"
+PROXY_TYPE="$(_env_val PROXY_TYPE)"
+STACK_NAME="$(_env_val STACK_NAME)"
+
+# Determine SSL mode from .env (check for TRAEFIK_TLS_CERTRESOLVER)
+SSL_MODE="direct"
+if grep -q "^TRAEFIK_TLS_CERTRESOLVER=letsencrypt" "$ENV_FILE" 2>/dev/null; then
+    SSL_MODE="direct"
+fi
+# If the .env has proxy SSL mode stored explicitly
+if grep -q "^SSL_MODE=proxy" "$ENV_FILE" 2>/dev/null; then
+    SSL_MODE="proxy"
 fi
 
-# Load site config
-SITE_NAME=$(jq -r '.name' "$CONFIG_PATH")
-DOMAIN=$(jq -r '.domain' "$CONFIG_PATH")
-DB_TYPE=$(jq -r '.database.type' "$CONFIG_PATH")
-DB_MODE=$(jq -r '.database.mode' "$CONFIG_PATH")
-
-echo "Building stack for site: ${SITE_ID}"
-echo "  Name: ${SITE_NAME}"
-echo "  Domain: ${DOMAIN}"
+echo "🔨 Building swarm-stack.yml"
+echo "  Stack:    ${STACK_NAME}"
 echo "  Database: ${DB_TYPE} (${DB_MODE})"
+echo "  Proxy:    ${PROXY_TYPE} (SSL: ${SSL_MODE})"
+echo ""
 
-# Build compose file list
-COMPOSE_FILES=()
+# Call config-builder's build_stack_file to assemble the stack
+build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
 
-# 1. Base (networks, secrets)
-BASE_FILE="${PROJECT_ROOT}/deployments/_base/base.yml"
-if [ -f "$BASE_FILE" ]; then
-    COMPOSE_FILES+=("$BASE_FILE")
+# Post-process the generated stack to replace placeholders
+STACK_FILE="${PROJECT_ROOT}/swarm-stack.yml"
+
+# Derive secret names using the same pattern as the wizard
+PREFIX_UPPER=$(echo "$(_env_val SECRETS_PREFIX)" | tr -d '_' | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+if [ -z "$PREFIX_UPPER" ]; then
+    PREFIX_UPPER=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
 fi
 
-# 2. Site-specific files (in order)
-SITE_FILES=(
-    "${DEPLOYMENT_DIR}/api.yml"
-)
+DB_PASSWORD_SECRET="${PREFIX_UPPER}_DB_PASSWORD"
+ADMIN_API_KEY_SECRET="${PREFIX_UPPER}_ADMIN_API_KEY"
+BACKUP_RESTORE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY"
+BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
 
-# 3. Database module (type-specific)
-case "$DB_TYPE" in
-    postgresql)
-        if [ "$DB_MODE" = "local" ]; then
-            POSTGRES_FILE="${DEPLOYMENT_DIR}/postgres.yml"
-            if [ -f "$POSTGRES_FILE" ]; then
-                SITE_FILES+=("$POSTGRES_FILE")
-            fi
-        fi
-        ;;
-    *)
-        echo "Warning: Unsupported database type: $DB_TYPE"
-        ;;
-esac
+# Replace secret placeholders
+echo "🔐 Updating secret name placeholders..."
+update_stack_secrets "$STACK_FILE" "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
 
-# Add all site files
-for file in "${SITE_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        COMPOSE_FILES+=("$file")
-    else
-        echo "Warning: Missing compose file: $file"
+# Handle Traefik network placeholder
+if [ "$PROXY_TYPE" = "traefik" ]; then
+    # Get Traefik network name from .env or default to "traefik"
+    TRAEFIK_NETWORK="$(_env_val TRAEFIK_NETWORK)"
+    if [ -z "$TRAEFIK_NETWORK" ]; then
+        TRAEFIK_NETWORK="traefik"
     fi
-done
-
-echo ""
-echo "Compose files to merge:"
-for file in "${COMPOSE_FILES[@]}"; do
-    echo "  - $(basename "$file")"
-done
-
-# Build docker compose arguments
-DOCKER_ARGS=()
-for file in "${COMPOSE_FILES[@]}"; do
-    DOCKER_ARGS+=("-f" "$file")
-done
-DOCKER_ARGS+=("--env-file" "$ENV_FILE")
-DOCKER_ARGS+=("config")
-
-echo ""
-echo "Generating swarm-stack.yml..."
-
-# Generate stack using docker compose config
-docker compose "${DOCKER_ARGS[@]}" > "$OUTPUT_FILE"
-
-if [ $? -eq 0 ]; then
-    echo "Stack generated: $OUTPUT_FILE"
-    echo ""
-    echo "To deploy this site, run:"
-    echo "  docker stack deploy -c ${OUTPUT_FILE} ${SITE_ID}"
-else
-    echo "Error: Failed to generate stack"
-    exit 1
+    echo "🌐 Updating Traefik network placeholder: $TRAEFIK_NETWORK"
+    update_stack_network "$STACK_FILE" "$TRAEFIK_NETWORK"
+elif [ "$PROXY_TYPE" = "none" ]; then
+    # Remove the Traefik network placeholder when not using Traefik
+    echo "🌐 Removing Traefik network placeholder (PROXY_TYPE=none)"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' '/XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX:/d' "$STACK_FILE"
+    else
+        # Linux
+        sed -i '/XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX:/d' "$STACK_FILE"
+    fi
 fi
+
+echo ""
+echo "✅ Stack build complete. All placeholders resolved."
+echo ""
+echo "To deploy, run:"
+echo "  docker stack deploy -c swarm-stack.yml ${STACK_NAME}"

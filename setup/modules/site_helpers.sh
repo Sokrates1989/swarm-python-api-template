@@ -1,0 +1,301 @@
+#!/bin/bash
+# ==============================================================================
+# site_helpers.sh - App config discovery, loading, and selection helpers
+# ==============================================================================
+#
+# This module provides functions to discover app deployment manifests from
+# site-configs/, load app metadata into shell variables, display an app
+# selection menu, and resolve the root .env context.
+#
+# In this deployment model, each git clone of this repo IS one deployment.
+# The .env, swarm-stack.yml, and data directories all live at PROJECT ROOT.
+# site-configs/ holds app manifests that describe what a backend app needs
+# (database type, required services, image name, etc.) — info known at
+# development time.
+#
+# Functions:
+#   discover_app_configs    - Scan site-configs/ for available app config IDs
+#   load_app_config         - Parse a site-configs/<appId>.json into globals
+#   show_app_selector       - Interactive numbered menu for app selection
+#   load_root_env           - Load root .env into convenience globals
+#
+# Dependencies:
+#   - jq (for JSON parsing)
+#   - site-configs/<appId>.json files following v3 schema
+#   - Root .env file (optional, for running context)
+#
+# Exported Globals (set by load_app_config):
+#   APP_CONFIG_FILE, APP_ID, APP_NAME, APP_DESCRIPTION,
+#   APP_DB_TYPE, APP_DB_DEFAULT_MODE,
+#   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE,
+#   APP_IMAGE_NAME, APP_IMAGE_DEFAULT_VERSION,
+#   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT
+#
+# Exported Globals (set by load_root_env):
+#   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
+#   DOMAIN, API_REPLICAS, MEMORY_LIMIT, SECRET_PREFIX
+# ==============================================================================
+
+# Guard against multiple sourcing.
+if [ -n "$_SITE_HELPERS_LOADED" ]; then
+    return 0 2>/dev/null || true
+fi
+_SITE_HELPERS_LOADED=1
+
+# ==============================================================================
+# Internal helpers
+# ==============================================================================
+
+# _jq_or_default
+# Reads a jq path from a JSON file, returning a default when the field is
+# null, empty, or jq is unavailable.
+#
+# Arguments:
+#   $1 - json_file: path to the JSON file
+#   $2 - jq_path: jq expression (e.g. '.appId')
+#   $3 - default_value: fallback value
+#
+# Output:
+#   Prints the resolved value to stdout.
+_jq_or_default() {
+    local json_file="$1"
+    local jq_path="$2"
+    local default_value="$3"
+
+    if ! command -v jq &>/dev/null; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local val
+    val=$(jq -r "$jq_path // empty" "$json_file" 2>/dev/null)
+    if [ -z "$val" ]; then
+        echo "$default_value"
+    else
+        echo "$val"
+    fi
+}
+
+# ==============================================================================
+# discover_app_configs
+# ==============================================================================
+# Scans site-configs/ for JSON files (excluding _template.json) and prints
+# one app config ID per line. IDs are derived from the filename without the
+# .json extension.
+#
+# Arguments:
+#   $1 - project_root: absolute path to the repository root
+#
+# Output:
+#   Prints app config IDs to stdout, one per line. Empty if none found.
+#
+# Returns:
+#   0 always
+# ==============================================================================
+discover_app_configs() {
+    local project_root="$1"
+    local config_dir="${project_root}/site-configs"
+
+    if [ ! -d "$config_dir" ]; then
+        return 0
+    fi
+
+    local f
+    for f in "${config_dir}"/*.json; do
+        [ -f "$f" ] || continue
+        local base
+        base="$(basename "$f" .json)"
+        # Skip template file
+        if [ "$base" = "_template" ]; then
+            continue
+        fi
+        echo "$base"
+    done
+}
+
+# ==============================================================================
+# load_app_config
+# ==============================================================================
+# Parses site-configs/<configId>.json and populates APP_* globals with the
+# app's requirements (database type, services, image, resources).
+# These are development-time facts about the app.
+#
+# Arguments:
+#   $1 - project_root: absolute path to the repository root
+#   $2 - config_id: the config ID (filename stem in site-configs/)
+#
+# Returns:
+#   0 on success, 1 if the config file is missing or jq unavailable
+# ==============================================================================
+load_app_config() {
+    local project_root="$1"
+    local config_id="$2"
+    local config_file="${project_root}/site-configs/${config_id}.json"
+
+    if [ ! -f "$config_file" ]; then
+        echo "❌ App config not found: $config_file" >&2
+        return 1
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        echo "❌ jq is required but not installed." >&2
+        echo "   Install it with: sudo apt-get install jq" >&2
+        return 1
+    fi
+
+    APP_CONFIG_FILE="$config_file"
+    APP_CONFIG_ID="$config_id"
+    APP_ID="$(_jq_or_default "$config_file" '.appId' "$config_id")"
+    APP_NAME="$(_jq_or_default "$config_file" '.name' "$config_id")"
+    APP_DESCRIPTION="$(_jq_or_default "$config_file" '.description' "")"
+
+    # Database requirements
+    APP_DB_TYPE="$(_jq_or_default "$config_file" '.database.type' "postgresql")"
+    APP_DB_DEFAULT_MODE="$(_jq_or_default "$config_file" '.database.defaultMode' "local")"
+
+    # Service requirements
+    APP_REQUIRES_REDIS="$(_jq_or_default "$config_file" '.services.redis' "true")"
+    APP_REQUIRES_DATABASE="$(_jq_or_default "$config_file" '.services.database' "true")"
+
+    # Image defaults
+    APP_IMAGE_NAME="$(_jq_or_default "$config_file" '.image.name' "")"
+    APP_IMAGE_DEFAULT_VERSION="$(_jq_or_default "$config_file" '.image.defaultVersion' "latest")"
+
+    # Resource defaults
+    APP_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.resources.defaultReplicas' "1")"
+    APP_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.resources.defaultMemoryLimit' "512M")"
+
+    return 0
+}
+
+# ==============================================================================
+# show_app_selector
+# ==============================================================================
+# Displays an interactive numbered menu listing discovered app configs.
+# The user selects one by number, or chooses to exit.
+#
+# Arguments:
+#   $1 - project_root: absolute path to the repository root
+#
+# Output:
+#   Prints the selected config ID to stdout. Prints "EXIT" to quit.
+#
+# Returns:
+#   0 always
+# ==============================================================================
+show_app_selector() {
+    local project_root="$1"
+
+    local configs=()
+    while IFS= read -r cid; do
+        configs+=("$cid")
+    done < <(discover_app_configs "$project_root")
+
+    echo "" >&2
+    echo "============================================" >&2
+    echo "  Select App Configuration" >&2
+    echo "============================================" >&2
+    echo "" >&2
+
+    if [ ${#configs[@]} -eq 0 ]; then
+        echo "  No app configs found in site-configs/." >&2
+        echo "  Create a JSON manifest first (see site-configs/_template.json)." >&2
+        echo "" >&2
+        echo "EXIT"
+        return 0
+    fi
+
+    echo "  Available app configs:" >&2
+    echo "" >&2
+
+    local i
+    for i in "${!configs[@]}"; do
+        local cid="${configs[$i]}"
+        local num=$((i + 1))
+        local config_file="${project_root}/site-configs/${cid}.json"
+        local display_name="$cid"
+        local db_type=""
+
+        # Read display metadata from config
+        if command -v jq &>/dev/null && [ -f "$config_file" ]; then
+            display_name="$(_jq_or_default "$config_file" '.name' "$cid")"
+            db_type="$(_jq_or_default "$config_file" '.database.type' "")"
+        fi
+
+        local info=""
+        [ -n "$db_type" ] && info=" (${db_type})"
+
+        echo "  ${num}) ${display_name}${info}" >&2
+    done
+
+    echo "" >&2
+    echo "  q) Exit" >&2
+    echo "" >&2
+
+    local choice
+    if [[ -r /dev/tty ]]; then
+        read -r -p "Select [1-${#configs[@]}, q]: " choice < /dev/tty
+    else
+        read -r -p "Select [1-${#configs[@]}, q]: " choice
+    fi
+
+    case "$choice" in
+        q|Q|"")
+            echo "EXIT"
+            return 0
+            ;;
+        *)
+            # Numeric selection
+            if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#configs[@]}" ]; then
+                echo "${configs[$((choice - 1))]}"
+            else
+                echo "❌ Invalid choice: $choice" >&2
+                echo "EXIT"
+            fi
+            return 0
+            ;;
+    esac
+}
+
+# ==============================================================================
+# load_root_env
+# ==============================================================================
+# Loads the root .env file (PROJECT_ROOT/.env) and exports convenience
+# globals used by menu_handlers, deploy-stack, and other modules.
+#
+# Arguments:
+#   $1 - project_root: absolute path to the repository root
+#
+# Returns:
+#   0 if .env exists and was loaded, 1 if .env is missing
+# ==============================================================================
+load_root_env() {
+    local project_root="$1"
+    local env_file="${project_root}/.env"
+
+    if [ ! -f "$env_file" ]; then
+        return 1
+    fi
+
+    # Read key values from .env (simple grep-based, no eval for safety)
+    _env_val() {
+        grep "^${1}=" "$env_file" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
+    }
+
+    export STACK_NAME="$(_env_val STACK_NAME)"
+    export DOMAIN="$(_env_val DOMAIN)"
+    export API_URL="$DOMAIN"
+    export DB_TYPE="$(_env_val DB_TYPE)"
+    export DB_MODE="$(_env_val DB_MODE)"
+    export PROXY_TYPE="$(_env_val PROXY_TYPE)"
+    export IMAGE_NAME="$(_env_val IMAGE_NAME)"
+    export IMAGE_VERSION="$(_env_val IMAGE_VERSION)"
+    export API_REPLICAS="$(_env_val API_REPLICAS)"
+    export MEMORY_LIMIT="$(_env_val MEMORY_LIMIT)"
+    export SECRET_PREFIX="$(_env_val SECRETS_PREFIX)"
+    export BACKEND_APP_ID="$(_env_val BACKEND_APP_ID)"
+    export DATA_ROOT="$(_env_val DATA_ROOT)"
+
+    unset -f _env_val
+    return 0
+}
