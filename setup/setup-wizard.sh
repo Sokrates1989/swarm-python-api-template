@@ -56,6 +56,21 @@ if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
 fi
 
 # ===========================================================================
+# Validation helpers for required inputs
+# ===========================================================================
+
+# Validates that a value is non-empty
+_validate_non_empty() {
+    [ -n "$1" ]
+}
+
+# Validates domain format (basic check for dot and no spaces)
+_validate_domain() {
+    local domain="$1"
+    [ -n "$domain" ] && [[ "$domain" =~ \. ]] && [[ ! "$domain" =~ [[:space:]] ]]
+}
+
+# ===========================================================================
 # jq check
 # ===========================================================================
 
@@ -221,20 +236,34 @@ else
     echo "These values are specific to THIS deployment instance."
     echo ""
 
-    # Stack name - generate from app name if no existing value
-if [ -n "$EXISTING_STACK_NAME" ]; then
-    DEFAULT_STACK_NAME="$EXISTING_STACK_NAME"
-else
-    # Convert app name to stack-friendly format (lowercase, spaces to hyphens)
-    DEFAULT_STACK_NAME=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr '_' '-')
-fi
-read -p "Docker stack name [${DEFAULT_STACK_NAME}]: " STACK_NAME
-STACK_NAME="${STACK_NAME:-$DEFAULT_STACK_NAME}"
+    # Stack name - generate from app name if no existing value - requires non-empty
+    if [ -n "$EXISTING_STACK_NAME" ]; then
+        DEFAULT_STACK_NAME="$EXISTING_STACK_NAME"
+    else
+        # Convert app name to stack-friendly format (lowercase, spaces to hyphens)
+        DEFAULT_STACK_NAME=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr '_' '-')
+    fi
+    while true; do
+        read -p "Docker stack name [${DEFAULT_STACK_NAME}]: " STACK_NAME
+        STACK_NAME="${STACK_NAME:-$DEFAULT_STACK_NAME}"
+        if _validate_non_empty "$STACK_NAME"; then
+            break
+        fi
+        echo "❌ Stack name is required. Please provide a value."
+    done
 
-# Domain
-DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
-read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
-DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
+    # Domain - requires non-empty and must contain a dot
+    DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
+    while true; do
+        read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
+        DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
+        if _validate_domain "$DOMAIN"; then
+            break
+        fi
+        echo "❌ Domain is required and must be a valid domain (e.g., api.example.com)."
+        # Clear default after first failed attempt so user must consciously enter a value
+        DEFAULT_DOMAIN=""
+    done
 
 # Derive secret prefix from stack name (internal, not prompted)
 SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
@@ -315,16 +344,28 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
         admin_ui_default_domain="${EXISTING_MONGO_EXPRESS_URL:-admin-db.${DOMAIN}}"
     fi
 
-    # Domain prompt
+    # Domain prompt - requires non-empty domain
     if [ -n "$admin_ui_type" ]; then
         echo "${admin_ui_type} domain:"
         if [ "$DB_TYPE" = "postgresql" ]; then
-            read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " PGADMIN_URL
-            PGADMIN_URL="${PGADMIN_URL:-$admin_ui_default_domain}"
+            while true; do
+                read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " PGADMIN_URL
+                PGADMIN_URL="${PGADMIN_URL:-$admin_ui_default_domain}"
+                if _validate_domain "$PGADMIN_URL"; then
+                    break
+                fi
+                echo "❌ ${admin_ui_type} domain is required and must be a valid domain (e.g., admin-db.example.com)."
+            done
             echo "✅ ${admin_ui_type} URL: $PGADMIN_URL"
         elif [ "$DB_TYPE" = "mongodb" ]; then
-            read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " MONGO_EXPRESS_URL
-            MONGO_EXPRESS_URL="${MONGO_EXPRESS_URL:-$admin_ui_default_domain}"
+            while true; do
+                read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " MONGO_EXPRESS_URL
+                MONGO_EXPRESS_URL="${MONGO_EXPRESS_URL:-$admin_ui_default_domain}"
+                if _validate_domain "$MONGO_EXPRESS_URL"; then
+                    break
+                fi
+                echo "❌ ${admin_ui_type} domain is required and must be a valid domain (e.g., admin-db.example.com)."
+            done
             echo "✅ ${admin_ui_type} URL: $MONGO_EXPRESS_URL"
         fi
     fi
@@ -369,10 +410,22 @@ echo ""
 echo "🐳 Docker Image"
 DEFAULT_IMAGE_NAME="${APP_IMAGE_NAME}"
 DEFAULT_IMAGE_VERSION="${EXISTING_IMAGE_VERSION:-$APP_IMAGE_DEFAULT_VERSION}"
-read -p "Image name [$DEFAULT_IMAGE_NAME]: " IMAGE_NAME
-IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"
-read -p "Image version [$DEFAULT_IMAGE_VERSION]: " IMAGE_VERSION
-IMAGE_VERSION="${IMAGE_VERSION:-$DEFAULT_IMAGE_VERSION}"
+while true; do
+    read -p "Image name [$DEFAULT_IMAGE_NAME]: " IMAGE_NAME
+    IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"
+    if _validate_non_empty "$IMAGE_NAME"; then
+        break
+    fi
+    echo "❌ Image name is required."
+done
+while true; do
+    read -p "Image version [$DEFAULT_IMAGE_VERSION]: " IMAGE_VERSION
+    IMAGE_VERSION="${IMAGE_VERSION:-$DEFAULT_IMAGE_VERSION}"
+    if _validate_non_empty "$IMAGE_VERSION"; then
+        break
+    fi
+    echo "❌ Image version is required."
+done
 echo "✅ Image: $IMAGE_NAME:$IMAGE_VERSION"
 
 # Resources
@@ -384,11 +437,17 @@ API_REPLICAS="${API_REPLICAS:-$DEFAULT_REPLICAS}"
 read -p "Memory limit [$DEFAULT_MEMORY]: " MEMORY_LIMIT
 MEMORY_LIMIT="${MEMORY_LIMIT:-$DEFAULT_MEMORY}"
 
-# Data root
+# Data root - requires non-empty path
 echo ""
 DEFAULT_DATA_ROOT="${EXISTING_DATA_ROOT:-$PROJECT_ROOT}"
-read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
-DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
+while true; do
+    read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
+    DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
+    if _validate_non_empty "$DATA_ROOT"; then
+        break
+    fi
+    echo "❌ Data root path is required."
+done
 
 fi  # End of interactive mode conditional
 
