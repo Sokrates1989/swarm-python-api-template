@@ -1,4 +1,5 @@
 {
+  "$schema": "site-config-schema",
   "version": "3.0",
   "appId": "mongodb_template",
   "name": "MongoDB Template",
@@ -10,6 +11,12 @@
   "services": {
     "redis": true,
     "database": true
+  },
+  "adminUI": {
+    "type": "mongo-express",
+    "defaultDomainPrefix": "admin-db",
+    "defaultReplicas": 0,
+    "configurableReplicas": false
   },
   "image": {
     "name": "sokrates1989/python-api-mongodb-template",
@@ -23,7 +30,8 @@
     "DB_PASSWORD",
     "ADMIN_API_KEY",
     "BACKUP_RESTORE_API_KEY",
-    "BACKUP_DELETE_API_KEY"
+    "BACKUP_DELETE_API_KEY",
+    "MONGO_EXPRESS_PASSWORD"
   ],
   "envKeys": [
     "BACKEND_APP_ID",

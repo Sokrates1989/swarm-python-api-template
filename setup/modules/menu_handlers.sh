@@ -110,6 +110,10 @@ show_main_menu() {
         MENU_NEXT=$((MENU_NEXT+1))
         local MENU_SETUP_SECRETS=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_RESTORE_ENV=$MENU_NEXT
+        MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_RESTORE_SECRETS=$MENU_NEXT
+        MENU_NEXT=$((MENU_NEXT+1))
         local MENU_SETUP_AUTH=""
         if declare -F setup_auth_provider >/dev/null; then
             MENU_SETUP_AUTH=$MENU_NEXT
@@ -133,6 +137,12 @@ show_main_menu() {
         local MENU_BUILD_STACK=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
 
+        local MENU_TOGGLE_ADMIN_UI=""
+        if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
+            MENU_TOGGLE_ADMIN_UI=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
+        fi
+
         local MENU_INSPECT=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
 
@@ -151,6 +161,8 @@ show_main_menu() {
         echo "Setup:"
         echo "  ${MENU_SETUP_WIZARD}) Re-run setup wizard"
         echo "  ${MENU_SETUP_SECRETS}) Manage Docker secrets"
+        echo "  ${MENU_RESTORE_ENV}) Quick restore from saved .env"
+        echo "  ${MENU_RESTORE_SECRETS}) Quick restore from saved secrets.env"
         if [ -n "$MENU_SETUP_AUTH" ]; then
             echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
         fi
@@ -167,6 +179,19 @@ show_main_menu() {
         echo "  ${MENU_SCALE}) Scale services"
         echo "  ${MENU_REMOVE}) Remove deployment"
         echo "  ${MENU_BUILD_STACK}) Rebuild swarm stack"
+        if [ -n "$MENU_TOGGLE_ADMIN_UI" ]; then
+            local admin_ui_label="Enable"
+            local admin_ui_replicas="0"
+            if [ "$DB_TYPE" = "postgresql" ]; then
+                admin_ui_replicas="${PGADMIN_REPLICAS:-0}"
+            elif [ "$DB_TYPE" = "mongodb" ]; then
+                admin_ui_replicas="${MONGO_EXPRESS_REPLICAS:-0}"
+            fi
+            if [ "$admin_ui_replicas" != "0" ]; then
+                admin_ui_label="Disable"
+            fi
+            echo "  ${MENU_TOGGLE_ADMIN_UI}) ${admin_ui_label} Admin UI (${DB_TYPE})"
+        fi
         echo "  ${MENU_INSPECT}) Inspect deployment artifacts"
         echo ""
 
@@ -414,18 +439,61 @@ show_main_menu() {
 
             echo ""
             echo "What would you like to do?"
-            echo "1) Create/update all secrets"
-            echo "2) List all secrets"
-            echo "3) Back to main menu"
+            echo "1) Create secrets from secrets.env file (recommended)"
+            echo "2) Create secrets interactively"
+            echo "3) List all secrets"
+            echo "4) Back to main menu"
             echo ""
             if [[ -r /dev/tty ]]; then
-                read -r -p "Your choice (1-3): " secret_choice < /dev/tty
+                read -r -p "Your choice (1-4): " secret_choice < /dev/tty
             else
-                read -r -p "Your choice (1-3): " secret_choice
+                read -r -p "Your choice (1-4): " secret_choice
             fi
 
             case $secret_choice in
                 1)
+                    echo ""
+                    echo "🔍 Checking for running stack..."
+
+                    if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
+                        echo "⚠️  WARNING: Stack '$STACK_NAME' is currently running!"
+                        echo ""
+                        echo "Secrets cannot be updated while in use by a running stack."
+                        echo ""
+                        if [[ -r /dev/tty ]]; then
+                            read -r -p "Remove stack before updating secrets? (y/N): " REMOVE_STACK < /dev/tty
+                        else
+                            read -r -p "Remove stack before updating secrets? (y/N): " REMOVE_STACK
+                        fi
+
+                        if [[ "$REMOVE_STACK" =~ ^[Yy]$ ]]; then
+                            echo ""
+                            echo "Removing stack: $STACK_NAME"
+                            docker stack rm "$STACK_NAME"
+
+                            echo "Waiting for stack to be fully removed..."
+                            while docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; do
+                                echo -n "."
+                                sleep 2
+                            done
+                            echo ""
+                            echo "✅ Stack removed successfully"
+                            echo ""
+
+                            create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$prefix_upper"
+                        else
+                            echo ""
+                            echo "⚠️  Secret creation cancelled."
+                            echo "Stop the stack manually with: docker stack rm $STACK_NAME"
+                            echo "Then run this option again."
+                        fi
+                    else
+                        echo "✅ No running stack found"
+                        echo ""
+                        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$prefix_upper"
+                    fi
+                    ;;
+                2)
                     echo ""
                     echo "🔍 Checking for running stack..."
 
@@ -467,16 +535,101 @@ show_main_menu() {
                         create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
                     fi
                     ;;
-                2)
+                3)
                     list_docker_secrets
                     ;;
-                3)
+                4)
                     echo "Returning to main menu..."
                     ;;
                 *)
                     echo "Invalid choice"
                     ;;
             esac
+            ;;
+        ${MENU_RESTORE_ENV})
+            echo "📁 Quick Restore from Saved .env"
+            echo "==================================="
+            echo ""
+            echo "This restores your deployment configuration from a saved .env file."
+            echo "The saved .env file will be copied to the project root."
+            echo ""
+
+            local saved_env_path=""
+            read -p "Path to saved .env file: " saved_env_path
+
+            if [ -z "$saved_env_path" ]; then
+                echo "❌ No path provided. Skipping."
+            elif [ ! -f "$saved_env_path" ]; then
+                echo "❌ File not found: $saved_env_path"
+            else
+                # Backup existing .env if present
+                if [ -f "$env_file" ]; then
+                    local backup_name="${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
+                    cp "$env_file" "$backup_name"
+                    echo "📦 Backed up existing .env to: $backup_name"
+                fi
+
+                cp "$saved_env_path" "$env_file"
+                echo "✅ Restored .env from: $saved_env_path"
+                echo ""
+                echo "Next steps:"
+                echo "  1) Rebuild swarm-stack.yml:  ${MENU_BUILD_STACK}) Rebuild swarm-stack.yml"
+                echo "  2) Restore secrets (if saved): ${MENU_RESTORE_SECRETS}) Restore from secrets.env"
+                echo "  3) Deploy:                   ${MENU_DEPLOY}) Deploy to Docker Swarm"
+                echo ""
+
+                # Reload the environment
+                load_root_env "${PROJECT_ROOT:-.}"
+            fi
+            ;;
+        ${MENU_RESTORE_SECRETS})
+            echo "🔐 Quick Restore from Saved secrets.env"
+            echo "========================================"
+            echo ""
+            echo "This creates Docker secrets from a saved secrets.env file."
+            echo "WARNING: The stack must be stopped before updating secrets."
+            echo ""
+
+            local saved_secrets_path=""
+            read -p "Path to saved secrets.env file: " saved_secrets_path
+
+            if [ -z "$saved_secrets_path" ]; then
+                echo "❌ No path provided. Skipping."
+            elif [ ! -f "$saved_secrets_path" ]; then
+                echo "❌ File not found: $saved_secrets_path"
+            else
+                # Derive prefix
+                local prefix_upper
+                prefix_upper=$(echo "${SECRET_PREFIX:-$STACK_NAME}" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+
+                # Check for running stack
+                if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
+                    echo "⚠️  WARNING: Stack '$STACK_NAME' is currently running!"
+                    echo ""
+                    read -r -p "Remove stack before creating secrets? (y/N): " REMOVE_STACK
+
+                    if [[ "$REMOVE_STACK" =~ ^[Yy]$ ]]; then
+                        echo ""
+                        echo "Removing stack: $STACK_NAME"
+                        docker stack rm "$STACK_NAME"
+
+                        echo "Waiting for stack to be fully removed..."
+                        while docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; do
+                            echo -n "."
+                            sleep 2
+                        done
+                        echo ""
+                        echo "✅ Stack removed"
+                        echo ""
+
+                        create_secrets_from_env_file "$saved_secrets_path" "${SCRIPT_DIR}/templates/secrets.env.template" "$prefix_upper"
+                    else
+                        echo "⚠️  Secret creation cancelled. Stop the stack first."
+                    fi
+                else
+                    create_secrets_from_env_file "$saved_secrets_path" "${SCRIPT_DIR}/templates/secrets.env.template" "$prefix_upper"
+                fi
+            fi
             ;;
         ${MENU_BUILD_STACK})
             echo "🔨 Rebuilding swarm-stack.yml..."
@@ -487,6 +640,39 @@ show_main_menu() {
             else
                 echo "⚠️  build-site-stack.sh not found or not executable."
                 echo "   Expected at: $build_script"
+            fi
+            ;;
+        ${MENU_TOGGLE_ADMIN_UI})
+            if [ "$DB_TYPE" = "postgresql" ]; then
+                local current_replicas="${PGADMIN_REPLICAS:-0}"
+                local target_replicas=1
+                if [ "$current_replicas" != "0" ]; then
+                    target_replicas=0
+                fi
+                docker service scale "${STACK_NAME}_pgadmin=$target_replicas"
+                update_env_values "$env_file" "PGADMIN_REPLICAS" "$target_replicas"
+                if [ "$target_replicas" -eq 1 ]; then
+                    local pgadmin_login="${PGADMIN_EMAIL:-admin@example.com}"
+                    echo "✅ pgAdmin enabled. Access at: ${PGADMIN_URL}"
+                    echo "   Login: ${pgadmin_login} / (from secret ${SECRET_PREFIX}_pgadmin_password)"
+                else
+                    echo "✅ pgAdmin disabled (replicas=0)"
+                fi
+            elif [ "$DB_TYPE" = "mongodb" ]; then
+                local current_replicas="${MONGO_EXPRESS_REPLICAS:-0}"
+                local target_replicas=1
+                if [ "$current_replicas" != "0" ]; then
+                    target_replicas=0
+                fi
+                docker service scale "${STACK_NAME}_mongo-express=$target_replicas"
+                update_env_values "$env_file" "MONGO_EXPRESS_REPLICAS" "$target_replicas"
+                if [ "$target_replicas" -eq 1 ]; then
+                    local mongo_user="${MONGO_EXPRESS_USERNAME:-dbadmin}"
+                    echo "✅ Mongo Express enabled. Access at: ${MONGO_EXPRESS_URL}"
+                    echo "   Login: ${mongo_user} / (from secret ${SECRET_PREFIX}_mongo_express_password)"
+                else
+                    echo "✅ Mongo Express disabled (replicas=0)"
+                fi
             fi
             ;;
         ${MENU_INSPECT})

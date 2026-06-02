@@ -1,0 +1,32 @@
+# Mongo Express service for MongoDB database management
+# Replicas=0 by default (disabled), can be enabled via menu toggle
+  mongo-express:
+    image: mongo-express:latest
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_MONGODB_PASSWORD_XXX
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-dbadmin}
+      ME_CONFIG_BASICAUTH_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX
+    networks:
+      - default
+      - XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX
+    secrets:
+      - XXX_CHANGE_ME_MONGODB_PASSWORD_XXX
+      - XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX
+    deploy:
+      mode: replicated
+      replicas: ${MONGO_EXPRESS_REPLICAS:-0}
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.rule=Host(`${MONGO_EXPRESS_URL}`)"
+        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.entrypoints=websecure"
+        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.tls=true"
+        - "traefik.http.services.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.loadbalancer.server.port=8081"

@@ -296,6 +296,12 @@ load_root_env() {
     export DEPLOYMENT_PROFILE_ID="$(_env_val DEPLOYMENT_PROFILE_ID)"
     export BACKEND_APP_ID="$(_env_val BACKEND_APP_ID)"
     export DATA_ROOT="$(_env_val DATA_ROOT)"
+    export PGADMIN_URL="$(_env_val PGADMIN_URL)"
+    export PGADMIN_REPLICAS="$(_env_val PGADMIN_REPLICAS)"
+    export PGADMIN_EMAIL="$(_env_val PGADMIN_EMAIL)"
+    export MONGO_EXPRESS_URL="$(_env_val MONGO_EXPRESS_URL)"
+    export MONGO_EXPRESS_REPLICAS="$(_env_val MONGO_EXPRESS_REPLICAS)"
+    export MONGO_EXPRESS_USERNAME="$(_env_val MONGO_EXPRESS_USERNAME)"
 
     unset -f _env_val
     return 0

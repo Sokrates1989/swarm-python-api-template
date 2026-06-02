@@ -1,0 +1,32 @@
+# pgAdmin service for PostgreSQL database management
+# Replicas=0 by default (disabled), can be enabled via menu toggle
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX
+      PGADMIN_LISTEN_PORT: 5050
+      # Connect to postgres service
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+    networks:
+      - default
+      - XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX
+    volumes:
+      - ${DATA_ROOT}/pgadmin_data:/var/lib/pgadmin
+    secrets:
+      - XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX
+    deploy:
+      mode: replicated
+      replicas: ${PGADMIN_REPLICAS:-0}
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.rule=Host(`${PGADMIN_URL}`)"
+        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.entrypoints=websecure"
+        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.tls=true"
+        - "traefik.http.services.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.loadbalancer.server.port=5050"

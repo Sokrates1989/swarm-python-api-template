@@ -163,6 +163,19 @@ build_stack_file() {
         cat "${project_root}/setup/compose-modules/${db_file_name}-local.yml" >> "${project_root}/swarm-stack.yml"
     fi
     
+    # Add admin UI service if local deployment (always included, scaled to 0 by default)
+    if [ "$db_mode" = "local" ] && [ "$db_type" != "none" ]; then
+        local admin_ui_file=""
+        if [ "$db_type" = "postgresql" ]; then
+            admin_ui_file="${project_root}/setup/compose-modules/pgadmin-local.yml"
+        elif [ "$db_type" = "mongodb" ]; then
+            admin_ui_file="${project_root}/setup/compose-modules/mongo-express-local.yml"
+        fi
+        if [ -n "$admin_ui_file" ] && [ -f "$admin_ui_file" ]; then
+            cat "$admin_ui_file" >> "${project_root}/swarm-stack.yml"
+        fi
+    fi
+    
     # Add footer (networks and secrets)
     cat "${project_root}/setup/compose-modules/footer.yml" >> "${project_root}/swarm-stack.yml"
     
@@ -221,6 +234,8 @@ update_env_values() {
 #   $3 - admin_api_key_secret
 #   $4 - backup_restore_api_key_secret
 #   $5 - backup_delete_api_key_secret
+#   $6 - pgadmin_password_secret (optional)
+#   $7 - mongo_express_password_secret (optional)
 # ------------------------------------------------------------------------------
 update_stack_secrets() {
     local stack_file="$1"
@@ -228,6 +243,8 @@ update_stack_secrets() {
     local admin_api_key_secret="$3"
     local backup_restore_api_key_secret="$4"
     local backup_delete_api_key_secret="$5"
+    local pgadmin_password_secret="${6:-}"
+    local mongo_express_password_secret="${7:-}"
     
     # Use different sed syntax based on OS
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -236,12 +253,26 @@ update_stack_secrets() {
         sed -i '' "s|XXX_CHANGE_ME_ADMIN_API_KEY_XXX|$admin_api_key_secret|g" "$stack_file"
         sed -i '' "s|XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX|$backup_restore_api_key_secret|g" "$stack_file"
         sed -i '' "s|XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX|$backup_delete_api_key_secret|g" "$stack_file"
+        if [ -n "$pgadmin_password_secret" ]; then
+            sed -i '' "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$pgadmin_password_secret|g" "$stack_file"
+        fi
+        if [ -n "$mongo_express_password_secret" ]; then
+            sed -i '' "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$mongo_express_password_secret|g" "$stack_file"
+            sed -i '' "s|XXX_CHANGE_ME_MONGODB_PASSWORD_XXX|$db_password_secret|g" "$stack_file"
+        fi
     else
         # Linux
         sed -i "s|XXX_CHANGE_ME_DB_PASSWORD_XXX|$db_password_secret|g" "$stack_file"
         sed -i "s|XXX_CHANGE_ME_ADMIN_API_KEY_XXX|$admin_api_key_secret|g" "$stack_file"
         sed -i "s|XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX|$backup_restore_api_key_secret|g" "$stack_file"
         sed -i "s|XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX|$backup_delete_api_key_secret|g" "$stack_file"
+        if [ -n "$pgadmin_password_secret" ]; then
+            sed -i "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$pgadmin_password_secret|g" "$stack_file"
+        fi
+        if [ -n "$mongo_express_password_secret" ]; then
+            sed -i "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$mongo_express_password_secret|g" "$stack_file"
+            sed -i "s|XXX_CHANGE_ME_MONGODB_PASSWORD_XXX|$db_password_secret|g" "$stack_file"
+        fi
     fi
 }
 

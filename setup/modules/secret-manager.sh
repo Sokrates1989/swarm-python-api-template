@@ -366,3 +366,220 @@ verify_secrets_exist() {
     echo ""
     return 0
 }
+
+# ------------------------------------------------------------------------------
+# create_secret_from_value
+# ------------------------------------------------------------------------------
+# Creates a Docker secret from a provided value. Handles existing secrets
+# by prompting for recreation if they already exist.
+#
+# Arguments:
+#   $1 - secret_name: the full name of the Docker secret
+#   $2 - secret_value: the value to store in the secret
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+# Outputs (stdout):
+#   Status messages about secret creation
+# ------------------------------------------------------------------------------
+create_secret_from_value() {
+    local secret_name="$1"
+    local secret_value="$2"
+
+    if docker secret inspect "$secret_name" >/dev/null 2>&1; then
+        echo "⚠️  Secret '$secret_name' already exists."
+        read -p "   Delete and recreate? (y/N): " RECREATE
+        if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+            docker secret rm "$secret_name" >/dev/null 2>&1 || {
+                echo "❌ Failed to remove existing secret: $secret_name"
+                return 1
+            }
+        else
+            echo "   Skipping $secret_name (keeping existing)"
+            return 0
+        fi
+    fi
+
+    if [ -z "$secret_value" ]; then
+        echo "⚠️  Empty value for $secret_name, skipping"
+        return 0
+    fi
+
+    printf '%s' "$secret_value" | docker secret create "$secret_name" - >/dev/null 2>&1 && {
+        return 0
+    } || {
+        echo "❌ Failed to create secret: $secret_name"
+        return 1
+    }
+}
+
+# ------------------------------------------------------------------------------
+# create_secrets_from_env_file
+# ------------------------------------------------------------------------------
+# Creates Docker secrets from a secrets.env file. This is the main workflow
+# function that orchestrates the entire secrets.env lifecycle:
+# - Creates secrets.env from template if it doesn't exist
+# - Syncs missing keys from template to existing secrets.env
+# - Allows user to edit the file with their chosen editor
+# - Creates Docker secrets from the file values
+# - Optionally deletes the secrets.env file for security
+#
+# Arguments:
+#   $1 - secrets_file: path to secrets.env (default: secrets.env)
+#   $2 - template_file: path to template (default: setup/templates/secrets.env.template)
+#   $3 - prefix: secret name prefix (required, e.g., myapp)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+# Dependencies:
+#   - choose_editor from user-prompts.sh
+#   - sync_missing_secret_template_entries from secrets_template_sync.sh
+# ------------------------------------------------------------------------------
+create_secrets_from_env_file() {
+    local secrets_file="${1:-secrets.env}"
+    local template_file="${2:-setup/templates/secrets.env.template}"
+    local prefix="${3:?Secret prefix is required}"
+
+    echo ""
+    echo "🔐 Create Docker Secrets from File"
+    echo "==================================="
+    echo ""
+
+    # Create from template if it doesn't exist
+    if [ ! -f "$secrets_file" ]; then
+        if [ -f "$template_file" ]; then
+            cp "$template_file" "$secrets_file"
+            echo "✅ Created $secrets_file from template"
+        else
+            echo "❌ Template not found: $template_file"
+            return 1
+        fi
+    fi
+
+    # Sync missing keys from template
+    if declare -F sync_missing_secret_template_entries >/dev/null 2>&1; then
+        sync_missing_secret_template_entries "$secrets_file" "$template_file"
+    fi
+
+    echo ""
+    echo "📝 Please edit $secrets_file and fill in your secret values."
+    echo "   Secret names will be prefixed with: ${prefix}_"
+    echo ""
+
+    # Choose editor and open file
+    if choose_editor; then
+        read -p "Press Enter to open $secrets_file in $SELECTED_EDITOR..."
+        echo ""
+        "$SELECTED_EDITOR" "$secrets_file"
+        echo ""
+        echo "[OK] File saved: $secrets_file"
+        echo ""
+    else
+        echo "⚠️  No editor found. Please edit $secrets_file manually, then continue."
+        read -p "Press Enter when ready to create secrets..."
+        echo ""
+    fi
+
+    # Parse and create secrets
+    local key value created=0 skipped=0
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+        # Remove carriage returns (Windows line endings)
+        key="${key%$'\r'}"
+        value="${value%$'\r'}"
+
+        # Trim whitespace around key and support optional export prefix
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        case "$key" in
+            export\ *) key="${key#export }" ;;
+        esac
+
+        # Skip empty lines and comments
+        [ -z "$key" ] && continue
+        case "$key" in
+            \#*) continue ;;
+        esac
+
+        # Normalize value: strip one outer quote pair if present
+        value="${value#\"}"
+        value="${value%\"}"
+        value="${value#\'}"
+        value="${value%\'}"
+
+        if [ -n "$value" ]; then
+            local full_name="${prefix}_${key}"
+            if create_secret_from_value "$full_name" "$value"; then
+                echo "✅ Secret created: $full_name"
+                created=$((created + 1))
+            fi
+        else
+            skipped=$((skipped + 1))
+        fi
+    done < "$secrets_file"
+
+    echo ""
+    echo "✅ Created $created secret(s)"
+    if [ $skipped -gt 0 ]; then
+        echo "   Skipped $skipped empty value(s)"
+    fi
+
+    # Offer to delete the secrets file
+    echo ""
+    local delete_file=""
+    read -p "Delete $secrets_file now? (recommended) (Y/n): " delete_file
+    delete_file="${delete_file:-Y}"
+    if [[ "$delete_file" =~ ^[Yy]$ ]]; then
+        rm -f "$secrets_file" 2>/dev/null && echo "✅ Deleted $secrets_file"
+    else
+        echo "⚠️  $secrets_file still exists and may contain sensitive values."
+        echo "   Please delete it soon: rm -f \"$secrets_file\""
+    fi
+
+    return 0
+}
+
+# ------------------------------------------------------------------------------
+# check_required_secrets
+# ------------------------------------------------------------------------------
+# Checks if a list of required secrets exist in Docker Swarm. Prints status
+# for each secret and returns non-zero if any are missing.
+#
+# Arguments:
+#   $1 - prefix: secret name prefix
+#   $@ - remaining args are secret base names to check
+#
+# Example:
+#   check_required_secrets "myapp" "DB_PASSWORD" "ADMIN_API_KEY"
+#
+# Returns:
+#   0 if all secrets exist, 1 otherwise
+# ------------------------------------------------------------------------------
+check_required_secrets() {
+    local prefix="$1"
+    shift
+    local all_exist=true
+
+    echo "📋 Checking required secrets with prefix: ${prefix}_"
+    echo ""
+
+    for base_name in "$@"; do
+        local full_name="${prefix}_${base_name}"
+        if docker secret inspect "$full_name" >/dev/null 2>&1; then
+            echo "✅ ${full_name}"
+        else
+            echo "❌ ${full_name} (missing)"
+            all_exist=false
+        fi
+    done
+
+    echo ""
+    if [ "$all_exist" = true ]; then
+        echo "✅ All required secrets exist"
+        return 0
+    else
+        echo "⚠️  Some required secrets are missing"
+        return 1
+    fi
+}

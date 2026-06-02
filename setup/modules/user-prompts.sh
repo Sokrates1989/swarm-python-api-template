@@ -369,7 +369,7 @@ prompt_secret_names() {
 prompt_yes_no() {
     local prompt_text="$1"
     local default="${2:-Y}"
-    
+
     if [ "$default" = "Y" ] || [ "$default" = "y" ]; then
         read -p "$prompt_text (Y/n): " RESPONSE
         if [[ "$RESPONSE" =~ ^[Nn]$ ]]; then
@@ -385,4 +385,190 @@ prompt_yes_no() {
             return 1
         fi
     fi
+}
+
+# ------------------------------------------------------------------------------
+# choose_editor
+# ------------------------------------------------------------------------------
+# Prompts the user to select a text editor from available options.
+# Sets SELECTED_EDITOR variable on success.
+#
+# Returns:
+#   0 if an editor was selected, 1 if no editor available
+#
+# Side Effects:
+#   Sets SELECTED_EDITOR variable to chosen editor command
+#
+# Outputs (stdout):
+#   Prompts and status messages
+# ------------------------------------------------------------------------------
+choose_editor() {
+    # Check for common editors
+    local editors=()
+
+    if command -v nano >/dev/null 2>&1; then
+        editors+=("nano")
+    fi
+    if command -v vim >/dev/null 2>&1; then
+        editors+=("vim")
+    fi
+    if command -v vi >/dev/null 2>&1; then
+        editors+=("vi")
+    fi
+
+    if [ ${#editors[@]} -eq 0 ]; then
+        echo "⚠️  No text editor found (tried: nano, vim, vi)"
+        return 1
+    fi
+
+    # If only one editor, use it
+    if [ ${#editors[@]} -eq 1 ]; then
+        SELECTED_EDITOR="${editors[0]}"
+        return 0
+    fi
+
+    # Otherwise, prompt for choice
+    echo "Available editors:"
+    local i=1
+    for ed in "${editors[@]}"; do
+        echo "  $i) $ed"
+        i=$((i + 1))
+    done
+    echo ""
+
+    read -p "Choose editor (1-${#editors[@]}) [1]: " choice
+    choice="${choice:-1}"
+
+    case "$choice" in
+        1) SELECTED_EDITOR="${editors[0]}" ;;
+        2) SELECTED_EDITOR="${editors[1]}" ;;
+        3) SELECTED_EDITOR="${editors[2]}" ;;
+        *) SELECTED_EDITOR="${editors[0]}" ;;
+    esac
+
+    return 0
+}
+
+# ------------------------------------------------------------------------------
+# validate_email
+# ------------------------------------------------------------------------------
+# Validates that a string appears to be a valid email address format.
+# Checks for: non-empty, contains @, contains . after @, no spaces,
+# and reasonable length constraints.
+#
+# Arguments:
+#   $1 - email: the email address to validate
+#
+# Returns:
+#   0 if valid, 1 if invalid
+#
+# Outputs (stderr):
+#   Error message if validation fails
+# ------------------------------------------------------------------------------
+validate_email() {
+    local email="$1"
+
+    # Check for empty value
+    if [ -z "$email" ]; then
+        echo "❌ Email cannot be empty" >&2
+        return 1
+    fi
+
+    # Check for spaces
+    if [[ "$email" =~ [[:space:]] ]]; then
+        echo "❌ Email cannot contain spaces" >&2
+        return 1
+    fi
+
+    # Check for @ symbol
+    if [[ ! "$email" =~ @ ]]; then
+        echo "❌ Email must contain @ symbol" >&2
+        return 1
+    fi
+
+    # Check for . after @ (basic domain validation)
+    local domain="${email#*@}"
+    if [[ ! "$domain" =~ \. ]]; then
+        echo "❌ Email domain must contain a period (e.g., example.com)" >&2
+        return 1
+    fi
+
+    # Check length constraints
+    if [ "${#email}" -gt 254 ]; then
+        echo "❌ Email is too long (max 254 characters)" >&2
+        return 1
+    fi
+
+    # Check local part (before @) is not empty
+    local local_part="${email%%@*}"
+    if [ -z "$local_part" ]; then
+        echo "❌ Email must have a username before @" >&2
+        return 1
+    fi
+
+    # Check domain part is not empty
+    if [ -z "$domain" ]; then
+        echo "❌ Email must have a domain after @" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# ------------------------------------------------------------------------------
+# validate_username
+# ------------------------------------------------------------------------------
+# Validates a username for admin interfaces. Rejects empty values,
+# the literal string "admin", and unsafe characters.
+#
+# Arguments:
+#   $1 - username: the username to validate
+#   $2 - field_name: optional field name for error messages (default: "Username")
+#
+# Returns:
+#   0 if valid, 1 if invalid
+#
+# Outputs (stderr):
+#   Error message if validation fails
+# ------------------------------------------------------------------------------
+validate_username() {
+    local username="$1"
+    local field_name="${2:-Username}"
+
+    # Check for empty value
+    if [ -z "$username" ]; then
+        echo "❌ ${field_name} cannot be empty" >&2
+        return 1
+    fi
+
+    # Check for the forbidden value "admin"
+    if [ "$username" = "admin" ]; then
+        echo "❌ ${field_name} cannot be 'admin' (too common, security risk)" >&2
+        return 1
+    fi
+
+    # Check for spaces
+    if [[ "$username" =~ [[:space:]] ]]; then
+        echo "❌ ${field_name} cannot contain spaces" >&2
+        return 1
+    fi
+
+    # Check for safe characters only (letters, digits, ., _, -)
+    if [[ ! "$username" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        echo "❌ ${field_name} can only contain letters, digits, periods, underscores, and hyphens" >&2
+        return 1
+    fi
+
+    # Check length (reasonable limits)
+    if [ "${#username}" -lt 3 ]; then
+        echo "❌ ${field_name} is too short (minimum 3 characters)" >&2
+        return 1
+    fi
+
+    if [ "${#username}" -gt 32 ]; then
+        echo "❌ ${field_name} is too long (maximum 32 characters)" >&2
+        return 1
+    fi
+
+    return 0
 }

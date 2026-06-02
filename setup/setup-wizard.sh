@@ -44,6 +44,7 @@ source "$SCRIPT_DIR/modules/config-builder.sh"
 source "$SCRIPT_DIR/modules/network-check.sh"
 source "$SCRIPT_DIR/modules/data-dirs.sh"
 source "$SCRIPT_DIR/modules/secret-manager.sh"
+source "$SCRIPT_DIR/modules/secrets_template_sync.sh"
 source "$SCRIPT_DIR/modules/stack-conflict-check.sh"
 source "$SCRIPT_DIR/modules/deploy-stack.sh"
 source "$SCRIPT_DIR/modules/health-check.sh"
@@ -80,6 +81,35 @@ echo "  • site-configs/ holds deployment profiles describing what this deploym
 echo ""
 
 # =============================================================================
+# SETUP MODE: Interactive vs .env-driven
+# =============================================================================
+
+SETUP_MODE="interactive"
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    echo ""
+    echo "📁 Existing .env file detected."
+    echo ""
+    echo "How would you like to configure deployment settings?"
+    echo "  1) Use existing .env values and skip prompts (fast re-setup)"
+    echo "  2) Answer questions interactively (recommended for first setup)"
+    echo ""
+    read -p "Your choice (1-2) [2]: " SETUP_MODE_CHOICE
+    SETUP_MODE_CHOICE="${SETUP_MODE_CHOICE:-2}"
+
+    case "$SETUP_MODE_CHOICE" in
+        1)
+            SETUP_MODE="from_env"
+            echo "✅ Using existing .env values"
+            ;;
+        *)
+            SETUP_MODE="interactive"
+            echo "✅ Interactive mode selected"
+            ;;
+    esac
+    echo ""
+fi
+
+# =============================================================================
 # STEP 1: Select Deployment Profile
 # =============================================================================
 
@@ -107,9 +137,12 @@ EXISTING_DOMAIN=""
 EXISTING_PROXY_TYPE=""
 EXISTING_SSL_MODE=""
 EXISTING_IMAGE_VERSION=""
-EXISTING_SECRET_PREFIX=""
 EXISTING_DATA_ROOT=""
 EXISTING_DB_MODE=""
+EXISTING_PGADMIN_URL=""
+EXISTING_MONGO_EXPRESS_URL=""
+EXISTING_PGADMIN_EMAIL=""
+EXISTING_MONGO_EXPRESS_USERNAME=""
 
 if [ -f "${PROJECT_ROOT}/.env" ]; then
     load_root_env "$PROJECT_ROOT"
@@ -117,9 +150,12 @@ if [ -f "${PROJECT_ROOT}/.env" ]; then
     EXISTING_DOMAIN="$DOMAIN"
     EXISTING_PROXY_TYPE="$PROXY_TYPE"
     EXISTING_IMAGE_VERSION="$IMAGE_VERSION"
-    EXISTING_SECRET_PREFIX="$SECRET_PREFIX"
     EXISTING_DB_MODE="$DB_MODE"
     EXISTING_DATA_ROOT="$DATA_ROOT"
+    EXISTING_PGADMIN_URL="$PGADMIN_URL"
+    EXISTING_MONGO_EXPRESS_URL="$MONGO_EXPRESS_URL"
+    EXISTING_PGADMIN_EMAIL="$PGADMIN_EMAIL"
+    EXISTING_MONGO_EXPRESS_USERNAME="$MONGO_EXPRESS_USERNAME"
     echo "ℹ️  Existing .env found. Press Enter to keep current values."
     echo ""
 fi
@@ -131,14 +167,61 @@ fi
 # These are values only known at deployment time — the wizard asks for them
 # and uses app manifest defaults where applicable.
 
-echo ""
-echo "📋 Step 2: Deployment Configuration"
-echo "===================================="
-echo ""
-echo "These values are specific to THIS deployment instance."
-echo ""
+if [ "$SETUP_MODE" = "from_env" ]; then
+    # Fast path: load all values from existing .env
+    echo ""
+    echo "⚡ Fast setup mode: loading all values from existing .env"
+    echo ""
 
-# Stack name - generate from app name if no existing value
+    # Values are already loaded into environment variables via load_root_env
+    # Just ensure critical variables are set with fallbacks
+    STACK_NAME="${STACK_NAME:-$EXISTING_STACK_NAME}"
+    DOMAIN="${DOMAIN:-$EXISTING_DOMAIN}"
+    PROXY_TYPE="${PROXY_TYPE:-$EXISTING_PROXY_TYPE}"
+    SSL_MODE="${SSL_MODE:-$EXISTING_SSL_MODE}"
+    IMAGE_VERSION="${IMAGE_VERSION:-$EXISTING_IMAGE_VERSION}"
+    DB_MODE="${DB_MODE:-$EXISTING_DB_MODE}"
+    DATA_ROOT="${DATA_ROOT:-$EXISTING_DATA_ROOT}"
+    PGADMIN_URL="${PGADMIN_URL:-$EXISTING_PGADMIN_URL}"
+    PGADMIN_EMAIL="${PGADMIN_EMAIL:-$EXISTING_PGADMIN_EMAIL}"
+    MONGO_EXPRESS_URL="${MONGO_EXPRESS_URL:-$EXISTING_MONGO_EXPRESS_URL}"
+    MONGO_EXPRESS_USERNAME="${MONGO_EXPRESS_USERNAME:-$EXISTING_MONGO_EXPRESS_USERNAME}"
+
+    # Derive secret prefix from stack name if not already set
+    if [ -z "$SECRET_PREFIX" ] && [ -n "$STACK_NAME" ]; then
+        SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
+    fi
+
+    # Use app manifest values for image and database type
+    DB_TYPE="${DB_TYPE:-$APP_DB_TYPE}"
+    IMAGE_NAME="${IMAGE_NAME:-$APP_IMAGE_NAME}"
+
+    # Use defaults for replicas and memory if not set
+    API_REPLICAS="${API_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}"
+    MEMORY_LIMIT="${MEMORY_LIMIT:-${APP_DEFAULT_MEMORY_LIMIT:-512M}}"
+
+    echo "✅ Loaded configuration:"
+    echo "   Stack: ${STACK_NAME}"
+    echo "   Domain: ${DOMAIN}"
+    echo "   DB Type: ${DB_TYPE}, Mode: ${DB_MODE}"
+    if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
+        if [ "$DB_TYPE" = "postgresql" ]; then
+            echo "   pgAdmin: ${PGADMIN_URL} (${PGADMIN_EMAIL})"
+        elif [ "$DB_TYPE" = "mongodb" ]; then
+            echo "   Mongo Express: ${MONGO_EXPRESS_URL} (${MONGO_EXPRESS_USERNAME})"
+        fi
+    fi
+    echo ""
+else
+    # Interactive mode: prompt for all values
+    echo ""
+    echo "📋 Step 2: Deployment Configuration"
+    echo "===================================="
+    echo ""
+    echo "These values are specific to THIS deployment instance."
+    echo ""
+
+    # Stack name - generate from app name if no existing value
 if [ -n "$EXISTING_STACK_NAME" ]; then
     DEFAULT_STACK_NAME="$EXISTING_STACK_NAME"
 else
@@ -153,10 +236,8 @@ DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
 read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
 DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
 
-# Secret prefix
-DEFAULT_SECRET_PREFIX="${EXISTING_SECRET_PREFIX:-$(echo "$STACK_NAME" | tr '-' '_')}"
-read -p "Secret prefix [${DEFAULT_SECRET_PREFIX}]: " SECRET_PREFIX
-SECRET_PREFIX="${SECRET_PREFIX:-$DEFAULT_SECRET_PREFIX}"
+# Derive secret prefix from stack name (internal, not prompted)
+SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
 
 # Database mode (app manifest knows the type, user picks mode)
 DB_TYPE="$APP_DB_TYPE"
@@ -218,6 +299,71 @@ if [ "$PROXY_TYPE" = "traefik" ]; then
     echo "✅ SSL: $SSL_MODE"
 fi
 
+# Admin UI configuration (for pgAdmin/mongo-express)
+if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
+    echo ""
+    echo "🔧 Admin UI Configuration"
+    echo "   (Admin UI services are disabled by default with replicas=0)"
+    echo ""
+    local admin_ui_type=""
+    local admin_ui_default_domain=""
+    if [ "$DB_TYPE" = "postgresql" ]; then
+        admin_ui_type="pgAdmin"
+        admin_ui_default_domain="${EXISTING_PGADMIN_URL:-admin-db.${DOMAIN}}"
+    elif [ "$DB_TYPE" = "mongodb" ]; then
+        admin_ui_type="Mongo Express"
+        admin_ui_default_domain="${EXISTING_MONGO_EXPRESS_URL:-admin-db.${DOMAIN}}"
+    fi
+
+    # Domain prompt
+    if [ -n "$admin_ui_type" ]; then
+        echo "${admin_ui_type} domain:"
+        if [ "$DB_TYPE" = "postgresql" ]; then
+            read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " PGADMIN_URL
+            PGADMIN_URL="${PGADMIN_URL:-$admin_ui_default_domain}"
+            echo "✅ ${admin_ui_type} URL: $PGADMIN_URL"
+        elif [ "$DB_TYPE" = "mongodb" ]; then
+            read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " MONGO_EXPRESS_URL
+            MONGO_EXPRESS_URL="${MONGO_EXPRESS_URL:-$admin_ui_default_domain}"
+            echo "✅ ${admin_ui_type} URL: $MONGO_EXPRESS_URL"
+        fi
+    fi
+
+    # Admin identity prompts with validation
+    echo ""
+    echo "Admin identity (non-secret values stored in .env):"
+    if [ "$DB_TYPE" = "postgresql" ]; then
+        # pgAdmin requires email - validate until acceptable
+        while true; do
+            local pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-admin@example.com}"
+            read -p "pgAdmin login email [${pgadmin_email_default}]: " PGADMIN_EMAIL
+            PGADMIN_EMAIL="${PGADMIN_EMAIL:-$pgadmin_email_default}"
+
+            if validate_email "$PGADMIN_EMAIL"; then
+                break
+            fi
+            echo "   Please enter a valid email address."
+            echo ""
+        done
+        echo "✅ pgAdmin email: $PGADMIN_EMAIL"
+    elif [ "$DB_TYPE" = "mongodb" ]; then
+        # Mongo Express requires username - validate until acceptable
+        while true; do
+            local mongo_user_default="${EXISTING_MONGO_EXPRESS_USERNAME:-dbadmin}"
+            read -p "Mongo Express username [${mongo_user_default}]: " MONGO_EXPRESS_USERNAME
+            MONGO_EXPRESS_USERNAME="${MONGO_EXPRESS_USERNAME:-$mongo_user_default}"
+
+            if validate_username "$MONGO_EXPRESS_USERNAME" "Mongo Express username"; then
+                break
+            fi
+            echo "   Username cannot be empty, 'admin', or contain unsafe characters."
+            echo "   Please try again."
+            echo ""
+        done
+        echo "✅ Mongo Express username: $MONGO_EXPRESS_USERNAME"
+    fi
+fi
+
 # Docker image
 echo ""
 echo "🐳 Docker Image"
@@ -243,6 +389,8 @@ echo ""
 DEFAULT_DATA_ROOT="${EXISTING_DATA_ROOT:-$PROJECT_ROOT}"
 read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
 DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
+
+fi  # End of interactive mode conditional
 
 # =============================================================================
 # STEP 3: Generate root .env
@@ -275,7 +423,7 @@ if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
         echo "POSTGRES_PORT=5432"
         echo "POSTGRES_DB=${STACK_NAME//-/_}_db"
         echo "POSTGRES_USER=${STACK_NAME//-/_}_user"
-        echo "POSTGRES_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_DB_PASSWORD"
+            echo "POSTGRES_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
     } >> "$ENV_FILE"
 elif [ "$DB_TYPE" = "mongodb" ] && [ "$DB_MODE" = "local" ]; then
     {
@@ -283,14 +431,37 @@ elif [ "$DB_TYPE" = "mongodb" ] && [ "$DB_MODE" = "local" ]; then
         echo "MONGODB_PORT=27017"
         echo "MONGODB_DB=${STACK_NAME//-/_}_db"
         echo "MONGODB_USER=${STACK_NAME//-/_}_user"
-        echo "MONGODB_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_DB_PASSWORD"
+        echo "MONGODB_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
     } >> "$ENV_FILE"
 elif [ "$DB_TYPE" = "neo4j" ] && [ "$DB_MODE" = "local" ]; then
     {
         echo "NEO4J_HOST=neo4j"
         echo "NEO4J_PORT=7687"
-        echo "NEO4J_AUTH_FILE=/run/secrets/${SECRET_PREFIX}_DB_PASSWORD"
+        echo "NEO4J_AUTH_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
     } >> "$ENV_FILE"
+fi
+
+# Admin UI configuration
+if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
+    {
+        echo ""
+        echo "# Admin UI (database management)"
+    } >> "$ENV_FILE"
+    if [ "$DB_TYPE" = "postgresql" ]; then
+        {
+            echo "PGADMIN_URL=${PGADMIN_URL}"
+            echo "PGADMIN_REPLICAS=0"
+            echo "PGADMIN_EMAIL=${PGADMIN_EMAIL}"
+            echo "PGADMIN_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_pgadmin_password"
+        } >> "$ENV_FILE"
+    elif [ "$DB_TYPE" = "mongodb" ]; then
+        {
+            echo "MONGO_EXPRESS_URL=${MONGO_EXPRESS_URL}"
+            echo "MONGO_EXPRESS_REPLICAS=0"
+            echo "MONGO_EXPRESS_USER=${MONGO_EXPRESS_USERNAME}"
+            echo "MONGO_EXPRESS_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_mongo_express_password"
+        } >> "$ENV_FILE"
+    fi
 fi
 
 {
@@ -328,7 +499,7 @@ fi
 {
     echo ""
     echo "# Secrets"
-    echo "SECRETS_PREFIX=${SECRET_PREFIX}_"
+    echo "SECRETS_PREFIX=${SECRET_PREFIX}"
 } >> "$ENV_FILE"
 
 echo "✅ .env written: $ENV_FILE"
@@ -367,11 +538,12 @@ echo ""
 echo "What would you like to do next?"
 echo "  1) Done (save only)"
 echo "  2) Create data directories"
-echo "  3) Create Docker secrets"
-echo "  4) Deploy to Docker Swarm"
-echo "  5) Full deploy (data dirs + secrets + deploy)"
+echo "  3) Create secrets from secrets.env file (recommended)"
+echo "  4) Create secrets interactively"
+echo "  5) Deploy to Docker Swarm"
+echo "  6) Full deploy (data dirs + secrets + deploy)"
 echo ""
-read -p "Your choice (1-5) [1]: " FINAL_ACTION
+read -p "Your choice (1-6) [1]: " FINAL_ACTION
 FINAL_ACTION="${FINAL_ACTION:-1}"
 
 # Derive secret names
@@ -399,14 +571,18 @@ case "$FINAL_ACTION" in
         ;;
     3)
         echo ""
-        echo "🔐 Creating secrets with prefix: ${PREFIX_UPPER}_*"
+        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
+        ;;
+    4)
+        echo ""
+        echo "🔐 Creating secrets interactively with prefix: ${PREFIX_UPPER}_*"
         create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
         echo ""
         echo "✅ Secrets created."
         ;;
-    4)
+    5)
         echo ""
-        echo "� Deploying..."
+        echo "🚀 Deploying..."
         if [ -f "$STACK_FILE" ]; then
             check_stack_conflict "$STACK_NAME"
             deploy_stack "$STACK_NAME" "$STACK_FILE"
@@ -416,7 +592,7 @@ case "$FINAL_ACTION" in
             echo "⚠️  swarm-stack.yml not found. Build it first."
         fi
         ;;
-    5)
+    6)
         echo ""
         echo "🚀 Full deploy sequence"
         echo ""
@@ -426,7 +602,7 @@ case "$FINAL_ACTION" in
         echo ""
 
         echo "--- Step 2/3: Secrets ---"
-        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
         echo ""
 
         echo "--- Step 3/3: Deploy ---"

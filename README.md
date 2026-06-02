@@ -53,6 +53,21 @@ The quick-start script will:
 4. Show a deployment overview.
 5. Open the operations menu.
 
+### Fast Re-Setup from Saved .env
+
+If you have a saved `.env` from a previous deployment, the setup wizard will
+offer to use it directly (skipping all prompts):
+
+```text
+📁 Existing .env file detected.
+
+How would you like to configure deployment settings?
+  1) Use existing .env values and skip prompts (fast re-setup)
+  2) Answer questions interactively (recommended for first setup)
+```
+
+This allows quick restoration of a deployment from a backed-up `.env` file.
+
 ## Setup Wizard
 
 ```bash
@@ -73,7 +88,9 @@ The wizard:
 From `quick-start.sh`, the main menu offers:
 
 - **Re-run setup wizard** — reconfigure this deployment.
-- **Manage Docker secrets** — create/list/validate secrets.
+- **Manage Docker secrets** — create/list/validate secrets (interactively or from file).
+- **Quick restore from saved .env** — restore deployment config from a backed-up `.env` file.
+- **Quick restore from saved secrets.env** — restore Docker secrets from a backed-up `secrets.env` file.
 - **Deploy to Swarm** — deploy `swarm-stack.yml`.
 - **Check status** — health check the running stack.
 - **View logs** — tail API, database, or Redis logs.
@@ -95,7 +112,8 @@ setup/
     menu_handlers.sh               ← operations menu
     user-prompts.sh                ← interactive input functions
     config-builder.sh              ← env update utilities
-    secret-manager.sh              ← Docker secret management
+    secret-manager.sh              ← Docker secret management (including secrets.env workflow)
+    secrets_template_sync.sh       ← secrets.env template synchronization
     data-dirs.sh                   ← data directory creation
     deploy-stack.sh                ← stack deployment
     health-check.sh                ← deployment health checks
@@ -106,6 +124,8 @@ setup/
     mongodb-local.yml              ← MongoDB (local) compose fragment
     proxy-traefik.yml              ← Traefik labels compose fragment
     proxy-none.yml                 ← Direct port compose fragment
+  templates/
+    secrets.env.template           ← Docker secrets template
 scripts/
   build-site-stack.sh              ← merge compose modules → swarm-stack.yml
 site-configs/
@@ -146,14 +166,77 @@ Secrets use a predictable naming pattern derived from `SECRETS_PREFIX`:
 <PREFIX>ADMIN_API_KEY
 <PREFIX>BACKUP_RESTORE_API_KEY
 <PREFIX>BACKUP_DELETE_API_KEY
+<PREFIX>PGADMIN_PASSWORD        (if using local PostgreSQL with admin UI)
+<PREFIX>MONGO_EXPRESS_PASSWORD  (if using local MongoDB with admin UI)
 ```
 
-The menu's "Manage Docker secrets" option handles creation and validation.
+### secrets.env Workflow
+
+You can create Docker secrets from a `secrets.env` file (similar to `swarm-figma-website`):
+
+1. **Setup wizard** → Select "Create secrets from secrets.env file (recommended)"
+2. **Quick-start menu** → Select "Manage Docker secrets" → "Create secrets from secrets.env file"
+
+The template is at `setup/templates/secrets.env.template`. The workflow:
+- Creates `secrets.env` from template if it doesn't exist
+- Syncs missing keys from template to existing files
+- Opens your chosen editor (nano/vim/vi) to fill values
+- Creates Docker secrets with your `SECRET_PREFIX`
+- Optionally deletes `secrets.env` for security
+
+### Admin UI Credentials
+
+When using **local database mode**, the wizard prompts for admin UI credentials:
+
+| Admin UI | Credential | Stored In | Validation |
+|----------|------------|-----------|------------|
+| pgAdmin (PostgreSQL) | Email | `.env` (`PGADMIN_EMAIL`) | Must be valid email format |
+| Mongo Express (MongoDB) | Username | `.env` (`MONGO_EXPRESS_USERNAME`) | Cannot be `admin`, 3-32 chars |
+
+Passwords are stored as Docker secrets, never in `.env`.
 
 ## Proxy Options
 
 - **Traefik** — automatic HTTPS via Let's Encrypt, domain-based routing.
 - **None** — direct port exposure; you manage your own reverse proxy.
+
+## Backup and Restore Workflow
+
+To move or restore a deployment to a new server:
+
+### 1. Backup (on source server)
+
+```bash
+# Save .env (non-secret configuration)
+cp .env /backup/myapp.env
+
+# Save secrets.env (create from current Docker secrets)
+# Use menu: Manage Docker secrets → Create secrets from secrets.env file
+# Then copy the file before it gets deleted
+cp secrets.env /backup/myapp-secrets.env
+```
+
+### 2. Restore (on target server)
+
+```bash
+# Clone the repo
+git clone https://github.com/Sokrates1989/swarm-python-api-template.git myapp
+cd myapp
+
+# Restore .env configuration
+cp /backup/myapp.env .env
+
+# Run quick-start and select restore options
+./quick-start.sh
+# → 3) Quick restore from saved .env
+# → 4) Quick restore from saved secrets.env
+```
+
+Or use the setup wizard's fast mode which auto-detects existing `.env`:
+```bash
+./setup/setup-wizard.sh
+# → Select option 1: "Use existing .env values and skip prompts"
+```
 
 ## Deploy Manually
 
