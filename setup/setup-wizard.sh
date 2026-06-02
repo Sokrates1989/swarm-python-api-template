@@ -347,10 +347,10 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
     admin_ui_default_domain=""
     if [ "$DB_TYPE" = "postgresql" ]; then
         admin_ui_type="pgAdmin"
-        admin_ui_default_domain="${EXISTING_PGADMIN_URL:-admin-db.${DOMAIN}}"
+        admin_ui_default_domain="${EXISTING_PGADMIN_URL:-admin.${DOMAIN}}"
     elif [ "$DB_TYPE" = "mongodb" ]; then
         admin_ui_type="Mongo Express"
-        admin_ui_default_domain="${EXISTING_MONGO_EXPRESS_URL:-admin-db.${DOMAIN}}"
+        admin_ui_default_domain="${EXISTING_MONGO_EXPRESS_URL:-admin.${DOMAIN}}"
     fi
 
     # Domain prompt - requires non-empty domain
@@ -363,7 +363,7 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
                 if _validate_domain "$PGADMIN_URL"; then
                     break
                 fi
-                echo "❌ ${admin_ui_type} domain is required and must be a valid domain (e.g., admin-db.example.com)."
+                echo "❌ ${admin_ui_type} domain is required and must be a valid domain (e.g., admin.example.com)."
             done
             echo "✅ ${admin_ui_type} URL: $PGADMIN_URL"
         elif [ "$DB_TYPE" = "mongodb" ]; then
@@ -373,7 +373,7 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
                 if _validate_domain "$MONGO_EXPRESS_URL"; then
                     break
                 fi
-                echo "❌ ${admin_ui_type} domain is required and must be a valid domain (e.g., admin-db.example.com)."
+                echo "❌ ${admin_ui_type} domain is required and must be a valid domain (e.g., admin.example.com)."
             done
             echo "✅ ${admin_ui_type} URL: $MONGO_EXPRESS_URL"
         fi
