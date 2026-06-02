@@ -205,6 +205,7 @@ show_app_selector() {
         return 0
     fi
 
+    # Display available profiles once
     echo "  Available deployment profiles:" >&2
     echo "" >&2
 
@@ -232,29 +233,35 @@ show_app_selector() {
     echo "  q) Exit" >&2
     echo "" >&2
 
-    local choice
-    if [[ -r /dev/tty ]]; then
-        read -r -p "Select [1-${#configs[@]}, q]: " choice < /dev/tty
-    else
-        read -r -p "Select [1-${#configs[@]}, q]: " choice
-    fi
+    # Loop until valid choice or explicit exit
+    while true; do
+        local choice
+        if [[ -r /dev/tty ]]; then
+            read -r -p "Select [1-${#configs[@]}, q]: " choice < /dev/tty
+        else
+            read -r -p "Select [1-${#configs[@]}, q]: " choice
+        fi
 
-    case "$choice" in
-        q|Q|"")
-            echo "EXIT"
-            return 0
-            ;;
-        *)
-            # Numeric selection
-            if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#configs[@]}" ]; then
-                echo "${configs[$((choice - 1))]}"
-            else
-                echo "❌ Invalid choice: $choice" >&2
+        case "$choice" in
+            q|Q)
                 echo "EXIT"
-            fi
-            return 0
-            ;;
-    esac
+                return 0
+                ;;
+            "")
+                echo "❌ Selection is required. Please enter a number (1-${#configs[@]}) or 'q' to exit." >&2
+                ;;
+            *)
+                # Numeric selection
+                if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#configs[@]}" ]; then
+                    echo "${configs[$((choice - 1))]}"
+                    return 0
+                else
+                    echo "❌ Invalid choice: $choice" >&2
+                    echo "   Please enter a number between 1 and ${#configs[@]}, or 'q' to exit." >&2
+                fi
+                ;;
+        esac
+    done
 }
 
 # ==============================================================================
