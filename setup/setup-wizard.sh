@@ -305,8 +305,8 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
     echo "🔧 Admin UI Configuration"
     echo "   (Admin UI services are disabled by default with replicas=0)"
     echo ""
-    local admin_ui_type=""
-    local admin_ui_default_domain=""
+    admin_ui_type=""
+    admin_ui_default_domain=""
     if [ "$DB_TYPE" = "postgresql" ]; then
         admin_ui_type="pgAdmin"
         admin_ui_default_domain="${EXISTING_PGADMIN_URL:-admin-db.${DOMAIN}}"
@@ -335,7 +335,7 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
     if [ "$DB_TYPE" = "postgresql" ]; then
         # pgAdmin requires email - validate until acceptable
         while true; do
-            local pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-admin@example.com}"
+            pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-admin@example.com}"
             read -p "pgAdmin login email [${pgadmin_email_default}]: " PGADMIN_EMAIL
             PGADMIN_EMAIL="${PGADMIN_EMAIL:-$pgadmin_email_default}"
 
@@ -349,7 +349,7 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
     elif [ "$DB_TYPE" = "mongodb" ]; then
         # Mongo Express requires username - validate until acceptable
         while true; do
-            local mongo_user_default="${EXISTING_MONGO_EXPRESS_USERNAME:-dbadmin}"
+            mongo_user_default="${EXISTING_MONGO_EXPRESS_USERNAME:-dbadmin}"
             read -p "Mongo Express username [${mongo_user_default}]: " MONGO_EXPRESS_USERNAME
             MONGO_EXPRESS_USERNAME="${MONGO_EXPRESS_USERNAME:-$mongo_user_default}"
 
