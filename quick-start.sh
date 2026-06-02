@@ -88,24 +88,37 @@ fi
 if [ ! -f "${PROJECT_ROOT}/.env" ]; then
     echo "ℹ️  No .env found — this deployment has not been configured yet."
     echo ""
-    echo "  1) Run setup wizard"
-    echo "  2) Exit"
-    echo ""
-    read -r -p "Your choice [1]: " INIT_CHOICE
-    INIT_CHOICE="${INIT_CHOICE:-1}"
 
-    if [ "$INIT_CHOICE" = "1" ]; then
-        "${PROJECT_ROOT}/setup/setup-wizard.sh"
+    while true; do
+        echo "  1) Run setup wizard"
+        echo "  2) Exit"
         echo ""
-        # Re-check after wizard
-        if [ ! -f "${PROJECT_ROOT}/.env" ]; then
-            echo "⚠️  Setup wizard did not create .env. Exiting."
-            exit 1
-        fi
-    else
-        echo "👋 Goodbye!"
-        exit 0
-    fi
+        read -r -p "Your choice [1]: " INIT_CHOICE
+        INIT_CHOICE="${INIT_CHOICE:-1}"
+
+        case "$INIT_CHOICE" in
+            1)
+                "${PROJECT_ROOT}/setup/setup-wizard.sh"
+                echo ""
+                # Re-check after wizard
+                if [ ! -f "${PROJECT_ROOT}/.env" ]; then
+                    echo "⚠️  Setup wizard did not create .env."
+                    echo ""
+                    # Loop back to menu instead of exiting
+                else
+                    break
+                fi
+                ;;
+            2)
+                echo "👋 Goodbye!"
+                exit 0
+                ;;
+            *)
+                echo "❌ Invalid choice: '$INIT_CHOICE'. Please enter 1 or 2."
+                echo ""
+                ;;
+        esac
+    done
 fi
 
 # ===========================================================================

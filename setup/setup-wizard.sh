@@ -284,12 +284,15 @@ if [ "$DB_TYPE" != "none" ]; then
         external) dbm_default="2" ;;
         *)        dbm_default="1" ;;
     esac
-    read -p "Your choice (1-2) [$dbm_default]: " DBM_CHOICE
-    DBM_CHOICE="${DBM_CHOICE:-$dbm_default}"
-    case "$DBM_CHOICE" in
-        2) DB_MODE="external" ;;
-        *) DB_MODE="local" ;;
-    esac
+    while true; do
+        read -p "Your choice (1-2) [$dbm_default]: " DBM_CHOICE
+        DBM_CHOICE="${DBM_CHOICE:-$dbm_default}"
+        case "$DBM_CHOICE" in
+            1) DB_MODE="local"; break ;;
+            2) DB_MODE="external"; break ;;
+            *) echo "❌ Invalid choice: '$DBM_CHOICE'. Please enter 1 or 2." ;;
+        esac
+    done
     echo "✅ DB mode: $DB_MODE"
 fi
 
@@ -303,12 +306,15 @@ case "${EXISTING_PROXY_TYPE:-traefik}" in
     none) proxy_default="2" ;;
     *)    proxy_default="1" ;;
 esac
-read -p "Your choice (1-2) [$proxy_default]: " PROXY_CHOICE
-PROXY_CHOICE="${PROXY_CHOICE:-$proxy_default}"
-case "$PROXY_CHOICE" in
-    2) PROXY_TYPE="none" ;;
-    *) PROXY_TYPE="traefik" ;;
-esac
+while true; do
+    read -p "Your choice (1-2) [$proxy_default]: " PROXY_CHOICE
+    PROXY_CHOICE="${PROXY_CHOICE:-$proxy_default}"
+    case "$PROXY_CHOICE" in
+        1) PROXY_TYPE="traefik"; break ;;
+        2) PROXY_TYPE="none"; break ;;
+        *) echo "❌ Invalid choice: '$PROXY_CHOICE'. Please enter 1 or 2." ;;
+    esac
+done
 echo "✅ Proxy: $PROXY_TYPE"
 
 # SSL mode (Traefik only)
@@ -319,12 +325,15 @@ if [ "$PROXY_TYPE" = "traefik" ]; then
     echo "  1) letsencrypt (Traefik obtains certificate)"
     echo "  2) proxy (SSL terminated upstream, e.g. Cloudflare)"
     echo ""
-    read -p "Your choice (1-2) [1]: " SSL_CHOICE
-    SSL_CHOICE="${SSL_CHOICE:-1}"
-    case "$SSL_CHOICE" in
-        2) SSL_MODE="proxy" ;;
-        *) SSL_MODE="letsencrypt" ;;
-    esac
+    while true; do
+        read -p "Your choice (1-2) [1]: " SSL_CHOICE
+        SSL_CHOICE="${SSL_CHOICE:-1}"
+        case "$SSL_CHOICE" in
+            1) SSL_MODE="letsencrypt"; break ;;
+            2) SSL_MODE="proxy"; break ;;
+            *) echo "❌ Invalid choice: '$SSL_CHOICE'. Please enter 1 or 2." ;;
+        esac
+    done
     echo "✅ SSL: $SSL_MODE"
 fi
 
@@ -602,8 +611,14 @@ echo "  4) Create secrets interactively"
 echo "  5) Deploy to Docker Swarm"
 echo "  6) Full deploy (data dirs + secrets + deploy)"
 echo ""
-read -p "Your choice (1-6) [1]: " FINAL_ACTION
-FINAL_ACTION="${FINAL_ACTION:-1}"
+while true; do
+    read -p "Your choice (1-6) [1]: " FINAL_ACTION
+    FINAL_ACTION="${FINAL_ACTION:-1}"
+    case "$FINAL_ACTION" in
+        1|2|3|4|5|6) break ;;
+        *) echo "❌ Invalid choice: '$FINAL_ACTION'. Please enter a number between 1 and 6." ;;
+    esac
+done
 
 # Derive secret names
 PREFIX_UPPER=$(echo "$SECRET_PREFIX" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
