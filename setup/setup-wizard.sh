@@ -385,14 +385,13 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
     if [ "$DB_TYPE" = "postgresql" ]; then
         # pgAdmin requires email - validate until acceptable
         while true; do
-            pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-admin@example.com}"
+            pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-}"
             read -p "pgAdmin login email [${pgadmin_email_default}]: " PGADMIN_EMAIL
             PGADMIN_EMAIL="${PGADMIN_EMAIL:-$pgadmin_email_default}"
 
             if validate_email "$PGADMIN_EMAIL"; then
                 break
             fi
-            echo "   Please enter a valid email address."
             echo ""
         done
         echo "✅ pgAdmin email: $PGADMIN_EMAIL"

@@ -493,6 +493,12 @@ validate_email() {
         return 1
     fi
 
+    # Reject placeholder / example values
+    if [[ "$email" == *"@example.com" ]] || [[ "$email" == *"example@"* ]]; then
+        echo "❌ Please use a real email address, not a placeholder (e.g., not admin@example.com)" >&2
+        return 1
+    fi
+
     # Check length constraints
     if [ "${#email}" -gt 254 ]; then
         echo "❌ Email is too long (max 254 characters)" >&2
