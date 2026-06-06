@@ -550,6 +550,7 @@ fi
     echo "# Redis"
     echo "REDIS_HOST=redis"
     echo "REDIS_PORT=6379"
+    echo "REDIS_REPLICAS=1"
     echo ""
     echo "# Docker Image"
     echo "IMAGE_NAME=${IMAGE_NAME}"
@@ -570,6 +571,7 @@ fi
 
 if [ "$PROXY_TYPE" = "traefik" ]; then
     {
+        echo "TRAEFIK_NETWORK=${TRAEFIK_NETWORK:-traefik-public}"
         echo "TRAEFIK_ROUTER_NAME=${STACK_NAME}"
         echo "TRAEFIK_RULE=Host(\`${DOMAIN}\`)"
         echo "TRAEFIK_ENTRYPOINT=websecure"
@@ -666,6 +668,10 @@ case "$FINAL_ACTION" in
         if command -v build_stack_file >/dev/null 2>&1; then
             build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
             echo ""
+            update_stack_name "$STACK_FILE" "$STACK_NAME"
+            if [ "$PROXY_TYPE" = "traefik" ]; then
+                update_stack_network "$STACK_FILE" "${TRAEFIK_NETWORK:-traefik-public}"
+            fi
             update_stack_secrets "$STACK_FILE" \
                 "${PREFIX_UPPER}_DB_PASSWORD" \
                 "${PREFIX_UPPER}_ADMIN_API_KEY" \
@@ -714,6 +720,10 @@ case "$FINAL_ACTION" in
         if command -v build_stack_file >/dev/null 2>&1; then
             build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
             echo ""
+            update_stack_name "$STACK_FILE" "$STACK_NAME"
+            if [ "$PROXY_TYPE" = "traefik" ]; then
+                update_stack_network "$STACK_FILE" "${TRAEFIK_NETWORK:-traefik-public}"
+            fi
             update_stack_secrets "$STACK_FILE" \
                 "${PREFIX_UPPER}_DB_PASSWORD" \
                 "${PREFIX_UPPER}_ADMIN_API_KEY" \

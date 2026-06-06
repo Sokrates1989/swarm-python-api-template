@@ -282,7 +282,7 @@ update_stack_secrets() {
 update_stack_network() {
     local stack_file="$1"
     local traefik_network="$2"
-    
+
     # Use different sed syntax based on OS
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
@@ -290,6 +290,29 @@ update_stack_network() {
     else
         # Linux
         sed -i "s|XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX|$traefik_network|g" "$stack_file"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# update_stack_name
+# ------------------------------------------------------------------------------
+# Replaces the stack name placeholder in swarm-stack.yml.
+#
+# Arguments:
+#   $1 - stack_file: path to swarm-stack.yml
+#   $2 - stack_name: the stack name (e.g., myapp)
+# ------------------------------------------------------------------------------
+update_stack_name() {
+    local stack_file="$1"
+    local stack_name="$2"
+
+    # Use different sed syntax based on OS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s|XXX_CHANGE_ME_STACK_NAME_XXX|$stack_name|g" "$stack_file"
+    else
+        # Linux
+        sed -i "s|XXX_CHANGE_ME_STACK_NAME_XXX|$stack_name|g" "$stack_file"
     fi
 }
 
