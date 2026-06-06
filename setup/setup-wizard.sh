@@ -664,7 +664,7 @@ case "$FINAL_ACTION" in
         echo ""
         echo "🔨 Building swarm-stack.yml..."
         if command -v build_stack_file >/dev/null 2>&1; then
-            build_stack_file "$ENV_FILE" "$STACK_FILE" "$SCRIPT_DIR"
+            build_stack_file "$ENV_FILE" "$STACK_FILE" "$PROJECT_ROOT"
             echo ""
             update_stack_secrets "$STACK_FILE" \
                 "${PREFIX_UPPER}_DB_PASSWORD" \
@@ -712,7 +712,7 @@ case "$FINAL_ACTION" in
 
         echo "--- Step 2/4: Build swarm-stack.yml ---"
         if command -v build_stack_file >/dev/null 2>&1; then
-            build_stack_file "$ENV_FILE" "$STACK_FILE" "$SCRIPT_DIR"
+            build_stack_file "$ENV_FILE" "$STACK_FILE" "$PROJECT_ROOT"
             echo ""
             update_stack_secrets "$STACK_FILE" \
                 "${PREFIX_UPPER}_DB_PASSWORD" \
