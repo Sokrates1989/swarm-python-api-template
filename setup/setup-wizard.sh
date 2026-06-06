@@ -500,11 +500,18 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 # Database-specific env vars
 if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
     {
+        echo "DB_TYPE=postgresql"
+        echo "DB_MODE=local"
+        echo "DB_HOST=${STACK_NAME}_postgres"
+        echo "DB_PORT=5432"
+        echo "DB_NAME=${STACK_NAME//-/_}_db"
+        echo "DB_USER=${STACK_NAME//-/_}_user"
         echo "POSTGRES_HOST=postgres"
         echo "POSTGRES_PORT=5432"
         echo "POSTGRES_DB=${STACK_NAME//-/_}_db"
         echo "POSTGRES_USER=${STACK_NAME//-/_}_user"
-            echo "POSTGRES_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
+        echo "POSTGRES_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
+        echo "POSTGRES_REPLICAS=1"
     } >> "$ENV_FILE"
 elif [ "$DB_TYPE" = "mongodb" ] && [ "$DB_MODE" = "local" ]; then
     {
@@ -551,6 +558,12 @@ fi
     echo "REDIS_HOST=redis"
     echo "REDIS_PORT=6379"
     echo "REDIS_REPLICAS=1"
+    echo "REDIS_URL=redis://redis:6379/0"
+    echo ""
+    echo "# API"
+    echo "PYTHON_VERSION=3.11"
+    echo "PORT=8080"
+    echo "DEBUG=false"
     echo ""
     echo "# Docker Image"
     echo "IMAGE_NAME=${IMAGE_NAME}"
