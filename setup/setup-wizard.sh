@@ -211,9 +211,9 @@ if [ "$SETUP_MODE" = "from_env" ]; then
     DB_TYPE="${DB_TYPE:-$APP_DB_TYPE}"
     IMAGE_NAME="${IMAGE_NAME:-$APP_IMAGE_NAME}"
 
-    # Use defaults for replicas and memory if not set
+    # Use defaults for replicas; memory defaults to unlimited if not set
     API_REPLICAS="${API_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}"
-    MEMORY_LIMIT="${MEMORY_LIMIT:-${APP_DEFAULT_MEMORY_LIMIT:-512M}}"
+    # MEMORY_LIMIT intentionally left unset if no existing value (unlimited by default)
 
     echo "✅ Loaded configuration:"
     echo "   Stack: ${STACK_NAME}"
@@ -447,11 +447,17 @@ echo "✅ Image: $IMAGE_NAME:$IMAGE_VERSION"
 # Resources
 echo ""
 DEFAULT_REPLICAS="${APP_DEFAULT_REPLICAS}"
-DEFAULT_MEMORY="${APP_DEFAULT_MEMORY_LIMIT}"
 read -p "API replicas [$DEFAULT_REPLICAS]: " API_REPLICAS
 API_REPLICAS="${API_REPLICAS:-$DEFAULT_REPLICAS}"
-read -p "Memory limit [$DEFAULT_MEMORY]: " MEMORY_LIMIT
-MEMORY_LIMIT="${MEMORY_LIMIT:-$DEFAULT_MEMORY}"
+echo ""
+echo "Memory limit (Docker memory constraint):"
+echo "  - Leave empty for unlimited (recommended for most deployments)"
+echo "  - 256M-512M for minimal/light usage (testing/development)"
+echo "  - 1G-2G for moderate API load with some caching"
+echo "  - 4G+ for heavy workloads or large file processing"
+echo ""
+read -p "Memory limit [unlimited]: " MEMORY_LIMIT
+MEMORY_LIMIT="${MEMORY_LIMIT:-}"
 
 # Data root - requires non-empty path
 echo ""
@@ -527,14 +533,14 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
             echo "PGADMIN_URL=${PGADMIN_URL}"
             echo "PGADMIN_REPLICAS=0"
             echo "PGADMIN_EMAIL=${PGADMIN_EMAIL}"
-            echo "PGADMIN_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_pgadmin_password"
+            echo "PGADMIN_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_ui_admin_password"
         } >> "$ENV_FILE"
     elif [ "$DB_TYPE" = "mongodb" ]; then
         {
             echo "MONGO_EXPRESS_URL=${MONGO_EXPRESS_URL}"
             echo "MONGO_EXPRESS_REPLICAS=0"
             echo "MONGO_EXPRESS_USER=${MONGO_EXPRESS_USERNAME}"
-            echo "MONGO_EXPRESS_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_mongo_express_password"
+            echo "MONGO_EXPRESS_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_ui_admin_password"
         } >> "$ENV_FILE"
     fi
 fi
@@ -551,7 +557,9 @@ fi
     echo ""
     echo "# Resources"
     echo "API_REPLICAS=${API_REPLICAS}"
-    echo "MEMORY_LIMIT=${MEMORY_LIMIT}"
+    if [ -n "${MEMORY_LIMIT}" ]; then
+        echo "MEMORY_LIMIT=${MEMORY_LIMIT}"
+    fi
     echo ""
     echo "# Data"
     echo "DATA_ROOT=${DATA_ROOT}"

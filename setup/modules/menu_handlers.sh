@@ -654,7 +654,7 @@ show_main_menu() {
                 if [ "$target_replicas" -eq 1 ]; then
                     local pgadmin_login="${PGADMIN_EMAIL:-admin@example.com}"
                     echo "✅ pgAdmin enabled. Access at: ${PGADMIN_URL}"
-                    echo "   Login: ${pgadmin_login} / (from secret ${SECRET_PREFIX}_pgadmin_password)"
+                    echo "   Login: ${pgadmin_login} / (from secret ${SECRET_PREFIX}_db_ui_admin_password)"
                 else
                     echo "✅ pgAdmin disabled (replicas=0)"
                 fi
@@ -669,7 +669,7 @@ show_main_menu() {
                 if [ "$target_replicas" -eq 1 ]; then
                     local mongo_user="${MONGO_EXPRESS_USERNAME:-dbadmin}"
                     echo "✅ Mongo Express enabled. Access at: ${MONGO_EXPRESS_URL}"
-                    echo "   Login: ${mongo_user} / (from secret ${SECRET_PREFIX}_mongo_express_password)"
+                    echo "   Login: ${mongo_user} / (from secret ${SECRET_PREFIX}_db_ui_admin_password)"
                 else
                     echo "✅ Mongo Express disabled (replicas=0)"
                 fi

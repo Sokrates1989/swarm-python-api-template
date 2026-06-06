@@ -14,7 +14,7 @@
   },
   "adminUI": {
     "type": "pgadmin",
-    "defaultDomainPrefix": "admin-db",
+    "defaultDomainPrefix": "admin",
     "defaultReplicas": 0,
     "configurableReplicas": false
   },
@@ -31,7 +31,7 @@
     "ADMIN_API_KEY",
     "BACKUP_RESTORE_API_KEY",
     "BACKUP_DELETE_API_KEY",
-    "PGADMIN_PASSWORD"
+    "DB_UI_ADMIN_PASSWORD"
   ],
   "envKeys": [
     "BACKEND_APP_ID",

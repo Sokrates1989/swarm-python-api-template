@@ -234,8 +234,7 @@ update_env_values() {
 #   $3 - admin_api_key_secret
 #   $4 - backup_restore_api_key_secret
 #   $5 - backup_delete_api_key_secret
-#   $6 - pgadmin_password_secret (optional)
-#   $7 - mongo_express_password_secret (optional)
+#   $6 - db_ui_admin_password_secret (optional, used for pgAdmin or Mongo Express)
 # ------------------------------------------------------------------------------
 update_stack_secrets() {
     local stack_file="$1"
@@ -243,8 +242,7 @@ update_stack_secrets() {
     local admin_api_key_secret="$3"
     local backup_restore_api_key_secret="$4"
     local backup_delete_api_key_secret="$5"
-    local pgadmin_password_secret="${6:-}"
-    local mongo_express_password_secret="${7:-}"
+    local db_ui_admin_password_secret="${6:-}"
     
     # Use different sed syntax based on OS
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -253,12 +251,11 @@ update_stack_secrets() {
         sed -i '' "s|XXX_CHANGE_ME_ADMIN_API_KEY_XXX|$admin_api_key_secret|g" "$stack_file"
         sed -i '' "s|XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX|$backup_restore_api_key_secret|g" "$stack_file"
         sed -i '' "s|XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX|$backup_delete_api_key_secret|g" "$stack_file"
-        if [ -n "$pgadmin_password_secret" ]; then
-            sed -i '' "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$pgadmin_password_secret|g" "$stack_file"
+        if [ -n "$db_ui_admin_password_secret" ]; then
+            sed -i '' "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
         fi
-        if [ -n "$mongo_express_password_secret" ]; then
-            sed -i '' "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$mongo_express_password_secret|g" "$stack_file"
-            sed -i '' "s|XXX_CHANGE_ME_MONGODB_PASSWORD_XXX|$db_password_secret|g" "$stack_file"
+        if [ -n "$db_ui_admin_password_secret" ]; then
+            sed -i '' "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
         fi
     else
         # Linux
@@ -266,12 +263,9 @@ update_stack_secrets() {
         sed -i "s|XXX_CHANGE_ME_ADMIN_API_KEY_XXX|$admin_api_key_secret|g" "$stack_file"
         sed -i "s|XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX|$backup_restore_api_key_secret|g" "$stack_file"
         sed -i "s|XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX|$backup_delete_api_key_secret|g" "$stack_file"
-        if [ -n "$pgadmin_password_secret" ]; then
-            sed -i "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$pgadmin_password_secret|g" "$stack_file"
-        fi
-        if [ -n "$mongo_express_password_secret" ]; then
-            sed -i "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$mongo_express_password_secret|g" "$stack_file"
-            sed -i "s|XXX_CHANGE_ME_MONGODB_PASSWORD_XXX|$db_password_secret|g" "$stack_file"
+        if [ -n "$db_ui_admin_password_secret" ]; then
+            sed -i "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
+            sed -i "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
         fi
     fi
 }
