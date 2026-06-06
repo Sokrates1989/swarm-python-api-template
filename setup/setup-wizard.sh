@@ -752,6 +752,24 @@ case "$FINAL_ACTION" in
 
         echo "--- Step 4/4: Deploy ---"
         if [ -f "$STACK_FILE" ]; then
+            # Check/create Traefik network if needed
+            if [ "$PROXY_TYPE" = "traefik" ]; then
+                local traefik_net="${TRAEFIK_NETWORK:-traefik-public}"
+                if ! docker network ls --format '{{.Name}}' | grep -q "^${traefik_net}$"; then
+                    echo ""
+                    echo "⚠️  Traefik network '${traefik_net}' not found."
+                    echo "   This external network must exist before deployment."
+                    read -p "   Create it now? (Y/n): " create_net
+                    create_net="${create_net:-Y}"
+                    if [[ "$create_net" =~ ^[Yy] ]]; then
+                        docker network create --driver overlay --scope swarm "${traefik_net}" 2>/dev/null || true
+                        echo "   ✅ Created network: ${traefik_net}"
+                    else
+                        echo "   ⚠️  Deployment may fail without the Traefik network."
+                    fi
+                    echo ""
+                fi
+            fi
             check_stack_conflict "$STACK_NAME"
             deploy_stack "$STACK_NAME" "$STACK_FILE"
             echo ""
