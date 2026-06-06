@@ -383,6 +383,10 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
     echo ""
     echo "Admin identity (non-secret values stored in .env):"
     if [ "$DB_TYPE" = "postgresql" ]; then
+        # Compute domain prefix for email hint (e.g., api2.fe-wi.com -> api2)
+        domain_prefix="${DOMAIN%%.*}"
+        echo "   Hint: use pattern pgadmin.${domain_prefix}@your-domain.com"
+        echo ""
         # pgAdmin requires email - validate until acceptable
         while true; do
             pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-}"
@@ -396,6 +400,10 @@ if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
         done
         echo "✅ pgAdmin email: $PGADMIN_EMAIL"
     elif [ "$DB_TYPE" = "mongodb" ]; then
+        # Compute domain prefix for username hint (e.g., api2.fe-wi.com -> api2)
+        domain_prefix="${DOMAIN%%.*}"
+        echo "   Hint: use pattern dbadmin.${domain_prefix} (e.g., dbadmin.${domain_prefix})"
+        echo ""
         # Mongo Express requires username - validate until acceptable
         while true; do
             mongo_user_default="${EXISTING_MONGO_EXPRESS_USERNAME:-dbadmin}"
