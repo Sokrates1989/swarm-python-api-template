@@ -268,6 +268,11 @@ else
 # Derive secret prefix from stack name (internal, not prompted)
 SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
 
+# Prompt for Traefik network in interactive mode
+if [ "$CONFIG_MODE" = "2" ] && [ "$PROXY_TYPE" = "traefik" ]; then
+    TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
+fi
+
 # Database mode (app manifest knows the type, user picks mode)
 DB_TYPE="$APP_DB_TYPE"
 echo ""
