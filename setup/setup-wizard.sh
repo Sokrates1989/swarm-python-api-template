@@ -500,8 +500,6 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 # Database-specific env vars
 if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
     {
-        echo "DB_TYPE=postgresql"
-        echo "DB_MODE=local"
         echo "DB_HOST=${STACK_NAME}_postgres"
         echo "DB_PORT=5432"
         echo "DB_NAME=${STACK_NAME//-/_}_db"
@@ -586,7 +584,7 @@ if [ "$PROXY_TYPE" = "traefik" ]; then
     {
         echo "TRAEFIK_NETWORK=${TRAEFIK_NETWORK:-traefik-public}"
         echo "TRAEFIK_ROUTER_NAME=${STACK_NAME}"
-        echo "TRAEFIK_RULE=Host(\`${DOMAIN}\`)"
+        echo "TRAEFIK_RULE='Host(\`${DOMAIN}\`)'"
         echo "TRAEFIK_ENTRYPOINT=websecure"
         if [ "$SSL_MODE" = "letsencrypt" ]; then
             echo "TRAEFIK_TLS_CERTRESOLVER=letsencrypt"
