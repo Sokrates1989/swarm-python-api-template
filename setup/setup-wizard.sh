@@ -621,17 +621,18 @@ echo ""
 echo "What would you like to do next?"
 echo "  1) Done (save only)"
 echo "  2) Create data directories"
-echo "  3) Create secrets from secrets.env file (recommended)"
-echo "  4) Create secrets interactively"
-echo "  5) Deploy to Docker Swarm"
-echo "  6) Full deploy (data dirs + secrets + deploy)"
+echo "  3) Build swarm-stack.yml"
+echo "  4) Create secrets from secrets.env file (recommended)"
+echo "  5) Create secrets interactively"
+echo "  6) Deploy to Docker Swarm"
+echo "  7) Full deploy (data dirs + stack + secrets + deploy)"
 echo ""
 while true; do
-    read -p "Your choice (1-6) [1]: " FINAL_ACTION
+    read -p "Your choice (1-7) [1]: " FINAL_ACTION
     FINAL_ACTION="${FINAL_ACTION:-1}"
     case "$FINAL_ACTION" in
-        1|2|3|4|5|6) break ;;
-        *) echo "❌ Invalid choice: '$FINAL_ACTION'. Please enter a number between 1 and 6." ;;
+        1|2|3|4|5|6|7) break ;;
+        *) echo "❌ Invalid choice: '$FINAL_ACTION'. Please enter a number between 1 and 7." ;;
     esac
 done
 
@@ -649,6 +650,7 @@ case "$FINAL_ACTION" in
         echo ""
         echo "Next steps you can do manually:"
         echo "  • Create data dirs:   mkdir -p ${DATA_ROOT}/{postgres_data,redis_data}"
+        echo "  • Build stack:        ./setup/setup-wizard.sh → option 3"
         echo "  • Create secrets:     ./quick-start.sh → Manage Docker secrets"
         echo "  • Deploy:             docker stack deploy -c swarm-stack.yml $STACK_NAME"
         ;;
@@ -660,16 +662,34 @@ case "$FINAL_ACTION" in
         ;;
     3)
         echo ""
-        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
+        echo "🔨 Building swarm-stack.yml..."
+        if command -v build_stack_file >/dev/null 2>&1; then
+            build_stack_file "$ENV_FILE" "$STACK_FILE" "$SCRIPT_DIR"
+            echo ""
+            update_stack_secrets "$STACK_FILE" \
+                "${PREFIX_UPPER}_DB_PASSWORD" \
+                "${PREFIX_UPPER}_ADMIN_API_KEY" \
+                "${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY" \
+                "${PREFIX_UPPER}_BACKUP_DELETE_API_KEY" \
+                "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+            echo ""
+            echo "✅ swarm-stack.yml built and secrets updated."
+        else
+            echo "⚠️  Stack builder not available. Run build-site-stack.sh manually."
+        fi
         ;;
     4)
+        echo ""
+        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
+        ;;
+    5)
         echo ""
         echo "🔐 Creating secrets interactively with prefix: ${PREFIX_UPPER}_*"
         create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
         echo ""
         echo "✅ Secrets created."
         ;;
-    5)
+    6)
         echo ""
         echo "🚀 Deploying..."
         if [ -f "$STACK_FILE" ]; then
@@ -678,30 +698,45 @@ case "$FINAL_ACTION" in
             echo ""
             check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN" 20
         else
-            echo "⚠️  swarm-stack.yml not found. Build it first."
+            echo "⚠️  swarm-stack.yml not found. Build it first (option 3)."
         fi
         ;;
-    6)
+    7)
         echo ""
         echo "🚀 Full deploy sequence"
         echo ""
 
-        echo "--- Step 1/3: Data directories ---"
+        echo "--- Step 1/4: Data directories ---"
         create_data_directories "$DATA_ROOT" "$DB_TYPE"
         echo ""
 
-        echo "--- Step 2/3: Secrets ---"
+        echo "--- Step 2/4: Build swarm-stack.yml ---"
+        if command -v build_stack_file >/dev/null 2>&1; then
+            build_stack_file "$ENV_FILE" "$STACK_FILE" "$SCRIPT_DIR"
+            echo ""
+            update_stack_secrets "$STACK_FILE" \
+                "${PREFIX_UPPER}_DB_PASSWORD" \
+                "${PREFIX_UPPER}_ADMIN_API_KEY" \
+                "${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY" \
+                "${PREFIX_UPPER}_BACKUP_DELETE_API_KEY" \
+                "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+        else
+            echo "⚠️  Stack builder not available. Run build-site-stack.sh manually."
+        fi
+        echo ""
+
+        echo "--- Step 3/4: Secrets ---"
         create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
         echo ""
 
-        echo "--- Step 3/3: Deploy ---"
+        echo "--- Step 4/4: Deploy ---"
         if [ -f "$STACK_FILE" ]; then
             check_stack_conflict "$STACK_NAME"
             deploy_stack "$STACK_NAME" "$STACK_FILE"
             echo ""
             check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN" 20
         else
-            echo "⚠️  swarm-stack.yml not found at root. Build it first."
+            echo "⚠️  swarm-stack.yml not found. Build it first (option 3)."
         fi
         ;;
     *)
