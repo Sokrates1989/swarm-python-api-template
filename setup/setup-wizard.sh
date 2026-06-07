@@ -759,7 +759,7 @@ case "$FINAL_ACTION" in
         if [ -f "$STACK_FILE" ]; then
             # Check/create Traefik network if needed
             if [ "$PROXY_TYPE" = "traefik" ]; then
-                local traefik_net="${TRAEFIK_NETWORK:-traefik-public}"
+                traefik_net="${TRAEFIK_NETWORK:-traefik-public}"
                 if ! docker network ls --format '{{.Name}}' | grep -q "^${traefik_net}$"; then
                     echo ""
                     echo "⚠️  Traefik network '${traefik_net}' not found."
