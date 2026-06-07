@@ -317,11 +317,6 @@ while true; do
 done
 echo "✅ Proxy: $PROXY_TYPE"
 
-# Prompt for Traefik network in interactive mode (after proxy type is known)
-if [ "$CONFIG_MODE" = "2" ] && [ "$PROXY_TYPE" = "traefik" ]; then
-    TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
-fi
-
 # SSL mode (Traefik only)
 SSL_MODE="letsencrypt"
 if [ "$PROXY_TYPE" = "traefik" ]; then
@@ -340,6 +335,11 @@ if [ "$PROXY_TYPE" = "traefik" ]; then
         esac
     done
     echo "✅ SSL: $SSL_MODE"
+fi
+
+# Prompt for Traefik network in interactive mode (after SSL mode is known)
+if [ "$CONFIG_MODE" = "2" ] && [ "$PROXY_TYPE" = "traefik" ]; then
+    TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
 fi
 
 # Admin UI configuration (for pgAdmin/mongo-express)
