@@ -295,6 +295,8 @@ load_root_env() {
     export DB_TYPE="$(_env_val DB_TYPE)"
     export DB_MODE="$(_env_val DB_MODE)"
     export PROXY_TYPE="$(_env_val PROXY_TYPE)"
+    export SSL_MODE="$(_env_val SSL_MODE)"
+    export TRAEFIK_NETWORK="$(_env_val TRAEFIK_NETWORK)"
     export IMAGE_NAME="$(_env_val IMAGE_NAME)"
     export IMAGE_VERSION="$(_env_val IMAGE_VERSION)"
     export API_REPLICAS="$(_env_val API_REPLICAS)"

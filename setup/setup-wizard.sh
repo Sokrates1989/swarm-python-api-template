@@ -151,6 +151,7 @@ EXISTING_STACK_NAME=""
 EXISTING_DOMAIN=""
 EXISTING_PROXY_TYPE=""
 EXISTING_SSL_MODE=""
+EXISTING_TRAEFIK_NETWORK=""
 EXISTING_IMAGE_VERSION=""
 EXISTING_DATA_ROOT=""
 EXISTING_DB_MODE=""
@@ -164,6 +165,8 @@ if [ -f "${PROJECT_ROOT}/.env" ]; then
     EXISTING_STACK_NAME="$STACK_NAME"
     EXISTING_DOMAIN="$DOMAIN"
     EXISTING_PROXY_TYPE="$PROXY_TYPE"
+    EXISTING_SSL_MODE="$SSL_MODE"
+    EXISTING_TRAEFIK_NETWORK="$TRAEFIK_NETWORK"
     EXISTING_IMAGE_VERSION="$IMAGE_VERSION"
     EXISTING_DB_MODE="$DB_MODE"
     EXISTING_DATA_ROOT="$DATA_ROOT"
@@ -194,6 +197,7 @@ if [ "$SETUP_MODE" = "from_env" ]; then
     DOMAIN="${DOMAIN:-$EXISTING_DOMAIN}"
     PROXY_TYPE="${PROXY_TYPE:-$EXISTING_PROXY_TYPE}"
     SSL_MODE="${SSL_MODE:-$EXISTING_SSL_MODE}"
+    TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-$EXISTING_TRAEFIK_NETWORK}"
     IMAGE_VERSION="${IMAGE_VERSION:-$EXISTING_IMAGE_VERSION}"
     DB_MODE="${DB_MODE:-$EXISTING_DB_MODE}"
     DATA_ROOT="${DATA_ROOT:-$EXISTING_DATA_ROOT}"
@@ -219,6 +223,9 @@ if [ "$SETUP_MODE" = "from_env" ]; then
     echo "   Stack: ${STACK_NAME}"
     echo "   Domain: ${DOMAIN}"
     echo "   DB Type: ${DB_TYPE}, Mode: ${DB_MODE}"
+    if [ "$PROXY_TYPE" = "traefik" ]; then
+        echo "   Traefik network: ${TRAEFIK_NETWORK:-traefik-public}"
+    fi
     if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
         if [ "$DB_TYPE" = "postgresql" ]; then
             echo "   pgAdmin: ${PGADMIN_URL} (${PGADMIN_EMAIL})"
