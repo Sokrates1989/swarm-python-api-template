@@ -338,7 +338,7 @@ if [ "$PROXY_TYPE" = "traefik" ]; then
 fi
 
 # Prompt for Traefik network in interactive mode (after SSL mode is known)
-if [ "$CONFIG_MODE" = "2" ] && [ "$PROXY_TYPE" = "traefik" ]; then
+if [ "$SETUP_MODE" = "interactive" ] && [ "$PROXY_TYPE" = "traefik" ]; then
     TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
 fi
 
