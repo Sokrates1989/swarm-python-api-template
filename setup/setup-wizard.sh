@@ -714,7 +714,7 @@ case "$FINAL_ACTION" in
     5)
         echo ""
         echo "🔐 Creating secrets interactively with prefix: ${PREFIX_UPPER}_*"
-        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET"
+        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET" "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
         echo ""
         echo "✅ Secrets created."
         ;;

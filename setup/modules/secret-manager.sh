@@ -176,8 +176,24 @@ create_single_secret() {
         # Check if secret already exists
         if docker secret inspect "$secret_name" &>/dev/null; then
             echo "⚠️  Secret '$secret_name' already exists"
-            read -p "Delete and recreate? (y/N): " RECREATE
+            if [[ -r /dev/tty ]]; then
+                read -r -p "Delete and recreate? (y/N): " RECREATE < /dev/tty
+            else
+                read -r -p "Delete and recreate? (y/N): " RECREATE
+            fi
             if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+                local stack_name="${STACK_NAME:-}"
+                if [ -z "$stack_name" ] && [ -f .env ]; then
+                    stack_name=$(grep '^STACK_NAME=' .env 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r')
+                fi
+                if [ -n "$stack_name" ] && declare -F check_stack_conflict >/dev/null 2>&1; then
+                    check_stack_conflict "$stack_name"
+                    if docker stack ls --format "{{.Name}}" | grep -q "^${stack_name}$"; then
+                        echo "❌ Cannot recreate secret while stack '$stack_name' is still running"
+                        rm -f secret.txt
+                        return 1
+                    fi
+                fi
                 echo "Removing old secret..."
                 if docker secret rm "$secret_name" >/dev/null 2>&1; then
                     echo "Creating new secret..."
@@ -242,6 +258,7 @@ create_docker_secrets() {
     local admin_api_key_secret="$2"
     local backup_restore_api_key_secret="$3"
     local backup_delete_api_key_secret="$4"
+    local db_ui_admin_password_secret="${5:-}"
     
     echo "🔑 Create Docker Secrets"
     echo "======================="
@@ -256,6 +273,9 @@ create_docker_secrets() {
         echo "   - $admin_api_key_secret"
         echo "   - $backup_restore_api_key_secret"
         echo "   - $backup_delete_api_key_secret"
+        if [ -n "$db_ui_admin_password_secret" ]; then
+            echo "   - $db_ui_admin_password_secret"
+        fi
         echo ""
         return 0
     fi
@@ -276,6 +296,9 @@ create_docker_secrets() {
         echo "  echo 'your-api-key' | docker secret create $admin_api_key_secret -"
         echo "  echo 'your-restore-key' | docker secret create $backup_restore_api_key_secret -"
         echo "  echo 'your-delete-key' | docker secret create $backup_delete_api_key_secret -"
+        if [ -n "$db_ui_admin_password_secret" ]; then
+            echo "  echo 'your-admin-ui-password' | docker secret create $db_ui_admin_password_secret -"
+        fi
         return 1
     fi
     
@@ -284,6 +307,9 @@ create_docker_secrets() {
     create_single_secret "$admin_api_key_secret" "$EDITOR"
     create_single_secret "$backup_restore_api_key_secret" "$EDITOR"
     create_single_secret "$backup_delete_api_key_secret" "$EDITOR"
+    if [ -n "$db_ui_admin_password_secret" ]; then
+        create_single_secret "$db_ui_admin_password_secret" "$EDITOR"
+    fi
     
     echo ""
     echo "✅ Secret creation complete"
@@ -386,27 +412,46 @@ verify_secrets_exist() {
 create_secret_from_value() {
     local secret_name="$1"
     local secret_value="$2"
+    CREATE_SECRET_FROM_VALUE_ACTION="error"
 
     if docker secret inspect "$secret_name" >/dev/null 2>&1; then
         echo "⚠️  Secret '$secret_name' already exists."
-        read -p "   Delete and recreate? (y/N): " RECREATE
+        if [[ -r /dev/tty ]]; then
+            read -r -p "   Delete and recreate? (y/N): " RECREATE < /dev/tty
+        else
+            read -r -p "   Delete and recreate? (y/N): " RECREATE
+        fi
         if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+            local stack_name="${STACK_NAME:-}"
+            if [ -z "$stack_name" ] && [ -f .env ]; then
+                stack_name=$(grep '^STACK_NAME=' .env 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r')
+            fi
+            if [ -n "$stack_name" ] && declare -F check_stack_conflict >/dev/null 2>&1; then
+                check_stack_conflict "$stack_name"
+                if docker stack ls --format "{{.Name}}" | grep -q "^${stack_name}$"; then
+                    echo "❌ Cannot recreate secret while stack '$stack_name' is still running"
+                    return 1
+                fi
+            fi
             docker secret rm "$secret_name" >/dev/null 2>&1 || {
                 echo "❌ Failed to remove existing secret: $secret_name"
                 return 1
             }
         else
             echo "   Skipping $secret_name (keeping existing)"
+            CREATE_SECRET_FROM_VALUE_ACTION="kept"
             return 0
         fi
     fi
 
     if [ -z "$secret_value" ]; then
         echo "⚠️  Empty value for $secret_name, skipping"
+        CREATE_SECRET_FROM_VALUE_ACTION="empty"
         return 0
     fi
 
     printf '%s' "$secret_value" | docker secret create "$secret_name" - >/dev/null 2>&1 && {
+        CREATE_SECRET_FROM_VALUE_ACTION="created"
         return 0
     } || {
         echo "❌ Failed to create secret: $secret_name"
@@ -483,7 +528,7 @@ create_secrets_from_env_file() {
     fi
 
     # Parse and create secrets
-    local key value created=0 skipped=0
+    local key value created=0 skipped=0 kept=0
     while IFS='=' read -r key value || [ -n "$key" ]; do
         # Remove carriage returns (Windows line endings)
         key="${key%$'\r'}"
@@ -511,8 +556,18 @@ create_secrets_from_env_file() {
         if [ -n "$value" ]; then
             local full_name="${prefix}_${key}"
             if create_secret_from_value "$full_name" "$value"; then
-                echo "✅ Secret created: $full_name"
-                created=$((created + 1))
+                case "${CREATE_SECRET_FROM_VALUE_ACTION:-created}" in
+                    created)
+                        echo "✅ Secret created: $full_name"
+                        created=$((created + 1))
+                        ;;
+                    kept)
+                        kept=$((kept + 1))
+                        ;;
+                    empty)
+                        skipped=$((skipped + 1))
+                        ;;
+                esac
             fi
         else
             skipped=$((skipped + 1))
@@ -521,6 +576,9 @@ create_secrets_from_env_file() {
 
     echo ""
     echo "✅ Created $created secret(s)"
+    if [ $kept -gt 0 ]; then
+        echo "   Kept $kept existing secret(s)"
+    fi
     if [ $skipped -gt 0 ]; then
         echo "   Skipped $skipped empty value(s)"
     fi

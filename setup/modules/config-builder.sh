@@ -252,6 +252,7 @@ update_stack_secrets() {
         sed -i '' "s|XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX|$backup_restore_api_key_secret|g" "$stack_file"
         sed -i '' "s|XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX|$backup_delete_api_key_secret|g" "$stack_file"
         if [ -n "$db_ui_admin_password_secret" ]; then
+            sed -i '' "s|XXX_CHANGE_ME_DB_UI_ADMIN_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
             sed -i '' "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
         fi
         if [ -n "$db_ui_admin_password_secret" ]; then
@@ -264,6 +265,7 @@ update_stack_secrets() {
         sed -i "s|XXX_CHANGE_ME_BACKUP_RESTORE_API_KEY_XXX|$backup_restore_api_key_secret|g" "$stack_file"
         sed -i "s|XXX_CHANGE_ME_BACKUP_DELETE_API_KEY_XXX|$backup_delete_api_key_secret|g" "$stack_file"
         if [ -n "$db_ui_admin_password_secret" ]; then
+            sed -i "s|XXX_CHANGE_ME_DB_UI_ADMIN_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
             sed -i "s|XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
             sed -i "s|XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX|$db_ui_admin_password_secret|g" "$stack_file"
         fi
