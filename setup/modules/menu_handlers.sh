@@ -45,6 +45,21 @@ _stack_running() {
     docker stack ls --format '{{.Name}}' 2>/dev/null | grep -qx "${stack_name}"
 }
 
+_service_replicas_healthy() {
+    local service_name="$1"
+    local replicas
+    replicas=$(docker service ls --filter "name=${service_name}" --format '{{.Replicas}}' 2>/dev/null | head -n 1)
+
+    if [[ "$replicas" =~ ^([0-9]+)/([0-9]+)$ ]]; then
+        local current="${BASH_REMATCH[1]}"
+        local desired="${BASH_REMATCH[2]}"
+        [ "$desired" -gt 0 ] && [ "$current" = "$desired" ]
+        return $?
+    fi
+
+    return 1
+}
+
 # show_deployment_overview
 # Displays a boxed deployment overview using globals from load_root_env.
 #
@@ -59,18 +74,23 @@ show_deployment_overview() {
     local image_version="${IMAGE_VERSION:-latest}"
     local deployment_profile="${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-}}"
 
-    local stack_state="not running"
-    if _stack_running "$stack_name"; then
-        stack_state="running"
-    fi
-
     local ok_icon="✅"
     local off_icon="⏹️"
+    local warn_icon="⚠️"
     local stack_status="${off_icon} not running"
     local image_icon="${off_icon}"
-    if [ "$stack_state" = "running" ]; then
-        stack_status="${ok_icon} running"
-        image_icon="${ok_icon}"
+
+    if _stack_running "$stack_name"; then
+        if _service_replicas_healthy "${stack_name}_api"; then
+            stack_status="${ok_icon} healthy"
+            image_icon="${ok_icon}"
+        else
+            stack_status="${warn_icon} degraded"
+            image_icon="${warn_icon}"
+        fi
+    else
+        stack_status="${off_icon} not running"
+        image_icon="${off_icon}"
     fi
 
     _box_rule

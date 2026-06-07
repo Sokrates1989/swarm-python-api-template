@@ -167,7 +167,7 @@ check_deployment_health() {
         
         HEALTH_RESPONSE=$(curl -s -k "https://${api_url}/health" 2>&1 || echo "Connection failed")
         
-        if echo "$HEALTH_RESPONSE" | grep -q "healthy"; then
+        if echo "$HEALTH_RESPONSE" | grep -Eq 'healthy|"status"[[:space:]]*:[[:space:]]*"OK"'; then
             echo "✅ API health check passed"
             echo "Response: $HEALTH_RESPONSE"
         else

@@ -512,7 +512,7 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 # Database-specific env vars
 if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
     {
-        echo "DB_HOST=${STACK_NAME}_postgres"
+        echo "DB_HOST=postgres"
         echo "DB_PORT=5432"
         echo "DB_NAME=${STACK_NAME//-/_}_db"
         echo "DB_USER=${STACK_NAME//-/_}_user"

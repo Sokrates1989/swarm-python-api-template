@@ -32,7 +32,7 @@ services:
       ADMIN_API_KEY_FILE: /run/secrets/XXX_CHANGE_ME_ADMIN_API_KEY_XXX
       DB_TYPE: ${DB_TYPE}
       DB_MODE: local
-      DB_HOST: ${STACK_NAME}_postgres
+      DB_HOST: postgres
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PORT: ${DB_PORT}
