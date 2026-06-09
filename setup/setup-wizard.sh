@@ -512,11 +512,11 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 # Database-specific env vars
 if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
     {
-        echo "DB_HOST=postgres"
+        echo "DB_HOST=${STACK_NAME}_postgres"
         echo "DB_PORT=5432"
         echo "DB_NAME=${STACK_NAME//-/_}_db"
         echo "DB_USER=${STACK_NAME//-/_}_user"
-        echo "POSTGRES_HOST=postgres"
+        echo "POSTGRES_HOST=${STACK_NAME}_postgres"
         echo "POSTGRES_PORT=5432"
         echo "POSTGRES_DB=${STACK_NAME//-/_}_db"
         echo "POSTGRES_USER=${STACK_NAME//-/_}_user"
@@ -571,6 +571,7 @@ fi
     echo "REDIS_URL=redis://redis:6379/0"
     echo ""
     echo "# API"
+    echo "API_URL=${DOMAIN}"
     echo "PYTHON_VERSION=3.11"
     echo "PORT=8080"
     echo "DEBUG=false"
