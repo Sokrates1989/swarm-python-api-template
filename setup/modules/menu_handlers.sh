@@ -32,6 +32,12 @@ if [ -f "${MENU_HANDLERS_DIR}/auth_provider.sh" ]; then
     source "${MENU_HANDLERS_DIR}/auth_provider.sh"
 fi
 
+# Source git update helpers
+if [ -f "${MENU_HANDLERS_DIR}/git_helpers.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/git_helpers.sh"
+fi
+
 # _stack_running
 # Checks if a Docker stack is running.
 #
@@ -154,6 +160,9 @@ show_deployment_overview() {
     fi
     _box_line "Images   :"
     _box_line_list "${image_icon} ${image_name}:${image_version}"
+    if declare -F show_git_status_line >/dev/null; then
+        _box_line "$(show_git_status_line)"
+    fi
     _box_rule
     echo ""
 }
@@ -170,6 +179,11 @@ show_main_menu() {
     local choice
     local env_file="${PROJECT_ROOT:-.}/.env"
     local stack_file="${PROJECT_ROOT:-.}/swarm-stack.yml"
+
+    # Check for repo updates once on menu entry
+    if declare -F check_git_updates >/dev/null; then
+        check_git_updates
+    fi
 
     while true; do
         local MENU_NEXT=1
@@ -268,10 +282,23 @@ show_main_menu() {
         echo "  ${MENU_EXIT}) Exit"
         echo ""
 
+        if [ "$_GIT_UPDATE_STATUS" = "behind" ]; then
+            echo "  ────────────────────────────────────────"
+            echo "  u) ⬆️  Update deployment scripts (${_GIT_UPDATE_BEHIND_COUNT} update(s) available)"
+            echo "  ────────────────────────────────────────"
+            echo ""
+        fi
+
+        local prompt_text="Your choice (1-${MENU_EXIT}"
+        if [ "$_GIT_UPDATE_STATUS" = "behind" ]; then
+            prompt_text="${prompt_text}, u"
+        fi
+        prompt_text="${prompt_text}): "
+
         if [[ -r /dev/tty ]]; then
-            read -r -p "Your choice (1-${MENU_EXIT}): " choice < /dev/tty
+            read -r -p "$prompt_text" choice < /dev/tty
         else
-            read -r -p "Your choice (1-${MENU_EXIT}): " choice
+            read -r -p "$prompt_text" choice
         fi
 
         if [ -n "$MENU_SETUP_AUTH" ] && [ "$choice" = "$MENU_SETUP_AUTH" ]; then
@@ -852,6 +879,13 @@ show_main_menu() {
         ${MENU_EXIT})
             echo "👋 Goodbye!"
             exit 0
+            ;;
+        u|U)
+            if [ "$_GIT_UPDATE_STATUS" = "behind" ]; then
+                handle_git_pull
+            else
+                echo "ℹ️  Repository is already up to date."
+            fi
             ;;
         *)
             echo "❌ Invalid choice"
