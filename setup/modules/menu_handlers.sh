@@ -60,6 +60,53 @@ _service_replicas_healthy() {
     return 1
 }
 
+# _bump_semver
+# Bumps a semantic version string by level (patch/minor/major).
+# Supports optional "v" prefix (e.g. v1.2.3).
+# Returns empty string when input is not semver-like.
+#
+# Arguments:
+#   $1 - version: current version string
+#   $2 - level: bump level (patch, minor, or major)
+#
+# Returns:
+#   Bumped version string (or empty if invalid)
+_bump_semver() {
+    local version="$1"
+    local level="$2"
+
+    if [ -z "$version" ]; then
+        version="0.0.0"
+    fi
+
+    local prefix=""
+    if [[ "$version" =~ ^[vV] ]]; then
+        prefix="${version:0:1}"
+        version="${version:1}"
+    fi
+
+    if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+        echo ""
+        return 0
+    fi
+
+    local IFS='.'
+    local major minor patch
+    read -r major minor patch <<< "$version"
+    major="${major:-0}"
+    minor="${minor:-0}"
+    patch="${patch:-0}"
+
+    case "$level" in
+        patch) patch=$((patch + 1)) ;;
+        minor) minor=$((minor + 1)); patch=0 ;;
+        major) major=$((major + 1)); minor=0; patch=0 ;;
+        *) echo ""; return 0 ;;
+    esac
+
+    echo "${prefix}${major}.${minor}.${patch}"
+}
+
 # show_deployment_overview
 # Displays a boxed deployment overview using globals from load_root_env.
 #
@@ -309,17 +356,97 @@ show_main_menu() {
             ;;
         ${MENU_UPDATE_IMAGE})
             echo "🔄 Update API Image"
+            echo "========================"
             echo ""
-            if [[ -r /dev/tty ]]; then
-                read -r -p "Enter new image version [$IMAGE_VERSION]: " new_version < /dev/tty
+            echo "  Current image: $IMAGE_NAME:$IMAGE_VERSION"
+            echo ""
+
+            local patch_version minor_version major_version
+            patch_version="$(_bump_semver "$IMAGE_VERSION" "patch")"
+            minor_version="$(_bump_semver "$IMAGE_VERSION" "minor")"
+            major_version="$(_bump_semver "$IMAGE_VERSION" "major")"
+
+            echo "Version options:"
+            if [ -n "$patch_version" ] && [ -n "$minor_version" ] && [ -n "$major_version" ]; then
+                echo "  [1] Patch  ($IMAGE_VERSION -> $patch_version)"
+                echo "  [2] Minor  ($IMAGE_VERSION -> $minor_version)"
+                echo "  [3] Major  ($IMAGE_VERSION -> $major_version)"
+                echo "  [4] Enter manually"
             else
-                read -r -p "Enter new image version [$IMAGE_VERSION]: " new_version
+                echo "  [1] Patch  (unavailable for '$IMAGE_VERSION')"
+                echo "  [2] Minor  (unavailable for '$IMAGE_VERSION')"
+                echo "  [3] Major  (unavailable for '$IMAGE_VERSION')"
+                echo "  [4] Enter manually"
             fi
-            new_version="${new_version:-$IMAGE_VERSION}"
+            echo ""
+
+            local default_choice="1"
+            if [ -z "$patch_version" ] || [ -z "$minor_version" ] || [ -z "$major_version" ]; then
+                default_choice="4"
+            fi
+
+            local version_choice
+            if [[ -r /dev/tty ]]; then
+                read -r -p "Choose version option [$default_choice]: " version_choice < /dev/tty
+            else
+                read -r -p "Choose version option [$default_choice]: " version_choice
+            fi
+            version_choice="${version_choice:-$default_choice}"
+
+            local new_version=""
+            case "$version_choice" in
+                1)
+                    if [ -n "$patch_version" ]; then
+                        new_version="$patch_version"
+                    fi
+                    ;;
+                2)
+                    if [ -n "$minor_version" ]; then
+                        new_version="$minor_version"
+                    fi
+                    ;;
+                3)
+                    if [ -n "$major_version" ]; then
+                        new_version="$major_version"
+                    fi
+                    ;;
+                4)
+                    local manual_version
+                    if [[ -r /dev/tty ]]; then
+                        read -r -p "Enter version tag: " manual_version < /dev/tty
+                    else
+                        read -r -p "Enter version tag: " manual_version
+                    fi
+                    new_version="$manual_version"
+                    ;;
+                *)
+                    if [ -n "$patch_version" ]; then
+                        new_version="$patch_version"
+                    fi
+                    ;;
+            esac
+
+            if [ -z "$new_version" ]; then
+                echo "Version unchanged."
+                break
+            fi
+
+            if [ "$new_version" = "$IMAGE_VERSION" ]; then
+                echo "Version unchanged."
+                break
+            fi
 
             echo ""
             echo "Pulling image: $IMAGE_NAME:$new_version"
-            docker pull "$IMAGE_NAME:$new_version"
+            if docker pull "$IMAGE_NAME:$new_version"; then
+                echo "✅ Image pulled successfully"
+            else
+                echo "❌ Image pull failed"
+                read -r -p "Continue anyway? (y/N): " continue_anyway
+                if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+                    break
+                fi
+            fi
 
             echo ""
             echo "Updating service..."
@@ -328,7 +455,7 @@ show_main_menu() {
             # Persist to .env
             if [ -f "$env_file" ]; then
                 update_env_values "$env_file" "IMAGE_VERSION" "$new_version"
-                echo "Saved IMAGE_VERSION=$new_version to .env"
+                echo "✅ Saved IMAGE_VERSION=$new_version to .env"
             fi
             IMAGE_VERSION="$new_version"
 
