@@ -77,7 +77,15 @@ The generated `swarm-stack.yml` is ready for deployment:
 
 ```bash
 # Method 1: Direct deployment with variable substitution
-docker stack deploy -c <(docker-compose -f swarm-stack.yml config) <STACK_NAME>
+set -a
+. ./.env
+set +a
+
+# Verify that rendered paths, hostnames, labels, and stack-specific names come from this repository's .env.
+docker-compose --env-file .env -f swarm-stack.yml config
+
+# Deploy only after the rendered config is correct.
+docker stack deploy -c <(docker-compose --env-file .env -f swarm-stack.yml config) "$STACK_NAME"
 
 # Method 2: Generate merged file first (useful for inspection)
 docker-compose -f swarm-stack.yml config > merged-stack.yml
