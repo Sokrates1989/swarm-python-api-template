@@ -28,7 +28,7 @@
 #   APP_CONFIG_FILE, APP_ID, APP_NAME, APP_DESCRIPTION,
 #   APP_KIND, APP_STACK_FAMILY, APP_STACK_ROLE, APP_PRIMARY_SERVICE,
 #   APP_ROUTING_CONTAINER_PORT, APP_DB_TYPE, APP_DB_DEFAULT_MODE,
-#   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE,
+#   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE, APP_SECRET_COUNT,
 #   APP_IMAGE_NAME, APP_IMAGE_DEFAULT_VERSION,
 #   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT
 #
@@ -165,6 +165,7 @@ load_app_config() {
     # Service requirements
     APP_REQUIRES_REDIS="$(_jq_or_default "$config_file" '.services.redis' "true")"
     APP_REQUIRES_DATABASE="$(_jq_or_default "$config_file" '.services.database' "true")"
+    APP_SECRET_COUNT="$(_jq_or_default "$config_file" '.secrets | length' "0")"
 
     # Image defaults
     APP_IMAGE_NAME="$(_jq_or_default "$config_file" '.image.name' "")"
@@ -245,7 +246,7 @@ show_app_selector() {
     # Loop until valid choice or explicit exit
     while true; do
         local choice
-        if [[ -r /dev/tty ]]; then
+        if [[ -r /dev/tty && -t 0 ]]; then
             read -r -p "Select [1-${#configs[@]}, q]: " choice < /dev/tty
         else
             read -r -p "Select [1-${#configs[@]}, q]: " choice

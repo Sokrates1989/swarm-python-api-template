@@ -8,17 +8,17 @@
 #
 # The wizard reads an app deployment manifest from site-configs/ to know what
 # the backend app needs (database type, services, image). It then asks for
-# deployment-time values (domain, proxy, secrets, image version) that are
+# deployment-time values (domain, proxy, optional secrets, image version) that are
 # only known on the actual server.
 #
 # Flow:
 #   1. Select which app config to use (from site-configs/).
 #   2. Collect deployment-time values (domain, stack name, proxy, SSL, image
-#      version, secret prefix, data root).
+#      version, optional secret prefix, data root).
 #   3. Generate root .env.
 #   4. Build root swarm-stack.yml (from compose modules).
-#   5. Offer final actions: save only / create data dirs / create secrets /
-#      deploy.
+#   5. Offer final actions: save only / create data dirs / create secrets when
+#      required / deploy.
 #
 # Dependencies:
 #   - jq
@@ -68,6 +68,55 @@ _validate_non_empty() {
 _validate_domain() {
     local domain="$1"
     [ -n "$domain" ] && [[ "$domain" =~ \. ]] && [[ ! "$domain" =~ [[:space:]] ]]
+}
+
+# ------------------------------------------------------------------------------
+# build_current_stack_file
+# ------------------------------------------------------------------------------
+# Builds swarm-stack.yml for the selected profile. Prefers the root build script
+# because it reloads .env, exports STACK_FAMILY/STACK_ROLE, and applies the same
+# placeholder cleanup used by quick-start deployments. The fallback keeps direct
+# setup-wizard builds working when the script is unavailable.
+#
+# Returns:
+#   0 when the stack file was built, 1 when generation failed.
+# ------------------------------------------------------------------------------
+build_current_stack_file() {
+    local builder="${PROJECT_ROOT}/scripts/build-site-stack.sh"
+
+    export STACK_FAMILY="${APP_STACK_FAMILY:-${STACK_FAMILY:-api}}"
+    export STACK_ROLE="${APP_STACK_ROLE:-${STACK_ROLE:-api}}"
+    export PRIMARY_SERVICE="${APP_PRIMARY_SERVICE:-${PRIMARY_SERVICE:-api}}"
+    export REDIRECT_TARGET_BASE_URL="${REDIRECT_TARGET_BASE_URL:-${APP_REDIRECT_TARGET_BASE_URL:-}}"
+    export REDIRECT_STATUS_CODE="${REDIRECT_STATUS_CODE:-${APP_REDIRECT_STATUS_CODE:-302}}"
+    export TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-traefik-public}"
+
+    if [ -f "$builder" ]; then
+        bash "$builder"
+        return $?
+    fi
+
+    if ! command -v build_stack_file >/dev/null 2>&1; then
+        echo "Stack builder not available. Run scripts/build-site-stack.sh manually."
+        return 1
+    fi
+
+    build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
+    update_stack_name "$STACK_FILE" "$STACK_NAME"
+    if [ "$PROXY_TYPE" = "traefik" ]; then
+        update_stack_network "$STACK_FILE" "${TRAEFIK_NETWORK:-traefik-public}"
+    fi
+
+    if [ "${SECRETS_REQUIRED:-false}" = "true" ] && [ "${STACK_FAMILY:-api}" != "nginx" ]; then
+        update_stack_secrets "$STACK_FILE" \
+            "${PREFIX_UPPER}_DB_PASSWORD" \
+            "${PREFIX_UPPER}_ADMIN_API_KEY" \
+            "${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY" \
+            "${PREFIX_UPPER}_BACKUP_DELETE_API_KEY" \
+            "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+    else
+        echo "No Docker secrets required for this profile; skipping secret placeholders."
+    fi
 }
 
 # ===========================================================================
@@ -140,6 +189,12 @@ fi
 
 # Load app manifest for defaults
 load_app_config "$PROJECT_ROOT" "$SELECTED_CONFIG"
+
+APP_SECRET_COUNT="${APP_SECRET_COUNT:-0}"
+SECRETS_REQUIRED="false"
+if [ "$APP_SECRET_COUNT" -gt 0 ] 2>/dev/null; then
+    SECRETS_REQUIRED="true"
+fi
 
 echo ""
 echo "Selected deployment profile: ${APP_NAME} (${SELECTED_CONFIG})"
@@ -491,6 +546,12 @@ done
 
 fi  # End of interactive mode conditional
 
+# Make the selected profile metadata available to direct builder calls.
+STACK_FAMILY="${APP_STACK_FAMILY:-api}"
+STACK_ROLE="${APP_STACK_ROLE:-api}"
+PRIMARY_SERVICE="${APP_PRIMARY_SERVICE:-api}"
+export STACK_FAMILY STACK_ROLE PRIMARY_SERVICE
+
 # =============================================================================
 # STEP 3: Generate root .env
 # =============================================================================
@@ -638,10 +699,15 @@ echo "Building swarm-stack.yml..."
 
 STACK_FILE="${PROJECT_ROOT}/swarm-stack.yml"
 
-if [ -x "${PROJECT_ROOT}/scripts/build-site-stack.sh" ]; then
-    "${PROJECT_ROOT}/scripts/build-site-stack.sh" || true
-else
-    echo "build-site-stack.sh not found. You can build manually later."
+# Derive secret names when the selected profile needs Docker secrets.
+PREFIX_UPPER=$(echo "$SECRET_PREFIX" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+DB_PASSWORD_SECRET="${PREFIX_UPPER}_DB_PASSWORD"
+ADMIN_API_KEY_SECRET="${PREFIX_UPPER}_ADMIN_API_KEY"
+BACKUP_RESTORE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY"
+BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
+
+if ! build_current_stack_file; then
+    echo "Initial stack build failed. You can build manually later with scripts/build-site-stack.sh."
 fi
 
 # =============================================================================
@@ -664,26 +730,35 @@ echo "What would you like to do next?"
 echo "  1) Done (save only)"
 echo "  2) Create data directories"
 echo "  3) Build swarm-stack.yml"
-echo "  4) Create secrets from secrets.env file (recommended)"
-echo "  5) Create secrets interactively"
-echo "  6) Deploy to Docker Swarm"
-echo "  7) Full deploy (data dirs + stack + secrets + deploy)"
+if [ "$SECRETS_REQUIRED" = "true" ]; then
+    echo "  4) Create secrets from secrets.env file (recommended)"
+    echo "  5) Create secrets interactively"
+    echo "  6) Deploy to Docker Swarm"
+    echo "  7) Full deploy (data dirs + stack + secrets + deploy)"
+    max_choice=7
+else
+    echo "  4) Deploy to Docker Swarm"
+    echo "  5) Full deploy (data dirs + stack + deploy)"
+    echo ""
+    echo "No Docker secrets are required for this deployment profile."
+    max_choice=5
+fi
 echo ""
 while true; do
-    read -p "Your choice (1-7) [1]: " FINAL_ACTION
+    read -p "Your choice (1-${max_choice}) [1]: " FINAL_ACTION
     FINAL_ACTION="${FINAL_ACTION:-1}"
-    case "$FINAL_ACTION" in
-        1|2|3|4|5|6|7) break ;;
-        *) echo "Invalid choice: '$FINAL_ACTION'. Please enter a number between 1 and 7." ;;
-    esac
+    if [[ "$FINAL_ACTION" =~ ^[0-9]+$ ]] && [ "$FINAL_ACTION" -ge 1 ] && [ "$FINAL_ACTION" -le "$max_choice" ]; then
+        if [ "$SECRETS_REQUIRED" != "true" ]; then
+            case "$FINAL_ACTION" in
+                4) FINAL_ACTION=6 ;;
+                5) FINAL_ACTION=7 ;;
+            esac
+        fi
+        break
+    fi
+    echo "Invalid choice: '$FINAL_ACTION'. Please enter a number between 1 and ${max_choice}."
 done
 
-# Derive secret names
-PREFIX_UPPER=$(echo "$SECRET_PREFIX" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
-DB_PASSWORD_SECRET="${PREFIX_UPPER}_DB_PASSWORD"
-ADMIN_API_KEY_SECRET="${PREFIX_UPPER}_ADMIN_API_KEY"
-BACKUP_RESTORE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY"
-BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
 
 case "$FINAL_ACTION" in
     1)
@@ -693,7 +768,11 @@ case "$FINAL_ACTION" in
         echo "Next steps you can do manually:"
         echo "  - Create data dirs:   mkdir -p ${DATA_ROOT}/{postgres_data,redis_data}"
         echo "  - Build stack:        ./setup/setup-wizard.sh -> option 3"
-        echo "  - Create secrets:     ./quick-start.sh -> Manage Docker secrets"
+        if [ "$SECRETS_REQUIRED" = "true" ]; then
+            echo "  - Create secrets:     ./quick-start.sh -> Manage Docker secrets"
+        else
+            echo "  - Secrets:            none required for this profile"
+        fi
         echo "  - Deploy:             ./quick-start.sh -> deploy option"
         echo "  - Manual deploy:      set -a; source .env; set +a"
         echo "                         docker stack deploy -c <(docker compose -f swarm-stack.yml config) $STACK_NAME"
@@ -707,23 +786,11 @@ case "$FINAL_ACTION" in
     3)
         echo ""
         echo "Building swarm-stack.yml..."
-        if command -v build_stack_file >/dev/null 2>&1; then
-            build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
+        if build_current_stack_file; then
             echo ""
-            update_stack_name "$STACK_FILE" "$STACK_NAME"
-            if [ "$PROXY_TYPE" = "traefik" ]; then
-                update_stack_network "$STACK_FILE" "${TRAEFIK_NETWORK:-traefik-public}"
-            fi
-            update_stack_secrets "$STACK_FILE" \
-                "${PREFIX_UPPER}_DB_PASSWORD" \
-                "${PREFIX_UPPER}_ADMIN_API_KEY" \
-                "${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY" \
-                "${PREFIX_UPPER}_BACKUP_DELETE_API_KEY" \
-                "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
-            echo ""
-            echo "swarm-stack.yml built and secrets updated."
+            echo "swarm-stack.yml built."
         else
-            echo "Stack builder not available. Run build-site-stack.sh manually."
+            echo "Stack builder failed. Run scripts/build-site-stack.sh manually."
         fi
         ;;
     4)
@@ -758,30 +825,27 @@ case "$FINAL_ACTION" in
         create_data_directories "$DATA_ROOT" "$DB_TYPE"
         echo ""
 
-        echo "--- Step 2/4: Build swarm-stack.yml ---"
-        if command -v build_stack_file >/dev/null 2>&1; then
-            build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
-            echo ""
-            update_stack_name "$STACK_FILE" "$STACK_NAME"
-            if [ "$PROXY_TYPE" = "traefik" ]; then
-                update_stack_network "$STACK_FILE" "${TRAEFIK_NETWORK:-traefik-public}"
-            fi
-            update_stack_secrets "$STACK_FILE" \
-                "${PREFIX_UPPER}_DB_PASSWORD" \
-                "${PREFIX_UPPER}_ADMIN_API_KEY" \
-                "${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY" \
-                "${PREFIX_UPPER}_BACKUP_DELETE_API_KEY" \
-                "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+        if [ "$SECRETS_REQUIRED" = "true" ]; then
+            echo "--- Step 2/4: Build swarm-stack.yml ---"
         else
-            echo "Stack builder not available. Run build-site-stack.sh manually."
+            echo "--- Step 2/3: Build swarm-stack.yml ---"
+        fi
+        if ! build_current_stack_file; then
+            echo "Stack builder failed. Build the stack before deploying."
+            exit 1
         fi
         echo ""
 
-        echo "--- Step 3/4: Secrets ---"
-        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
-        echo ""
-
-        echo "--- Step 4/4: Deploy ---"
+        if [ "$SECRETS_REQUIRED" = "true" ]; then
+            echo "--- Step 3/4: Secrets ---"
+            create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
+            echo ""
+            echo "--- Step 4/4: Deploy ---"
+        else
+            echo "No Docker secrets required; skipping secret creation."
+            echo ""
+            echo "--- Step 3/3: Deploy ---"
+        fi
         if [ -f "$STACK_FILE" ]; then
             # Check/create Traefik network if needed
             if [ "$PROXY_TYPE" = "traefik" ]; then
