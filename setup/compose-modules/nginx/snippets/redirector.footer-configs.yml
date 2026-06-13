@@ -1,0 +1,3 @@
+configs:
+  nginx_redirector_template:
+    file: ./generated/nginx/default.conf.template

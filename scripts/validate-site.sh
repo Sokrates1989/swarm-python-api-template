@@ -39,17 +39,17 @@ WARN_COUNT=0
 FAIL_COUNT=0
 
 _pass() {
-    echo "  ✅ $1"
+    echo "  [OK] $1"
     PASS_COUNT=$((PASS_COUNT + 1))
 }
 
 _warn() {
-    echo "  ⚠️  $1"
+    echo "  [WARN] $1"
     WARN_COUNT=$((WARN_COUNT + 1))
 }
 
 _fail() {
-    echo "  ❌ $1"
+    echo "  [ERROR] $1"
     FAIL_COUNT=$((FAIL_COUNT + 1))
 }
 
@@ -63,9 +63,9 @@ _env_val() {
 # ===========================================================================
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "========================================"
 echo "  Deployment Validation"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "========================================"
 echo ""
 
 # --- Check 1: Root .env ---
@@ -74,15 +74,23 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 if [ ! -f "$ENV_FILE" ]; then
     _fail "Root .env not found. Run setup-wizard.sh first."
     echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  ❌ Validation cannot continue without .env"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "========================================"
+    echo "  [ERROR] Validation cannot continue without .env"
+    echo "========================================"
     exit 1
 fi
 _pass "Root .env exists"
 
+# Determine stack family before required-key validation.
+STACK_FAMILY="$(_env_val STACK_FAMILY)"
+STACK_FAMILY="${STACK_FAMILY:-api}"
+
 # Check required keys
-REQUIRED_KEYS=("STACK_NAME" "IMAGE_NAME" "IMAGE_VERSION" "DB_TYPE" "DB_MODE" "PROXY_TYPE")
+if [ "$STACK_FAMILY" = "nginx" ]; then
+    REQUIRED_KEYS=("STACK_NAME" "IMAGE_NAME" "IMAGE_VERSION" "PROXY_TYPE" "PORT")
+else
+    REQUIRED_KEYS=("STACK_NAME" "IMAGE_NAME" "IMAGE_VERSION" "DB_TYPE" "DB_MODE" "PROXY_TYPE")
+fi
 for key in "${REQUIRED_KEYS[@]}"; do
     if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
         _pass ".env contains ${key}"
@@ -115,6 +123,18 @@ echo ""
 echo "  [Compose Modules]"
 MODULES_DIR="${PROJECT_ROOT}/setup/compose-modules"
 
+if [ "$STACK_FAMILY" = "nginx" ]; then
+    if [ -f "${MODULES_DIR}/nginx/nginx.template.yml" ]; then
+        _pass "nginx.template.yml exists"
+    else
+        _fail "nginx.template.yml missing"
+    fi
+    if [ -f "${MODULES_DIR}/nginx/footer.yml" ]; then
+        _pass "nginx/footer.yml exists"
+    else
+        _fail "nginx/footer.yml missing"
+    fi
+else
 if [ -f "${MODULES_DIR}/api.template.yml" ]; then
     _pass "api.template.yml exists"
 else
@@ -131,6 +151,7 @@ if [ -f "${MODULES_DIR}/footer.yml" ]; then
     _pass "footer.yml exists"
 else
     _fail "footer.yml missing"
+fi
 fi
 
 # Database module check
@@ -150,7 +171,9 @@ fi
 # --- Check 4: Secrets ---
 echo ""
 echo "  [Secrets]"
-if [ -n "$SECRETS_PREFIX" ]; then
+if [ "$STACK_FAMILY" = "nginx" ]; then
+    _pass "No Docker secrets required for nginx-only stack"
+elif [ -n "$SECRETS_PREFIX" ]; then
     EXPECTED_SECRETS=(
         "${SECRETS_PREFIX}DB_PASSWORD"
         "${SECRETS_PREFIX}ADMIN_API_KEY"
@@ -210,19 +233,19 @@ fi
 # ===========================================================================
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "========================================"
 echo "  Validation Summary"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "========================================"
 echo ""
-echo "  ✅ Passed:   ${PASS_COUNT}"
-echo "  ⚠️  Warnings: ${WARN_COUNT}"
-echo "  ❌ Failed:   ${FAIL_COUNT}"
+echo "  [OK] Passed:   ${PASS_COUNT}"
+echo "  [WARN] Warnings: ${WARN_COUNT}"
+echo "  [ERROR] Failed:   ${FAIL_COUNT}"
 echo ""
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
-    echo "❌ Validation failed with ${FAIL_COUNT} error(s)."
+    echo "[ERROR] Validation failed with ${FAIL_COUNT} error(s)."
     exit 1
 else
-    echo "✅ All checks passed."
+    echo "[OK] All checks passed."
     exit 0
 fi

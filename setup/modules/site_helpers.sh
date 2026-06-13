@@ -10,7 +10,7 @@
 # In this deployment model, each git clone of this repo IS one deployment.
 # The .env, swarm-stack.yml, and data directories all live at PROJECT ROOT.
 # site-configs/ holds app manifests that describe what a backend app needs
-# (database type, required services, image name, etc.) — info known at
+# (database type, required services, image name, etc.) -- info known at
 # development time.
 #
 # Functions:
@@ -26,7 +26,8 @@
 #
 # Exported Globals (set by load_app_config):
 #   APP_CONFIG_FILE, APP_ID, APP_NAME, APP_DESCRIPTION,
-#   APP_DB_TYPE, APP_DB_DEFAULT_MODE,
+#   APP_KIND, APP_STACK_FAMILY, APP_STACK_ROLE, APP_PRIMARY_SERVICE,
+#   APP_ROUTING_CONTAINER_PORT, APP_DB_TYPE, APP_DB_DEFAULT_MODE,
 #   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE,
 #   APP_IMAGE_NAME, APP_IMAGE_DEFAULT_VERSION,
 #   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT
@@ -133,13 +134,13 @@ load_app_config() {
     local config_file="${project_root}/site-configs/${config_id}.json"
 
     if [ ! -f "$config_file" ]; then
-        echo "❌ App config not found: $config_file" >&2
+        echo "App config not found: $config_file" >&2
         return 1
     fi
 
     if ! command -v jq &>/dev/null; then
-        echo "❌ jq is required but not installed." >&2
-        echo "   Install it with: sudo apt-get install jq" >&2
+        echo "jq is required but not installed." >&2
+        echo "Install it with: sudo apt-get install jq" >&2
         return 1
     fi
 
@@ -148,6 +149,14 @@ load_app_config() {
     APP_ID="$(_jq_or_default "$config_file" '.appId' "$config_id")"
     APP_NAME="$(_jq_or_default "$config_file" '.name' "$config_id")"
     APP_DESCRIPTION="$(_jq_or_default "$config_file" '.description' "")"
+    APP_KIND="$(_jq_or_default "$config_file" '.kind' "api")"
+    APP_STACK_FAMILY="$(_jq_or_default "$config_file" '.stack.family' "$APP_KIND")"
+    APP_STACK_ROLE="$(_jq_or_default "$config_file" '.stack.role' "api")"
+    APP_PRIMARY_SERVICE="$(_jq_or_default "$config_file" '.stack.primaryService' "api")"
+    APP_ROUTING_CONTAINER_PORT="$(_jq_or_default "$config_file" '.routing.containerPort' "8080")"
+    APP_REDIRECTOR_ENABLED="$(_jq_or_default "$config_file" '.redirector.enabled' "false")"
+    APP_REDIRECT_TARGET_BASE_URL="$(_jq_or_default "$config_file" '.redirector.defaultTargetBaseUrl' "")"
+    APP_REDIRECT_STATUS_CODE="$(_jq_or_default "$config_file" '.redirector.statusCode' "302")"
 
     # Database requirements
     APP_DB_TYPE="$(_jq_or_default "$config_file" '.database.type' "postgresql")"
@@ -193,20 +202,20 @@ show_app_selector() {
 
     echo "" >&2
     echo "============================================" >&2
-    echo "  Select Deployment Profile" >&2
+    echo "Select Deployment Profile" >&2
     echo "============================================" >&2
     echo "" >&2
 
     if [ ${#configs[@]} -eq 0 ]; then
-        echo "  No deployment profiles found in site-configs/." >&2
-        echo "  Create a JSON manifest first (see site-configs/_template.json)." >&2
+        echo "No deployment profiles found in site-configs/." >&2
+        echo "Create a JSON manifest first (see site-configs/_template.json)." >&2
         echo "" >&2
         echo "EXIT"
         return 0
     fi
 
     # Display available profiles once
-    echo "  Available deployment profiles:" >&2
+    echo "Available deployment profiles:" >&2
     echo "" >&2
 
     local i
@@ -230,7 +239,7 @@ show_app_selector() {
     done
 
     echo "" >&2
-    echo "  q) Exit" >&2
+    echo "q) Exit" >&2
     echo "" >&2
 
     # Loop until valid choice or explicit exit
@@ -248,7 +257,7 @@ show_app_selector() {
                 return 0
                 ;;
             "")
-                echo "❌ Selection is required. Please enter a number (1-${#configs[@]}) or 'q' to exit." >&2
+                echo "Selection is required. Please enter a number (1-${#configs[@]}) or 'q' to exit." >&2
                 ;;
             *)
                 # Numeric selection
@@ -256,8 +265,8 @@ show_app_selector() {
                     echo "${configs[$((choice - 1))]}"
                     return 0
                 else
-                    echo "❌ Invalid choice: $choice" >&2
-                    echo "   Please enter a number between 1 and ${#configs[@]}, or 'q' to exit." >&2
+                    echo "Invalid choice: $choice" >&2
+                    echo "Please enter a number between 1 and ${#configs[@]}, or 'q' to exit." >&2
                 fi
                 ;;
         esac
@@ -290,6 +299,9 @@ load_root_env() {
     }
 
     export STACK_NAME="$(_env_val STACK_NAME)"
+    export STACK_FAMILY="$(_env_val STACK_FAMILY)"
+    export STACK_ROLE="$(_env_val STACK_ROLE)"
+    export PRIMARY_SERVICE="$(_env_val PRIMARY_SERVICE)"
     export DOMAIN="$(_env_val DOMAIN)"
     export API_URL="$DOMAIN"
     export DB_TYPE="$(_env_val DB_TYPE)"
@@ -299,6 +311,8 @@ load_root_env() {
     export TRAEFIK_NETWORK="$(_env_val TRAEFIK_NETWORK)"
     export IMAGE_NAME="$(_env_val IMAGE_NAME)"
     export IMAGE_VERSION="$(_env_val IMAGE_VERSION)"
+    export REDIRECT_TARGET_BASE_URL="$(_env_val REDIRECT_TARGET_BASE_URL)"
+    export REDIRECT_STATUS_CODE="$(_env_val REDIRECT_STATUS_CODE)"
     export API_REPLICAS="$(_env_val API_REPLICAS)"
     export MEMORY_LIMIT="$(_env_val MEMORY_LIMIT)"
     export SECRET_PREFIX="$(_env_val SECRETS_PREFIX)"

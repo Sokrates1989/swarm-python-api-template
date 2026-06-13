@@ -43,7 +43,7 @@ deploy_stack() {
     local stack_file_abs="$stack_dir/$(basename "$stack_file")"
     local env_file="$stack_dir/.env"
     
-    echo "🚀 Deploying Stack"
+    echo "[DEPLOY] Deploying Stack"
     echo "=================="
     echo ""
     echo "Stack name: $stack_name"
@@ -60,7 +60,7 @@ deploy_stack() {
     fi
     
     echo ""
-    echo "Deploying stack..."
+    echo "[DEPLOY] Deploying stack..."
 
     # Load environment variables from .env file for variable substitution
     if [ -f "$env_file" ]; then
@@ -77,7 +77,7 @@ deploy_stack() {
     elif docker compose version >/dev/null 2>&1; then
         compose_cmd=(docker compose)
     else
-        echo "❌ Neither docker-compose nor 'docker compose' is available"
+        echo "[ERROR] Neither docker-compose nor 'docker compose' is available"
         return 1
     fi
 
@@ -90,27 +90,31 @@ deploy_stack() {
     ) "$stack_name"
     
     if [ $? -ne 0 ]; then
-        echo "❌ Deployment failed"
+        echo "[ERROR] Deployment failed"
         return 1
     fi
     
     echo ""
-    echo "✅ Stack deployed successfully"
+    echo "[OK] Stack deployed successfully"
     echo ""
     echo ""
     
-    echo "📋 Deployment Summary"
+    echo "[SUMMARY] Deployment Summary"
     echo "===================="
     echo ""
     echo "Stack deployed: $stack_name"
+    local service_name="api"
+    if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
+        service_name="nginx"
+    fi
     echo ""
     echo "Useful commands:"
     echo "  docker stack services $stack_name          # Check service status"
-    echo "  docker service logs ${stack_name}_api      # View API logs"
-    echo "  docker service ps ${stack_name}_api        # Check API tasks"
+    echo "  docker service logs ${stack_name}_${service_name}      # View service logs"
+    echo "  docker service ps ${stack_name}_${service_name}        # Check service tasks"
     echo "  docker stack rm $stack_name                # Remove stack"
     echo ""
-    echo "💡 Tip: Run health checks with the health-check.sh module"
+    echo "[TIP] Run health checks with the health-check.sh module"
     echo ""
     
     return 0

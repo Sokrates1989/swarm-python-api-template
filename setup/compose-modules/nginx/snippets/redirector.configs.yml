@@ -1,0 +1,3 @@
+    configs:
+      - source: nginx_redirector_template
+        target: /etc/nginx/templates/default.conf.template

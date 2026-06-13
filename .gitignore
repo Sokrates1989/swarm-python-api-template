@@ -4,6 +4,7 @@
 .env
 swarm-stack.yml
 .setup-complete
+generated/
 
 # ==============================================================================
 # Data directories (host-mounted volumes created on the server)
@@ -31,3 +32,4 @@ backups/
 .DS_Store
 *.swp
 *~
+generated/

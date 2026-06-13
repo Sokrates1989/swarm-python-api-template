@@ -47,7 +47,7 @@ build_env_file() {
     local proxy_type="$3"
     local project_root="$4"
     
-    echo "⚙️  Building .env file..."
+    echo "Building .env file..."
     
     # Start with base template
     cat "${project_root}/setup/env-templates/.env.base.template" > "${project_root}/.env"
@@ -74,7 +74,7 @@ build_env_file() {
         cat "${project_root}/setup/env-templates/.env.proxy-none.template" >> "${project_root}/.env"
     fi
     
-    echo "✅ .env file created"
+    echo " .env file created"
 }
 
 # ------------------------------------------------------------------------------
@@ -91,13 +91,18 @@ build_env_file() {
 #   $5 - ssl_mode: (optional) "direct" or "letsencrypt" for Traefik labels
 # ------------------------------------------------------------------------------
 build_stack_file() {
+    if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
+        build_nginx_stack_file "$3" "$4" "${5:-direct}"
+        return $?
+    fi
+
     local db_type="$1"
     local db_mode="$2"
     local proxy_type="$3"
     local project_root="$4"
     local ssl_mode="${5:-direct}"  # Default to direct SSL if not specified
     
-    echo "⚙️  Building swarm-stack.yml..."
+    echo "Building swarm-stack.yml..."
     
     # Start with base
     cat "${project_root}/setup/compose-modules/base.yml" > "${project_root}/swarm-stack.yml"
@@ -179,7 +184,7 @@ build_stack_file() {
     # Add footer (networks and secrets)
     cat "${project_root}/setup/compose-modules/footer.yml" >> "${project_root}/swarm-stack.yml"
     
-    echo "✅ swarm-stack.yml created"
+    echo "swarm-stack.yml created"
 }
 
 # ------------------------------------------------------------------------------
@@ -342,17 +347,17 @@ add_cognito_to_stack() {
     
     # Check if COGNITO_CREATED_SECRETS is set
     if [ -z "${COGNITO_CREATED_SECRETS}" ]; then
-        echo "⚠️  No Cognito secrets were created, skipping stack update"
+        echo "No Cognito secrets were created, skipping stack update"
         return 0
     fi
     
     # Check if Cognito configuration already exists
     if grep -q "COGNITO_USER_POOL_ID_FILE" "$stack_file"; then
-        echo "ℹ️  Cognito configuration already present in stack file"
+        echo "Cognito configuration already present in stack file"
         return 0
     fi
     
-    echo "⚙️  Adding Cognito secrets to stack file..."
+    echo "Adding Cognito secrets to stack file..."
     
     # Get AWS_REGION from .env
     local aws_region=""
@@ -435,11 +440,11 @@ open('$stack_file', 'w').write(content)
 "
     
     if [ $? -ne 0 ]; then
-        echo "❌ Failed to update stack file with Cognito configuration"
+        echo "Failed to update stack file with Cognito configuration"
         return 1
     fi
     
-    echo "✅ Cognito secrets added to stack file"
+    echo "Cognito secrets added to stack file"
     return 0
 }
 
@@ -462,12 +467,126 @@ backup_existing_files() {
     if [ -f "${project_root}/.env" ]; then
         local backup_file="${project_root}/backup/env/.env.${timestamp}"
         cp "${project_root}/.env" "$backup_file"
-        echo "📋 Backed up .env to backup/env/.env.${timestamp}"
+        echo "Backed up .env to backup/env/.env.${timestamp}"
     fi
     
     if [ -f "${project_root}/swarm-stack.yml" ]; then
         local backup_file="${project_root}/backup/swarm-stack-yml/swarm-stack.yml.${timestamp}"
         cp "${project_root}/swarm-stack.yml" "$backup_file"
-        echo "📋 Backed up swarm-stack.yml to backup/swarm-stack-yml/swarm-stack.yml.${timestamp}"
+        echo "Backed up swarm-stack.yml to backup/swarm-stack-yml/swarm-stack.yml.${timestamp}"
     fi
+}
+# ------------------------------------------------------------------------------
+# write_nginx_redirector_template
+# ------------------------------------------------------------------------------
+# Writes the nginx template consumed by the official nginx image for redirector
+# profiles. Values stay in environment variables so server operators can change
+# redirect targets and status codes from .env without rebuilding an image.
+#
+# Arguments:
+#   $1 - project_root: absolute path to project root
+# ------------------------------------------------------------------------------
+write_nginx_redirector_template() {
+    local project_root="$1"
+    local generated_dir="${project_root}/generated/nginx"
+    local template_file="${generated_dir}/default.conf.template"
+
+    mkdir -p "$generated_dir"
+    cat > "$template_file" <<'NGINX_REDIRECTOR_TEMPLATE'
+server {
+    listen 80;
+    server_name _;
+
+    location = /health {
+        add_header Content-Type text/plain;
+        return 200 'ok';
+    }
+
+    location / {
+        return ${REDIRECT_STATUS_CODE} ${REDIRECT_TARGET_BASE_URL}${DOLLAR}request_uri;
+    }
+}
+NGINX_REDIRECTOR_TEMPLATE
+}
+# ------------------------------------------------------------------------------
+# build_nginx_stack_file
+# ------------------------------------------------------------------------------
+# Assembles an nginx-only swarm-stack.yml for deployment profiles that serve
+# static content and do not need API, Redis, database, or Docker secrets.
+#
+# Arguments:
+#   $1 - proxy_type: "traefik" or "none"
+#   $2 - project_root: absolute path to project root
+#   $3 - ssl_mode: "direct" or "proxy" for Traefik labels
+# ------------------------------------------------------------------------------
+build_nginx_stack_file() {
+    local proxy_type="$1"
+    local project_root="$2"
+    local ssl_mode="${3:-direct}"
+    local stack_role="${STACK_ROLE:-}"
+    local modules_dir="${project_root}/setup/compose-modules/nginx"
+    local snippets_dir="${modules_dir}/snippets"
+    local output_file="${project_root}/swarm-stack.yml"
+    local temp_nginx="${modules_dir}/nginx.temp.yml"
+    local temp_footer="${modules_dir}/footer.temp.yml"
+
+    echo "Building nginx-only swarm-stack.yml..."
+
+    echo "# Generated by setup wizard - DO NOT EDIT MANUALLY" > "$output_file"
+    echo "# Re-run setup wizard to regenerate" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "services:" >> "$output_file"
+
+    cp "${modules_dir}/nginx.template.yml" "$temp_nginx"
+
+    if [ "$stack_role" = "redirector" ]; then
+        write_nginx_redirector_template "$project_root"
+
+        local redirector_env_snippet="${snippets_dir}/redirector.environment.yml"
+        local redirector_configs_snippet="${snippets_dir}/redirector.configs.yml"
+        _config_builder_sed_inplace "/###NGINX_ENV###/r $redirector_env_snippet" "$temp_nginx"
+        _config_builder_sed_inplace "/###NGINX_CONFIGS###/r $redirector_configs_snippet" "$temp_nginx"
+    fi
+    _config_builder_sed_inplace '/###NGINX_ENV###/d' "$temp_nginx"
+    _config_builder_sed_inplace '/###NGINX_CONFIGS###/d' "$temp_nginx"
+
+    if [ "$proxy_type" = "traefik" ]; then
+        local proxy_labels_snippet="${snippets_dir}/proxy-traefik-${ssl_mode}-ssl.labels.yml"
+        if [ ! -f "$proxy_labels_snippet" ]; then
+            proxy_labels_snippet="${snippets_dir}/proxy-traefik-direct-ssl.labels.yml"
+        fi
+
+        _config_builder_sed_inplace 's|###PROXY_NETWORK###|      - ${TRAEFIK_NETWORK}|' "$temp_nginx"
+        _config_builder_sed_inplace "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_nginx"
+        _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_nginx"
+        _config_builder_sed_inplace '/###PROXY_PORTS###/d' "$temp_nginx"
+    else
+        local proxy_ports_snippet="${snippets_dir}/proxy-none.ports.yml"
+        _config_builder_sed_inplace "/###PROXY_PORTS###/r $proxy_ports_snippet" "$temp_nginx"
+        _config_builder_sed_inplace '/###PROXY_PORTS###/d' "$temp_nginx"
+        _config_builder_sed_inplace '/###PROXY_NETWORK###/d' "$temp_nginx"
+        _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_nginx"
+    fi
+
+    cat "$temp_nginx" >> "$output_file"
+    rm -f "$temp_nginx"
+
+    cp "${modules_dir}/footer.yml" "$temp_footer"
+    if [ "$stack_role" = "redirector" ]; then
+        local redirector_footer_configs_snippet="${snippets_dir}/redirector.footer-configs.yml"
+        _config_builder_sed_inplace "/###NGINX_CONFIG_DEFINITIONS###/r $redirector_footer_configs_snippet" "$temp_footer"
+    fi
+    _config_builder_sed_inplace '/###NGINX_CONFIG_DEFINITIONS###/d' "$temp_footer"
+    if [ "$proxy_type" = "traefik" ]; then
+        local traefik_network="${TRAEFIK_NETWORK:-traefik-public}"
+        local traefik_network_block="${modules_dir}/traefik-network.temp.yml"
+        printf '  %s:\n    external: true\n' "$traefik_network" > "$traefik_network_block"
+        _config_builder_sed_inplace "/###TRAEFIK_NETWORK###/r $traefik_network_block" "$temp_footer"
+        rm -f "$traefik_network_block"
+    fi
+    _config_builder_sed_inplace '/###TRAEFIK_NETWORK###/d' "$temp_footer"
+    cat "$temp_footer" >> "$output_file"
+    rm -f "$temp_footer"
+
+    echo "nginx-only swarm-stack.yml created"
 }

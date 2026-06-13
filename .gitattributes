@@ -1,0 +1,2 @@
+# Keep deployment scripts runnable on Linux hosts and Docker bind mounts.
+*.sh text eol=lf

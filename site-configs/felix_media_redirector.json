@@ -1,0 +1,53 @@
+{
+  "$schema": "site-config-schema",
+  "version": "3.1",
+  "kind": "nginx",
+  "appId": "felix_media_redirector",
+  "name": "Felix Media Redirector",
+  "description": "Nginx-only redirector for Felix reward media, allowing the public media URL to point at the active media server.",
+  "stack": {
+    "family": "nginx",
+    "role": "redirector",
+    "primaryService": "nginx"
+  },
+  "database": {
+    "type": "none",
+    "defaultMode": "none"
+  },
+  "services": {
+    "api": false,
+    "redis": false,
+    "database": false,
+    "nginx": true
+  },
+  "routing": {
+    "defaultDomain": "media.fe-wi.com",
+    "containerPort": 80
+  },
+  "image": {
+    "name": "nginx",
+    "defaultVersion": "alpine"
+  },
+  "resources": {
+    "defaultReplicas": 1,
+    "defaultMemoryLimit": "128M"
+  },
+  "redirector": {
+    "enabled": true,
+    "defaultTargetBaseUrl": "https://media1.fe-wi.com",
+    "statusCode": 302,
+    "preserveRequestUri": true
+  },
+  "secrets": [],
+  "envKeys": [
+    "DEPLOYMENT_PROFILE_ID",
+    "STACK_FAMILY",
+    "STACK_ROLE",
+    "IMAGE_NAME",
+    "IMAGE_VERSION",
+    "PORT",
+    "REDIRECT_TARGET_BASE_URL",
+    "REDIRECT_STATUS_CODE"
+  ],
+  "notes": "Deploy this profile at media.fe-wi.com when the app should use a stable public media URL. Change REDIRECT_TARGET_BASE_URL in .env to move traffic to another media server without rebuilding this image."
+}

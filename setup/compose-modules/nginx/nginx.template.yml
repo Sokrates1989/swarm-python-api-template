@@ -1,0 +1,27 @@
+  nginx:
+    image: ${IMAGE_NAME}:${IMAGE_VERSION}
+###NGINX_ENV###
+###NGINX_CONFIGS###
+    networks:
+      - public
+###PROXY_NETWORK###
+###PROXY_PORTS###
+    deploy:
+      mode: replicated
+      replicas: ${NGINX_REPLICAS:-1}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+###PROXY_LABELS###
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:${PORT}/health || wget -q --spider http://localhost:${PORT}/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s

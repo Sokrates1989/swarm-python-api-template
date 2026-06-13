@@ -1,0 +1,5 @@
+networks:
+  public:
+    driver: overlay
+###TRAEFIK_NETWORK###
+###NGINX_CONFIG_DEFINITIONS###

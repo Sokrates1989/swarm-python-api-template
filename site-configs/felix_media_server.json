@@ -1,0 +1,45 @@
+{
+  "$schema": "site-config-schema",
+  "version": "3.1",
+  "kind": "nginx",
+  "appId": "felix_media_server",
+  "name": "Felix Media Server",
+  "description": "Nginx-only public static media server for Felix reward media files.",
+  "stack": {
+    "family": "nginx",
+    "role": "media-server",
+    "primaryService": "nginx"
+  },
+  "database": {
+    "type": "none",
+    "defaultMode": "none"
+  },
+  "services": {
+    "api": false,
+    "redis": false,
+    "database": false,
+    "nginx": true
+  },
+  "routing": {
+    "defaultDomain": "media1.fe-wi.com",
+    "containerPort": 80
+  },
+  "image": {
+    "name": "sokrates1989/nginx_felix_media",
+    "defaultVersion": "0.1.0"
+  },
+  "resources": {
+    "defaultReplicas": 1,
+    "defaultMemoryLimit": "256M"
+  },
+  "secrets": [],
+  "envKeys": [
+    "DEPLOYMENT_PROFILE_ID",
+    "STACK_FAMILY",
+    "STACK_ROLE",
+    "IMAGE_NAME",
+    "IMAGE_VERSION",
+    "PORT"
+  ],
+  "notes": "Serves baked public Felix media files at media1.fe-wi.com for direct testing. Pair later with the media.fe-wi.com redirector when the app should use a stable public media URL."
+}

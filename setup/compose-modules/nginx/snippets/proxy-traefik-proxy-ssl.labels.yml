@@ -1,0 +1,10 @@
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=traefik-public
+        - traefik.docker.network=${TRAEFIK_NETWORK}
+        - traefik.http.routers.${STACK_NAME}_nginx.service=${STACK_NAME}_nginx
+        - traefik.http.services.${STACK_NAME}_nginx.loadbalancer.server.port=${PORT}
+        - traefik.http.routers.${STACK_NAME}_nginx.rule=Host(`${DOMAIN}`)
+        - traefik.http.routers.${STACK_NAME}_nginx.entrypoints=http
+        - traefik.http.middlewares.${STACK_NAME}_protoheader.headers.customrequestheaders.X-Forwarded-Proto=https
+        - traefik.http.routers.${STACK_NAME}_nginx.middlewares=${STACK_NAME}_protoheader
