@@ -216,6 +216,7 @@ EXISTING_PGADMIN_EMAIL=""
 EXISTING_MONGO_EXPRESS_USERNAME=""
 EXISTING_REDIRECT_TARGET_BASE_URL=""
 EXISTING_REDIRECT_STATUS_CODE=""
+EXISTING_NGINX_REPLICAS=""
 
 if [ -f "${PROJECT_ROOT}/.env" ]; then
     load_root_env "$PROJECT_ROOT"
@@ -233,6 +234,7 @@ if [ -f "${PROJECT_ROOT}/.env" ]; then
     EXISTING_MONGO_EXPRESS_USERNAME="$MONGO_EXPRESS_USERNAME"
     EXISTING_REDIRECT_TARGET_BASE_URL="$REDIRECT_TARGET_BASE_URL"
     EXISTING_REDIRECT_STATUS_CODE="$REDIRECT_STATUS_CODE"
+    EXISTING_NGINX_REPLICAS="$NGINX_REPLICAS"
     echo "Existing .env found. Press Enter to keep current values."
     echo ""
 fi
@@ -276,8 +278,13 @@ if [ "$SETUP_MODE" = "from_env" ]; then
     DB_TYPE="${DB_TYPE:-$APP_DB_TYPE}"
     IMAGE_NAME="${IMAGE_NAME:-$APP_IMAGE_NAME}"
 
-    # Use defaults for replicas; memory defaults to unlimited if not set
-    API_REPLICAS="${API_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}"
+    # Use defaults for replicas; memory defaults to unlimited if not set.
+    if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
+        NGINX_REPLICAS="${NGINX_REPLICAS:-${EXISTING_NGINX_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}}"
+        API_REPLICAS="${API_REPLICAS:-$NGINX_REPLICAS}"
+    else
+        API_REPLICAS="${API_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}"
+    fi
     # MEMORY_LIMIT intentionally left unset if no existing value (unlimited by default)
 
     echo "Loaded configuration:"
@@ -520,8 +527,14 @@ echo "Image: $IMAGE_NAME:$IMAGE_VERSION"
 # Resources
 echo ""
 DEFAULT_REPLICAS="${APP_DEFAULT_REPLICAS}"
-read -p "API replicas [$DEFAULT_REPLICAS]: " API_REPLICAS
-API_REPLICAS="${API_REPLICAS:-$DEFAULT_REPLICAS}"
+if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
+    read -p "Nginx replicas [$DEFAULT_REPLICAS]: " NGINX_REPLICAS
+    NGINX_REPLICAS="${NGINX_REPLICAS:-$DEFAULT_REPLICAS}"
+    API_REPLICAS="$NGINX_REPLICAS"
+else
+    read -p "API replicas [$DEFAULT_REPLICAS]: " API_REPLICAS
+    API_REPLICAS="${API_REPLICAS:-$DEFAULT_REPLICAS}"
+fi
 echo ""
 echo "Memory limit (Docker memory constraint):"
 echo "  - Leave empty for unlimited (recommended for most deployments)"
@@ -640,25 +653,36 @@ fi
         echo "REDIRECT_STATUS_CODE=${REDIRECT_STATUS_CODE:-${EXISTING_REDIRECT_STATUS_CODE:-${APP_REDIRECT_STATUS_CODE:-302}}}"
         echo ""
     fi
-    echo "# Redis"
-    echo "REDIS_HOST=redis"
-    echo "REDIS_PORT=6379"
-    echo "REDIS_REPLICAS=1"
-    echo "REDIS_URL=redis://redis:6379/0"
-    echo ""
-    echo "# API"
-    echo "API_URL=${DOMAIN}"
-    echo "PYTHON_VERSION=3.11"
-    echo "PORT=${APP_ROUTING_CONTAINER_PORT:-8080}"
-    echo "DEBUG=false"
-    echo ""
+    if [ "${APP_REQUIRES_REDIS:-true}" = "true" ] && [ "${APP_STACK_FAMILY:-api}" != "nginx" ]; then
+        echo "# Redis"
+        echo "REDIS_HOST=redis"
+        echo "REDIS_PORT=6379"
+        echo "REDIS_REPLICAS=1"
+        echo "REDIS_URL=redis://redis:6379/0"
+        echo ""
+    fi
+    if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
+        echo "# Nginx"
+        echo "PORT=${APP_ROUTING_CONTAINER_PORT:-80}"
+        echo ""
+    else
+        echo "# API"
+        echo "API_URL=${DOMAIN}"
+        echo "PYTHON_VERSION=3.11"
+        echo "PORT=${APP_ROUTING_CONTAINER_PORT:-8080}"
+        echo "DEBUG=false"
+        echo ""
+    fi
     echo "# Docker Image"
     echo "IMAGE_NAME=${IMAGE_NAME}"
     echo "IMAGE_VERSION=${IMAGE_VERSION}"
     echo ""
     echo "# Resources"
-    echo "API_REPLICAS=${API_REPLICAS}"
-    echo "NGINX_REPLICAS=${API_REPLICAS}"
+    if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
+        echo "NGINX_REPLICAS=${NGINX_REPLICAS:-${API_REPLICAS:-1}}"
+    else
+        echo "API_REPLICAS=${API_REPLICAS}"
+    fi
     if [ -n "${MEMORY_LIMIT}" ]; then
         echo "MEMORY_LIMIT=${MEMORY_LIMIT}"
     fi
@@ -682,11 +706,13 @@ if [ "$PROXY_TYPE" = "traefik" ]; then
     } >> "$ENV_FILE"
 fi
 
-{
-    echo ""
-    echo "# Secrets"
-    echo "SECRETS_PREFIX=${SECRET_PREFIX}"
-} >> "$ENV_FILE"
+if [ "${SECRETS_REQUIRED:-false}" = "true" ]; then
+    {
+        echo ""
+        echo "# Secrets"
+        echo "SECRETS_PREFIX=${SECRET_PREFIX}"
+    } >> "$ENV_FILE"
+fi
 
 echo " .env written: $ENV_FILE"
 

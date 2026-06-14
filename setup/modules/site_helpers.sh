@@ -34,7 +34,7 @@
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
-#   DOMAIN, API_REPLICAS, MEMORY_LIMIT, SECRET_PREFIX
+#   DOMAIN, API_REPLICAS, NGINX_REPLICAS, MEMORY_LIMIT, SECRET_PREFIX
 # ==============================================================================
 
 # Guard against multiple sourcing.
@@ -315,6 +315,7 @@ load_root_env() {
     export REDIRECT_TARGET_BASE_URL="$(_env_val REDIRECT_TARGET_BASE_URL)"
     export REDIRECT_STATUS_CODE="$(_env_val REDIRECT_STATUS_CODE)"
     export API_REPLICAS="$(_env_val API_REPLICAS)"
+    export NGINX_REPLICAS="$(_env_val NGINX_REPLICAS)"
     export MEMORY_LIMIT="$(_env_val MEMORY_LIMIT)"
     export SECRET_PREFIX="$(_env_val SECRETS_PREFIX)"
     export DEPLOYMENT_PROFILE_ID="$(_env_val DEPLOYMENT_PROFILE_ID)"

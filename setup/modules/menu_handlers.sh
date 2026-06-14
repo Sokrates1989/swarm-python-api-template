@@ -51,6 +51,15 @@ _stack_running() {
     docker stack ls --format '{{.Name}}' 2>/dev/null | grep -qx "${stack_name}"
 }
 
+# _service_replicas_healthy
+# Checks whether one Docker service has reached its desired replica count.
+#
+# Arguments:
+#   $1 - service_name: full Docker service name.
+#
+# Returns:
+#   0 when current replicas equal desired replicas and desired is greater than
+#   zero, 1 otherwise.
 _service_replicas_healthy() {
     local service_name="$1"
     local replicas
@@ -64,6 +73,130 @@ _service_replicas_healthy() {
     fi
 
     return 1
+}
+
+# _profile_requires_secrets
+# Checks whether the active deployment profile needs Docker secrets.
+#
+# Arguments:
+#   None. Reads STACK_FAMILY and DB_TYPE from the loaded environment.
+#
+# Returns:
+#   0 when secret actions should be shown, 1 when the profile has no secrets.
+_profile_requires_secrets() {
+    if [ "${STACK_FAMILY:-api}" = "nginx" ] || [ "${DB_TYPE:-postgresql}" = "none" ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# _primary_service_suffix
+# Resolves the active profile's primary service suffix.
+#
+# Arguments:
+#   None. Reads PRIMARY_SERVICE and STACK_FAMILY from the loaded environment.
+#
+# Outputs:
+#   Service suffix without the stack-name prefix.
+#
+# Returns:
+#   0 always.
+_primary_service_suffix() {
+    if [ -n "${PRIMARY_SERVICE:-}" ]; then
+        echo "$PRIMARY_SERVICE"
+        return 0
+    fi
+
+    if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
+        echo "nginx"
+        return 0
+    fi
+
+    echo "api"
+}
+
+# _primary_service_name
+# Builds the Docker service name for the active profile's primary service.
+#
+# Arguments:
+#   None. Reads STACK_NAME and primary service environment values.
+#
+# Outputs:
+#   Full Docker service name, such as stack_api or stack_nginx.
+#
+# Returns:
+#   0 always.
+_primary_service_name() {
+    echo "${STACK_NAME}_$(_primary_service_suffix)"
+}
+
+# _primary_service_label
+# Builds a human-readable label for primary-service menu text.
+#
+# Arguments:
+#   None. Reads the active primary service suffix.
+#
+# Outputs:
+#   Display label such as API, Nginx, or Service.
+#
+# Returns:
+#   0 always.
+_primary_service_label() {
+    case "$(_primary_service_suffix)" in
+        api) echo "API" ;;
+        nginx) echo "Nginx" ;;
+        *) echo "Service" ;;
+    esac
+}
+
+# _stack_service_names
+# Lists actual Docker services for the stack, or falls back to the primary
+# service before a deployment exists.
+#
+# Arguments:
+#   $1 - stack_name: Docker stack name.
+#
+# Outputs:
+#   One Docker service name per line.
+#
+# Returns:
+#   0 always.
+_stack_service_names() {
+    local stack_name="$1"
+    local services
+
+    services=$(docker service ls --filter "label=com.docker.stack.namespace=${stack_name}" --format '{{.Name}}' 2>/dev/null || true)
+    if [ -n "$services" ]; then
+        printf '%s\n' $services
+        return 0
+    fi
+
+    echo "${stack_name}_$(_primary_service_suffix)"
+}
+
+# _stack_services_healthy
+# Checks whether every deployed stack service has reached its desired replica
+# count. This avoids assuming an API service exists for nginx-only profiles.
+#
+# Arguments:
+#   $1 - stack_name: Docker stack name.
+#
+# Returns:
+#   0 when all deployed services are healthy, 1 otherwise.
+_stack_services_healthy() {
+    local stack_name="$1"
+    local services
+    local saw_service=false
+
+    services="$(_stack_service_names "$stack_name")"
+    while IFS= read -r service_name; do
+        [ -z "$service_name" ] && continue
+        saw_service=true
+        _service_replicas_healthy "$service_name" || return 1
+    done <<< "$services"
+
+    [ "$saw_service" = true ]
 }
 
 # _bump_semver
@@ -134,7 +267,7 @@ show_deployment_overview() {
     local image_icon="${off_icon}"
 
     if _stack_running "$stack_name"; then
-        if _service_replicas_healthy "${stack_name}_api"; then
+        if _stack_services_healthy "$stack_name"; then
             stack_status="${ok_icon} healthy"
             image_icon="${ok_icon}"
         else
@@ -189,12 +322,16 @@ show_main_menu() {
         local MENU_NEXT=1
         local MENU_SETUP_WIZARD=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_SETUP_SECRETS=$MENU_NEXT
-        MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_SETUP_SECRETS="__disabled_setup_secrets"
         local MENU_RESTORE_ENV=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_RESTORE_SECRETS=$MENU_NEXT
-        MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_RESTORE_SECRETS="__disabled_restore_secrets"
+        if _profile_requires_secrets; then
+            MENU_SETUP_SECRETS=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
+            MENU_RESTORE_SECRETS=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
+        fi
         local MENU_SETUP_AUTH=""
         if declare -F setup_auth_provider >/dev/null; then
             MENU_SETUP_AUTH=$MENU_NEXT
@@ -241,9 +378,13 @@ show_main_menu() {
 
         echo "Setup:"
         echo "  ${MENU_SETUP_WIZARD}) Re-run setup wizard"
-        echo "  ${MENU_SETUP_SECRETS}) Manage Docker secrets"
+        if _profile_requires_secrets; then
+            echo "  ${MENU_SETUP_SECRETS}) Manage Docker secrets"
+        fi
         echo "  ${MENU_RESTORE_ENV}) Quick restore from saved .env"
-        echo "  ${MENU_RESTORE_SECRETS}) Quick restore from saved secrets.env"
+        if _profile_requires_secrets; then
+            echo "  ${MENU_RESTORE_SECRETS}) Quick restore from saved secrets.env"
+        fi
         if [ -n "$MENU_SETUP_AUTH" ]; then
             echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
         fi
@@ -256,7 +397,7 @@ show_main_menu() {
         echo ""
 
         echo "Management:"
-        echo "  ${MENU_UPDATE_IMAGE}) Update API image"
+        echo "  ${MENU_UPDATE_IMAGE}) Update service image"
         echo "  ${MENU_SCALE}) Scale services"
         echo "  ${MENU_REMOVE}) Remove deployment"
         echo "  ${MENU_BUILD_STACK}) Rebuild swarm stack"
@@ -312,10 +453,14 @@ show_main_menu() {
 
         case $choice in
         ${MENU_DEPLOY})
-            echo "🚀 Deploying to Docker Swarm..."
+            echo "[DEPLOY] Deploying to Docker Swarm..."
             echo ""
-            echo "⚠️  Make sure you have:"
-            echo "   - Created Docker secrets"
+            echo "Before deployment, make sure you have:"
+            if _profile_requires_secrets; then
+                echo "   - Created Docker secrets"
+            else
+                echo "   - No Docker secrets are required for this profile"
+            fi
             echo "   - Configured your domain DNS"
             echo "   - Created data directories"
             echo ""
@@ -333,59 +478,59 @@ show_main_menu() {
             check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN"
             ;;
         ${MENU_LOGS})
-            echo "📜 Service Logs"
+            echo "[LOGS] Service Logs"
             echo ""
-            echo "Which service logs do you want to view?"
-            echo "1) API"
-            echo "2) Database"
-            echo "3) Redis"
-            echo "4) All"
-            echo ""
-            if [[ -r /dev/tty ]]; then
-                read -r -p "Your choice (1-4): " log_choice < /dev/tty
-            else
-                read -r -p "Your choice (1-4): " log_choice
+
+            local services
+            services="$(_stack_service_names "$STACK_NAME")"
+            if [ -z "$services" ]; then
+                echo "No services found for stack: $STACK_NAME"
+                break
             fi
 
-            case $log_choice in
-                1)
-                    docker service logs -f "${STACK_NAME}_api"
-                    ;;
-                2)
-                    if [ "$DB_TYPE" = "mongodb" ]; then
-                        docker service logs -f "${STACK_NAME}_mongodb"
-                    elif [ "$DB_TYPE" = "neo4j" ]; then
-                        docker service logs -f "${STACK_NAME}_neo4j"
-                    else
-                        docker service logs -f "${STACK_NAME}_postgres"
-                    fi
-                    ;;
-                3)
-                    docker service logs -f "${STACK_NAME}_redis"
-                    ;;
-                4)
-                    local services
-                    services=$(docker service ls --filter "label=com.docker.stack.namespace=${STACK_NAME}" --format '{{.Name}}' 2>/dev/null)
-                    if [ -z "$services" ]; then
-                        echo "No services found for stack: $STACK_NAME"
-                    else
-                        for svc in $services; do
-                            echo ""
-                            echo "===== $svc ====="
-                            docker service logs --tail 50 "$svc" 2>/dev/null || true
-                        done
-                    fi
-                    ;;
-                *)
-                    echo "Invalid choice"
-                    ;;
-            esac
+            echo "Which service logs do you want to view?"
+            local index=1
+            while IFS= read -r svc; do
+                [ -z "$svc" ] && continue
+                echo "${index}) ${svc}"
+                index=$((index + 1))
+            done <<< "$services"
+            echo "${index}) All"
+            echo ""
+
+            local log_choice
+            if [[ -r /dev/tty ]]; then
+                read -r -p "Your choice (1-${index}): " log_choice < /dev/tty
+            else
+                read -r -p "Your choice (1-${index}): " log_choice
+            fi
+
+            if [ "$log_choice" = "$index" ]; then
+                while IFS= read -r svc; do
+                    [ -z "$svc" ] && continue
+                    echo ""
+                    echo "===== $svc ====="
+                    docker service logs --tail 50 "$svc" 2>/dev/null || true
+                done <<< "$services"
+            elif [[ "$log_choice" =~ ^[0-9]+$ ]] && [ "$log_choice" -ge 1 ] && [ "$log_choice" -lt "$index" ]; then
+                local selected_service
+                selected_service=$(printf '%s\n' "$services" | sed -n "${log_choice}p")
+                docker service logs -f "$selected_service"
+            else
+                echo "Invalid choice"
+            fi
             ;;
         ${MENU_UPDATE_IMAGE})
-            echo "🔄 Update API Image"
-            echo "========================"
+            local service_name
+            local service_label
+            service_name="$(_primary_service_name)"
+            service_label="$(_primary_service_label)"
+
+            echo "[IMAGE] Update ${service_label} Image"
+            echo "=============================="
             echo ""
             echo "  Current image: $IMAGE_NAME:$IMAGE_VERSION"
+            echo "  Target service: $service_name"
             echo ""
 
             local patch_version minor_version major_version
@@ -422,21 +567,9 @@ show_main_menu() {
 
             local new_version=""
             case "$version_choice" in
-                1)
-                    if [ -n "$patch_version" ]; then
-                        new_version="$patch_version"
-                    fi
-                    ;;
-                2)
-                    if [ -n "$minor_version" ]; then
-                        new_version="$minor_version"
-                    fi
-                    ;;
-                3)
-                    if [ -n "$major_version" ]; then
-                        new_version="$major_version"
-                    fi
-                    ;;
+                1) [ -n "$patch_version" ] && new_version="$patch_version" ;;
+                2) [ -n "$minor_version" ] && new_version="$minor_version" ;;
+                3) [ -n "$major_version" ] && new_version="$major_version" ;;
                 4)
                     local manual_version
                     if [[ -r /dev/tty ]]; then
@@ -446,19 +579,10 @@ show_main_menu() {
                     fi
                     new_version="$manual_version"
                     ;;
-                *)
-                    if [ -n "$patch_version" ]; then
-                        new_version="$patch_version"
-                    fi
-                    ;;
+                *) [ -n "$patch_version" ] && new_version="$patch_version" ;;
             esac
 
-            if [ -z "$new_version" ]; then
-                echo "Version unchanged."
-                break
-            fi
-
-            if [ "$new_version" = "$IMAGE_VERSION" ]; then
+            if [ -z "$new_version" ] || [ "$new_version" = "$IMAGE_VERSION" ]; then
                 echo "Version unchanged."
                 break
             fi
@@ -466,9 +590,9 @@ show_main_menu() {
             echo ""
             echo "Pulling image: $IMAGE_NAME:$new_version"
             if docker pull "$IMAGE_NAME:$new_version"; then
-                echo "✅ Image pulled successfully"
+                echo "[OK] Image pulled successfully"
             else
-                echo "❌ Image pull failed"
+                echo "[ERROR] Image pull failed"
                 read -r -p "Continue anyway? (y/N): " continue_anyway
                 if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
                     break
@@ -476,70 +600,77 @@ show_main_menu() {
             fi
 
             echo ""
-            echo "Updating service..."
-            docker service update --image "$IMAGE_NAME:$new_version" "${STACK_NAME}_api"
+            echo "Updating service: $service_name"
+            docker service update --image "$IMAGE_NAME:$new_version" "$service_name"
 
-            # Persist to .env
             if [ -f "$env_file" ]; then
                 update_env_values "$env_file" "IMAGE_VERSION" "$new_version"
-                echo "✅ Saved IMAGE_VERSION=$new_version to .env"
+                echo "[OK] Saved IMAGE_VERSION=$new_version to .env"
             fi
             IMAGE_VERSION="$new_version"
 
             echo ""
-            echo "✅ Service update initiated!"
-            echo "Monitor progress with: docker service ps ${STACK_NAME}_api"
+            echo "[OK] Service update initiated."
+            echo "Monitor progress with: docker service ps $service_name"
             ;;
         ${MENU_SCALE})
-            echo "📊 Scale Services"
+            echo "[SCALE] Scale Services"
             echo ""
-            echo "Which service do you want to scale?"
-            echo "1) API"
-            echo "2) Redis"
-            if [ "$DB_TYPE" = "postgresql" ]; then
-                echo "3) PostgreSQL"
-            elif [ "$DB_TYPE" = "mongodb" ]; then
-                echo "3) MongoDB"
-            elif [ "$DB_TYPE" = "neo4j" ]; then
-                echo "3) Neo4j"
-            fi
-            echo ""
-            if [[ -r /dev/tty ]]; then
-                read -r -p "Your choice: " scale_choice < /dev/tty
-            else
-                read -r -p "Your choice: " scale_choice
+
+            local services
+            services="$(_stack_service_names "$STACK_NAME")"
+            if [ -z "$services" ]; then
+                echo "No services found for stack: $STACK_NAME"
+                break
             fi
 
+            echo "Which service do you want to scale?"
+            local index=1
+            while IFS= read -r svc; do
+                [ -z "$svc" ] && continue
+                echo "${index}) ${svc}"
+                index=$((index + 1))
+            done <<< "$services"
+            echo ""
+
+            local scale_choice
+            if [[ -r /dev/tty ]]; then
+                read -r -p "Your choice (1-$((index - 1))): " scale_choice < /dev/tty
+            else
+                read -r -p "Your choice (1-$((index - 1))): " scale_choice
+            fi
+
+            if ! [[ "$scale_choice" =~ ^[0-9]+$ ]] || [ "$scale_choice" -lt 1 ] || [ "$scale_choice" -ge "$index" ]; then
+                echo "Invalid choice"
+                break
+            fi
+
+            local selected_service
+            selected_service=$(printf '%s\n' "$services" | sed -n "${scale_choice}p")
+
+            local replicas
             if [[ -r /dev/tty ]]; then
                 read -r -p "Number of replicas: " replicas < /dev/tty
             else
                 read -r -p "Number of replicas: " replicas
             fi
 
-            case $scale_choice in
-                1)
-                    docker service scale "${STACK_NAME}_api=$replicas"
-                    if [ -f "$env_file" ]; then
-                        update_env_values "$env_file" "API_REPLICAS" "$replicas"
-                        echo "Saved API_REPLICAS=$replicas to .env"
-                    fi
-                    ;;
-                2)
-                    docker service scale "${STACK_NAME}_redis=$replicas"
-                    ;;
-                3)
-                    if [ "$DB_TYPE" = "neo4j" ]; then
-                        docker service scale "${STACK_NAME}_neo4j=$replicas"
-                    elif [ "$DB_TYPE" = "mongodb" ]; then
-                        docker service scale "${STACK_NAME}_mongodb=$replicas"
-                    else
-                        docker service scale "${STACK_NAME}_postgres=$replicas"
-                    fi
-                    ;;
-                *)
-                    echo "Invalid choice"
-                    ;;
-            esac
+            if ! [[ "$replicas" =~ ^[0-9]+$ ]]; then
+                echo "Invalid replica count"
+                break
+            fi
+
+            docker service scale "${selected_service}=$replicas"
+
+            if [ "$selected_service" = "$(_primary_service_name)" ] && [ -f "$env_file" ]; then
+                if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
+                    update_env_values "$env_file" "NGINX_REPLICAS" "$replicas"
+                    echo "Saved NGINX_REPLICAS=$replicas to .env"
+                else
+                    update_env_values "$env_file" "API_REPLICAS" "$replicas"
+                    echo "Saved API_REPLICAS=$replicas to .env"
+                fi
+            fi
             ;;
         ${MENU_REMOVE})
             echo "🗑️  Remove Deployment"
@@ -748,8 +879,12 @@ show_main_menu() {
                 echo ""
                 echo "Next steps:"
                 echo "  1) Rebuild swarm-stack.yml:  ${MENU_BUILD_STACK}) Rebuild swarm-stack.yml"
-                echo "  2) Restore secrets (if saved): ${MENU_RESTORE_SECRETS}) Restore from secrets.env"
-                echo "  3) Deploy:                   ${MENU_DEPLOY}) Deploy to Docker Swarm"
+                if _profile_requires_secrets; then
+                    echo "  2) Restore secrets (if saved): ${MENU_RESTORE_SECRETS}) Restore from secrets.env"
+                    echo "  3) Deploy:                   ${MENU_DEPLOY}) Deploy to Docker Swarm"
+                else
+                    echo "  2) Deploy:                   ${MENU_DEPLOY}) Deploy to Docker Swarm"
+                fi
                 echo ""
 
                 # Reload the environment
@@ -806,13 +941,13 @@ show_main_menu() {
             fi
             ;;
         ${MENU_BUILD_STACK})
-            echo "🔨 Rebuilding swarm-stack.yml..."
+            echo "[BUILD] Rebuilding swarm-stack.yml..."
             echo ""
             local build_script="${PROJECT_ROOT:-.}/scripts/build-site-stack.sh"
-            if [ -x "$build_script" ]; then
-                "$build_script"
+            if [ -f "$build_script" ]; then
+                bash "$build_script"
             else
-                echo "⚠️  build-site-stack.sh not found or not executable."
+                echo "[WARN] build-site-stack.sh not found."
                 echo "   Expected at: $build_script"
             fi
             ;;
