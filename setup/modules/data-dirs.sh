@@ -16,6 +16,7 @@
 #     neo4j_data/     (if Neo4j)
 #     neo4j_logs/     (if Neo4j)
 #     backups/
+#     logs/api/
 #     redis_data/     (unless APP_REQUIRES_REDIS=false)
 #
 # Directory structure created for nginx/no-database profiles:
@@ -78,6 +79,8 @@ create_data_directories() {
     echo ""
 
     _create_data_dir "$data_root" "Data root" || return 1
+
+    _create_data_dir "$data_root/logs/api" "API logs directory" || return 1
 
     if [ "$stack_family" = "nginx" ] || [ "$db_type" = "none" ]; then
         echo "[INFO] Profile does not require database, backup, or Redis data directories."

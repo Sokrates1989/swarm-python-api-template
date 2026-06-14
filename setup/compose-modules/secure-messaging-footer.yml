@@ -1,0 +1,15 @@
+networks:
+  secure_messaging_internal:
+    external: true
+
+secrets:
+  secure_messaging_auth_token:
+    external: true
+  secure_messaging_telegram_metadata:
+    external: true
+  secure_messaging_telegram_tokens:
+    external: true
+  secure_messaging_email_metadata:
+    external: true
+  secure_messaging_email_passwords:
+    external: true
