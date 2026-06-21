@@ -128,14 +128,44 @@ docker run --rm --network secure_messaging_internal curlimages/curl:latest \
     -d "{\"app\":\"wikijs-backup\",\"title\":\"Smoke test\",\"message\":\"Secure messaging internal smoke test.\",\"sender\":\"backup\",\"to\":\"info\",\"provider\":\"all\"}"'
 ```
 
+## Authentication
+
+### Per-Client Token Registry (Recommended)
+
+Each consuming service should have its own bearer token stored independently.
+Create a JSON map and provision it as a Docker secret:
+
+```bash
+# Create client-token registry JSON
+printf '%s' '{"file-backup":"token-abc123","wiki-backup":"token-xyz789"}' | \
+  docker secret create secure_messaging_client_tokens -
+```
+
+Point the API service at the registry file by setting:
+
+```
+SECURE_MESSAGING_CLIENT_TOKENS_FILE=/run/secrets/secure_messaging_client_tokens
+```
+
+When the registry is configured, each client authenticates with its own token.
+A warning is logged if the legacy single-token fallback is used, which aids migration
+tracking.
+
+### Legacy Single-Token Mode (Backward Compatible Fallback)
+
+When `SECURE_MESSAGING_CLIENT_TOKENS_FILE` is not set, the API falls back to the
+original single shared token (`SECURE_MESSAGING_AUTH_TOKEN`). This mode still works
+for all existing deployments but all callers share one token, which means one
+compromised client affects every other caller.
+
+Migrate by provisioning the client token registry and setting `SECURE_MESSAGING_CLIENT_TOKENS_FILE`.
+
 ## Consuming Service Integration
 
-### Docker Compose Snippet
+### Pattern 1: Swarm Service (Overlay Network — Recommended)
 
-Services that need to send notifications must:
-1. Attach to `secure_messaging_internal` network
-2. Mount their client token secret
-3. Know the API URL
+Services running inside the Swarm attach to `secure_messaging_internal` and mount
+their own client token secret:
 
 ```yaml
 services:
@@ -159,12 +189,9 @@ secrets:
     external: true
 ```
 
-### API Call Example
-
-From within the consuming service:
+From within the service:
 
 ```bash
-#!/bin/sh
 TOKEN="$(cat /run/secrets/secure_messaging_client_token_wikijs_backup)"
 
 curl -X POST "$SECURE_MESSAGING_API_URL/v1/notify" \
@@ -179,6 +206,94 @@ curl -X POST "$SECURE_MESSAGING_API_URL/v1/notify" \
     \"provider\": \"all\"
   }"
 ```
+
+### Pattern 2: Host CLI Tool via Docker Host-Bridge (Recommended for Host Tools)
+
+CLI tools running on the Swarm manager host (e.g. `file-backup`) cannot join the
+overlay network directly. They can however launch a short-lived helper container that
+runs on the network and exits immediately.
+
+**Token storage on the host:**
+
+```bash
+# Create a root-owned token file (never readable by other users)
+sudo sh -c 'printf "%s" "token-abc123" > /etc/file-backup/secure-messaging-token'
+sudo chmod 0600 /etc/file-backup/secure-messaging-token
+```
+
+**Sending a notification from the host:**
+
+```bash
+TOKEN_FILE=/etc/file-backup/secure-messaging-token
+
+docker run --rm \
+  --network secure_messaging_internal \
+  --volume "${TOKEN_FILE}:/tmp/sm-token:ro" \
+  curlimages/curl:latest \
+  sh -c '
+    TOKEN="$(cat /tmp/sm-token)"
+    curl -s --max-time 15 -X POST http://secure_messaging_api:8080/v1/notify \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"app\":\"file-backup\",\"title\":\"Backup succeeded\",\"message\":\"Backup complete.\",\"provider\":\"all\",\"to\":\"info\"}"
+  '
+```
+
+The token file is bind-mounted read-only and its value never appears in `docker run`
+arguments or the process list.
+
+**file-backup integration:** `file-backup` implements this pattern automatically.
+Configure it in `/etc/file-backup/file-backup.env`:
+
+```bash
+FILE_BACKUP_NOTIFY_ENABLED=true
+FILE_BACKUP_NOTIFY_MODE=docker-bridge
+FILE_BACKUP_NOTIFY_API_URL=http://secure_messaging_api:8080
+FILE_BACKUP_NOTIFY_DOCKER_NETWORK=secure_messaging_internal
+FILE_BACKUP_NOTIFY_TOKEN_FILE=/etc/file-backup/secure-messaging-token
+```
+
+Verify the configuration with:
+
+```bash
+file-backup notify-test
+```
+
+### Pattern 3: Host CLI Tool via Direct HTTP (Explicit Opt-In Only)
+
+When the Docker host-bridge pattern is impractical, `secure_messaging` can be
+deployed with the `secure_messaging_direct_host` profile
+(`site-configs/secure_messaging_direct_host.json`). This binds port 8095 on
+`127.0.0.1` only.
+
+**Security requirements for this mode:**
+
+- Bind only to `127.0.0.1`, never to `0.0.0.0`.
+- Add a TLS-terminating reverse proxy before any external exposure.
+- Use a dedicated per-client token. Do not share the token with Swarm services.
+- Prefer Pattern 2 (Docker host-bridge) unless there is a specific reason not to.
+
+Configure `file-backup` for direct HTTP:
+
+```bash
+FILE_BACKUP_NOTIFY_ENABLED=true
+FILE_BACKUP_NOTIFY_MODE=direct-http
+FILE_BACKUP_NOTIFY_API_URL=http://127.0.0.1:8095
+FILE_BACKUP_NOTIFY_TOKEN_FILE=/etc/file-backup/secure-messaging-token
+```
+
+### Recipient Addressing
+
+The `to` field accepts either a named key from the sender's receiver configuration
+or a direct address:
+
+- Named key: `"to": "info"` → looks up the `info` key in the sender's receivers map.
+- Direct Telegram chat ID: `"to": "-1001234567890"` → sends directly to that chat.
+- Direct email address: `"to": "ops@example.com"` → sends directly to that address.
+- Comma-separated list: `"to": "info,ops@example.com"` → sends to both.
+
+Named targets are optional convenience. A sender with valid credentials but no
+pre-configured receivers is fully functional when callers supply `to` directly.
 
 ## Generated Stack Structure
 

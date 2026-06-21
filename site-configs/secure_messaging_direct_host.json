@@ -1,25 +1,28 @@
 {
   "$schema": "site-config-schema",
   "version": "3.1",
-  "appId": "secure_messaging",
-  "name": "Secure Messaging",
-  "description": "Internal-only notification API for Swarm services",
+  "appId": "secure_messaging_direct_host",
+  "name": "Secure Messaging (Direct Host)",
+  "description": "Notification API exposed to the host via a published port for host CLI tools (e.g. file-backup). Use only when the Docker host-bridge mode is impractical. Prefer the internal-only profile (secure_messaging.json) where possible.",
   "kind": "api",
   "stack": {
     "family": "api",
-    "role": "internal-api",
+    "role": "host-accessible-api",
     "primaryService": "secure_messaging_api"
   },
   "exposure": {
-    "type": "internal",
+    "type": "host-port",
     "publicDomainRequired": false,
     "traefik": false,
-    "publishedPorts": false
+    "publishedPorts": true,
+    "publishedPortNote": "Bind to 127.0.0.1 only. Do not expose to the public network without a TLS-terminating reverse proxy."
   },
   "routing": {
     "containerPort": 8080,
+    "hostPort": 8095,
+    "hostBindAddress": "127.0.0.1",
     "internalServiceName": "secure_messaging_api",
-    "internalUrl": "http://secure_messaging_api:8080"
+    "hostUrl": "http://127.0.0.1:8095"
   },
   "networking": {
     "internalNetwork": "secure_messaging_internal",
@@ -45,6 +48,7 @@
   },
   "secrets": [
     "secure_messaging_auth_token",
+    "secure_messaging_client_tokens",
     "secure_messaging_telegram_metadata",
     "secure_messaging_telegram_tokens",
     "secure_messaging_email_metadata",
@@ -63,5 +67,5 @@
     "SECURE_MESSAGING_EMAIL_SENDER_PASSWORDS_FILE",
     "SECURE_MESSAGING_RATE_LIMIT_PER_MINUTE"
   ],
-  "notes": "Internal-only API. No public domain, Traefik labels, or published ports."
+  "notes": "Direct-host profile. Binds port 8095 on 127.0.0.1 only. Add a TLS reverse proxy before exposing beyond localhost. Use secure_messaging.json (internal-only) with Docker host-bridge instead when running file-backup on the same Swarm manager."
 }
