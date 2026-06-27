@@ -72,7 +72,15 @@ _jq_or_default() {
     fi
 
     local val
-    val=$(jq -r "$jq_path // empty" "$json_file" 2>/dev/null)
+    # Read the raw value first without the // alternative so that boolean
+    # false is not treated as absent and silently replaced by the default.
+    local raw_type
+    raw_type=$(jq -r "$jq_path | type" "$json_file" 2>/dev/null)
+    if [ "$raw_type" = "null" ] || [ -z "$raw_type" ]; then
+        echo "$default_value"
+        return 0
+    fi
+    val=$(jq -r "$jq_path | tostring" "$json_file" 2>/dev/null)
     if [ -z "$val" ]; then
         echo "$default_value"
     else
