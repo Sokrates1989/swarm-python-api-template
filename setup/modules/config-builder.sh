@@ -78,6 +78,48 @@ build_env_file() {
 }
 
 # ------------------------------------------------------------------------------
+# build_internal_api_stack_file
+# ------------------------------------------------------------------------------
+# Assembles swarm-stack.yml for an internal-only API profile (e.g.
+# secure_messaging). These stacks are never exposed via Traefik or published
+# host ports: the service attaches only to its external overlay network and
+# consumes externally-managed Docker secrets referenced by literal names.
+#
+# The dedicated compose modules already contain the complete services, networks,
+# and secrets definitions, so no snippet injection or placeholder substitution
+# is required. The API module begins with its own "services:" header and the
+# footer provides the top-level "networks:" and "secrets:" sections.
+#
+# Arguments:
+#   $1 - project_root: absolute path to the repository root.
+#
+# Returns:
+#   0 on success, 1 when a required compose module is missing.
+# ------------------------------------------------------------------------------
+build_internal_api_stack_file() {
+    local project_root="$1"
+    local api_module="${project_root}/setup/compose-modules/secure-messaging-api.template.yml"
+    local footer_module="${project_root}/setup/compose-modules/secure-messaging-footer.yml"
+
+    echo "Building swarm-stack.yml (internal-only API)..."
+
+    if [ ! -f "$api_module" ] || [ ! -f "$footer_module" ]; then
+        echo "Internal-api compose modules not found:" >&2
+        [ -f "$api_module" ] || echo "  missing: $api_module" >&2
+        [ -f "$footer_module" ] || echo "  missing: $footer_module" >&2
+        return 1
+    fi
+
+    {
+        cat "$api_module"
+        echo ""
+        cat "$footer_module"
+    } > "${project_root}/swarm-stack.yml"
+
+    echo "swarm-stack.yml created"
+}
+
+# ------------------------------------------------------------------------------
 # build_stack_file
 # ------------------------------------------------------------------------------
 # Assembles swarm-stack.yml by concatenating base.yml, api.template.yml (with
@@ -93,6 +135,11 @@ build_env_file() {
 build_stack_file() {
     if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
         build_nginx_stack_file "$3" "$4" "${5:-direct}"
+        return $?
+    fi
+
+    if [ "${STACK_ROLE:-}" = "internal-api" ]; then
+        build_internal_api_stack_file "$4"
         return $?
     fi
 

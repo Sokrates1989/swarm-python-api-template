@@ -485,7 +485,7 @@ create_secret_from_value() {
 create_secrets_from_env_file() {
     local secrets_file="${1:-secrets.env}"
     local template_file="${2:-setup/templates/secrets.env.template}"
-    local prefix="${3:?Secret prefix is required}"
+    local prefix="${3:-}"
 
     echo ""
     echo "🔐 Create Docker Secrets from File"
@@ -510,7 +510,11 @@ create_secrets_from_env_file() {
 
     echo ""
     echo "📝 Please edit $secrets_file and fill in your secret values."
-    echo "   Secret names will be prefixed with: ${prefix}_"
+    if [ -n "$prefix" ]; then
+        echo "   Secret names will be prefixed with: ${prefix}_"
+    else
+        echo "   Secret names will be used exactly as written in the file."
+    fi
     echo ""
 
     # Choose editor and open file
@@ -554,7 +558,12 @@ create_secrets_from_env_file() {
         value="${value%\'}"
 
         if [ -n "$value" ]; then
-            local full_name="${prefix}_${key}"
+            local full_name
+            if [ -n "$prefix" ]; then
+                full_name="${prefix}_${key}"
+            else
+                full_name="$key"
+            fi
             if create_secret_from_value "$full_name" "$value"; then
                 case "${CREATE_SECRET_FROM_VALUE_ACTION:-created}" in
                     created)

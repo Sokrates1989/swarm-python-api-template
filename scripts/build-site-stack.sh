@@ -91,8 +91,8 @@ BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
 # Unified admin UI password secret (used for pgAdmin or Mongo Express)
 DB_UI_ADMIN_PASSWORD_SECRET="${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
 
-if [ "$STACK_FAMILY" = "nginx" ]; then
-    echo "[SECRETS] Skipping API secret placeholders for nginx-only stack."
+if [ "$STACK_FAMILY" = "nginx" ] || [ "$STACK_ROLE" = "internal-api" ]; then
+    echo "[SECRETS] Skipping API secret placeholders for nginx-only / internal-api stack."
 else
 # Replace secret placeholders
 echo "[SECRETS] Updating secret name placeholders..."

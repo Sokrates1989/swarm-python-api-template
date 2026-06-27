@@ -50,6 +50,10 @@
     "secure_messaging_email_metadata",
     "secure_messaging_email_passwords"
   ],
+  "secretsConfig": {
+    "template": "setup/templates/secrets.secure-messaging.env.template",
+    "prefixed": false
+  },
   "envKeys": [
     "APP_PROFILE",
     "BACKEND_APP_ID",

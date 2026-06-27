@@ -196,6 +196,23 @@ if [ "$APP_SECRET_COUNT" -gt 0 ] 2>/dev/null; then
     SECRETS_REQUIRED="true"
 fi
 
+# Internal-only profiles (exposure.type == "internal" or stack role
+# "internal-api", e.g. secure_messaging) are never publicly addressable. The
+# wizard skips the domain, proxy, and SSL prompts for them and records the
+# internal service URL instead.
+APP_IS_INTERNAL="false"
+if [ "${APP_EXPOSURE_TYPE:-public}" = "internal" ] || [ "${APP_STACK_ROLE:-}" = "internal-api" ]; then
+    APP_IS_INTERNAL="true"
+fi
+
+# Profile-specific secrets template. Defaults to the generic API template;
+# profiles that use literal/unprefixed secret names (e.g. secure_messaging)
+# declare their own template path in the site config.
+SECRETS_TEMPLATE_PATH="${SCRIPT_DIR}/templates/secrets.env.template"
+if [ -n "${APP_SECRETS_TEMPLATE}" ]; then
+    SECRETS_TEMPLATE_PATH="${PROJECT_ROOT}/${APP_SECRETS_TEMPLATE}"
+fi
+
 echo ""
 echo "Selected deployment profile: ${APP_NAME} (${SELECTED_CONFIG})"
 echo "Stack: ${APP_STACK_FAMILY}/${APP_STACK_ROLE}, Database: ${APP_DB_TYPE}, Image: ${APP_IMAGE_NAME}:${APP_IMAGE_DEFAULT_VERSION}"
@@ -327,21 +344,34 @@ else
         echo "Stack name is required. Please provide a value."
     done
 
-    # Domain - requires non-empty and must contain a dot
-    DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
-    while true; do
-        read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
-        DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
-        if _validate_domain "$DOMAIN"; then
-            break
-        fi
-        echo "Domain is required and must be a valid domain (e.g., api.example.com)."
-        # Clear default after first failed attempt so user must consciously enter a value
-        DEFAULT_DOMAIN=""
-    done
+    # Domain - requires non-empty and must contain a dot for public profiles.
+    # Internal-only profiles use the configured internal service URL instead.
+    if [ "$APP_IS_INTERNAL" = "true" ]; then
+        DEFAULT_DOMAIN="${EXISTING_DOMAIN:-${APP_INTERNAL_URL:-}}"
+        DOMAIN="${DEFAULT_DOMAIN:-http://${APP_INTERNAL_SERVICE:-secure_messaging_api}:8080}"
+        echo "Domain: ${DOMAIN} (internal service URL)"
+    else
+        DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
+        while true; do
+            read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
+            DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
+            if _validate_domain "$DOMAIN"; then
+                break
+            fi
+            echo "Domain is required and must be a valid domain (e.g., api.example.com)."
+            # Clear default after first failed attempt so user must consciously enter a value
+            DEFAULT_DOMAIN=""
+        done
+    fi
 
 # Derive secret prefix from stack name (internal, not prompted)
 SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
+
+# Profiles that declare literal, unprefixed secret names (e.g. secure_messaging)
+# override the derived prefix so the exact names from the template are used.
+if [ "${APP_SECRETS_PREFIXED:-true}" = "false" ]; then
+    SECRET_PREFIX=""
+fi
 
 # Database mode (app manifest knows the type, user picks mode)
 DB_TYPE="$APP_DB_TYPE"
@@ -371,50 +401,59 @@ if [ "$DB_TYPE" != "none" ]; then
     echo "DB mode: $DB_MODE"
 fi
 
-# Proxy
-echo ""
-echo "Proxy type:"
-echo "  1) Traefik (automatic HTTPS)"
-echo "  2) None (direct port)"
-echo ""
-case "${EXISTING_PROXY_TYPE:-traefik}" in
-    none) proxy_default="2" ;;
-    *)    proxy_default="1" ;;
-esac
-while true; do
-    read -p "Your choice (1-2) [$proxy_default]: " PROXY_CHOICE
-    PROXY_CHOICE="${PROXY_CHOICE:-$proxy_default}"
-    case "$PROXY_CHOICE" in
-        1) PROXY_TYPE="traefik"; break ;;
-        2) PROXY_TYPE="none"; break ;;
-        *) echo "Invalid choice: '$PROXY_CHOICE'. Please enter 1 or 2." ;;
+# Proxy / SSL / Traefik network
+# Internal-only profiles are never exposed publicly, so proxy configuration is
+# skipped and fixed to "none".
+if [ "$APP_IS_INTERNAL" = "true" ]; then
+    PROXY_TYPE="none"
+    SSL_MODE=""
+    echo ""
+    echo "Proxy: none (internal-only profile)"
+else
+    echo ""
+    echo "Proxy type:"
+    echo "  1) Traefik (automatic HTTPS)"
+    echo "  2) None (direct port)"
+    echo ""
+    case "${EXISTING_PROXY_TYPE:-traefik}" in
+        none) proxy_default="2" ;;
+        *)    proxy_default="1" ;;
     esac
-done
-echo "Proxy: $PROXY_TYPE"
-
-# SSL mode (Traefik only)
-SSL_MODE="letsencrypt"
-if [ "$PROXY_TYPE" = "traefik" ]; then
-    echo ""
-    echo "SSL mode:"
-    echo "  1) letsencrypt (Traefik obtains certificate)"
-    echo "  2) proxy (SSL terminated upstream, e.g. Cloudflare)"
-    echo ""
     while true; do
-        read -p "Your choice (1-2) [1]: " SSL_CHOICE
-        SSL_CHOICE="${SSL_CHOICE:-1}"
-        case "$SSL_CHOICE" in
-            1) SSL_MODE="letsencrypt"; break ;;
-            2) SSL_MODE="proxy"; break ;;
-            *) echo "Invalid choice: '$SSL_CHOICE'. Please enter 1 or 2." ;;
+        read -p "Your choice (1-2) [$proxy_default]: " PROXY_CHOICE
+        PROXY_CHOICE="${PROXY_CHOICE:-$proxy_default}"
+        case "$PROXY_CHOICE" in
+            1) PROXY_TYPE="traefik"; break ;;
+            2) PROXY_TYPE="none"; break ;;
+            *) echo "Invalid choice: '$PROXY_CHOICE'. Please enter 1 or 2." ;;
         esac
     done
-    echo "SSL: $SSL_MODE"
-fi
+    echo "Proxy: $PROXY_TYPE"
 
-# Prompt for Traefik network in interactive mode (after SSL mode is known)
-if [ "$SETUP_MODE" = "interactive" ] && [ "$PROXY_TYPE" = "traefik" ]; then
-    TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
+    # SSL mode (Traefik only)
+    SSL_MODE="letsencrypt"
+    if [ "$PROXY_TYPE" = "traefik" ]; then
+        echo ""
+        echo "SSL mode:"
+        echo "  1) letsencrypt (Traefik obtains certificate)"
+        echo "  2) proxy (SSL terminated upstream, e.g. Cloudflare)"
+        echo ""
+        while true; do
+            read -p "Your choice (1-2) [1]: " SSL_CHOICE
+            SSL_CHOICE="${SSL_CHOICE:-1}"
+            case "$SSL_CHOICE" in
+                1) SSL_MODE="letsencrypt"; break ;;
+                2) SSL_MODE="proxy"; break ;;
+                *) echo "Invalid choice: '$SSL_CHOICE'. Please enter 1 or 2." ;;
+            esac
+        done
+        echo "SSL: $SSL_MODE"
+    fi
+
+    # Prompt for Traefik network in interactive mode (after SSL mode is known)
+    if [ "$SETUP_MODE" = "interactive" ] && [ "$PROXY_TYPE" = "traefik" ]; then
+        TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
+    fi
 fi
 
 # Admin UI configuration (for pgAdmin/mongo-express)
@@ -710,6 +749,7 @@ if [ "${SECRETS_REQUIRED:-false}" = "true" ]; then
     {
         echo ""
         echo "# Secrets"
+        echo "# Empty SECRETS_PREFIX means the stack uses literal secret names from the template."
         echo "SECRETS_PREFIX=${SECRET_PREFIX}"
     } >> "$ENV_FILE"
 fi
@@ -821,12 +861,32 @@ case "$FINAL_ACTION" in
         ;;
     4)
         echo ""
-        create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
+        create_secrets_from_env_file "secrets.env" "$SECRETS_TEMPLATE_PATH" "$PREFIX_UPPER"
         ;;
     5)
         echo ""
-        echo "Creating secrets interactively with prefix: ${PREFIX_UPPER}_*"
-        create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET" "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+        if [ -n "$APP_SECRET_NAMES" ]; then
+            echo "Creating secrets interactively:"
+            if [ "${APP_SECRETS_PREFIXED:-true}" = "false" ]; then
+                echo "   Using literal names from the profile."
+            else
+                echo "   Using prefix: ${PREFIX_UPPER}_*"
+            fi
+            SELECTED_EDITOR=""
+            choose_editor || SELECTED_EDITOR=""
+            for base_name in $APP_SECRET_NAMES; do
+                if [ -n "$SELECTED_EDITOR" ]; then
+                    if [ "${APP_SECRETS_PREFIXED:-true}" = "false" ]; then
+                        create_single_secret "$base_name" "$SELECTED_EDITOR"
+                    else
+                        create_single_secret "${PREFIX_UPPER}_${base_name}" "$SELECTED_EDITOR"
+                    fi
+                fi
+            done
+        else
+            echo "Creating secrets interactively with prefix: ${PREFIX_UPPER}_*"
+            create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET" "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+        fi
         echo ""
         echo "Secrets created."
         ;;
@@ -864,7 +924,7 @@ case "$FINAL_ACTION" in
 
         if [ "$SECRETS_REQUIRED" = "true" ]; then
             echo "--- Step 3/4: Secrets ---"
-            create_secrets_from_env_file "secrets.env" "${SCRIPT_DIR}/templates/secrets.env.template" "$PREFIX_UPPER"
+            create_secrets_from_env_file "secrets.env" "$SECRETS_TEMPLATE_PATH" "$PREFIX_UPPER"
             echo ""
             echo "--- Step 4/4: Deploy ---"
         else

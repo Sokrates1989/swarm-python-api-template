@@ -30,7 +30,10 @@
 #   APP_ROUTING_CONTAINER_PORT, APP_DB_TYPE, APP_DB_DEFAULT_MODE,
 #   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE, APP_SECRET_COUNT,
 #   APP_IMAGE_NAME, APP_IMAGE_DEFAULT_VERSION,
-#   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT
+#   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT,
+#   APP_EXPOSURE_TYPE, APP_INTERNAL_URL, APP_INTERNAL_SERVICE,
+#   APP_INTERNAL_NETWORK, APP_SECRETS_TEMPLATE, APP_SECRETS_PREFIXED,
+#   APP_SECRET_NAMES
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
@@ -157,6 +160,20 @@ load_app_config() {
     APP_REDIRECTOR_ENABLED="$(_jq_or_default "$config_file" '.redirector.enabled' "false")"
     APP_REDIRECT_TARGET_BASE_URL="$(_jq_or_default "$config_file" '.redirector.defaultTargetBaseUrl' "")"
     APP_REDIRECT_STATUS_CODE="$(_jq_or_default "$config_file" '.redirector.statusCode' "302")"
+
+    # Exposure metadata. Internal-only profiles (exposure.type == "internal")
+    # are never given a public domain, Traefik labels, or published ports.
+    APP_EXPOSURE_TYPE="$(_jq_or_default "$config_file" '.exposure.type' "public")"
+    APP_INTERNAL_URL="$(_jq_or_default "$config_file" '.routing.internalUrl' "")"
+    APP_INTERNAL_SERVICE="$(_jq_or_default "$config_file" '.routing.internalServiceName' "$APP_PRIMARY_SERVICE")"
+    APP_INTERNAL_NETWORK="$(_jq_or_default "$config_file" '.networking.internalNetwork' "")"
+
+    # Secret-handling metadata (optional). Profiles whose Docker secrets use
+    # literal, unprefixed names (e.g. secure_messaging) declare their own
+    # secrets template and set secretsConfig.prefixed = false.
+    APP_SECRETS_TEMPLATE="$(_jq_or_default "$config_file" '.secretsConfig.template' "")"
+    APP_SECRETS_PREFIXED="$(_jq_or_default "$config_file" '.secretsConfig.prefixed' "true")"
+    APP_SECRET_NAMES="$(jq -r '.secrets[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
 
     # Database requirements
     APP_DB_TYPE="$(_jq_or_default "$config_file" '.database.type' "postgresql")"
