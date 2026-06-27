@@ -103,8 +103,9 @@ docker service logs ${STACK_NAME}_secure_messaging_api --tail 50
 ### Internal Health Check
 
 ```bash
-docker run --rm --network secure_messaging_internal curlimages/curl:latest \
-  curl -s http://secure_messaging_api:8080/health
+docker run --rm --network secure_messaging_internal \
+  curlimages/curl:latest \
+  sh -c 'curl -s http://secure_messaging_api:8080/health'
 ```
 
 Expected response:
@@ -118,15 +119,57 @@ Expected response:
 }
 ```
 
-### Test Notification
+### Smoke Test (send a real notification)
+
+> **API reference** — the correct endpoint is `/v1/notify` with `Authorization: Bearer` auth.
+> Do **not** use `/api/v1/messages/send` or `X-Auth-Token` headers — those do not exist.
+
+Run from anywhere that has Docker and can reach the overlay network
+(e.g. the Swarm manager node):
 
 ```bash
-docker run --rm --network secure_messaging_internal curlimages/curl:latest \
+# Replace YOUR_AUTH_TOKEN with the value from the secure_messaging_auth_token secret.
+docker run --rm \
+  --network secure_messaging_internal \
+  curlimages/curl:latest \
   sh -c 'curl -s -X POST http://secure_messaging_api:8080/v1/notify \
-    -H "Authorization: Bearer your-client-token" \
+    -H "Authorization: Bearer YOUR_AUTH_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"app\":\"wikijs-backup\",\"title\":\"Smoke test\",\"message\":\"Secure messaging internal smoke test.\",\"sender\":\"backup\",\"to\":\"info\",\"provider\":\"all\"}"'
+    -d '"'"'{"app":"smoke-test","title":"Smoke test","message":"Secure messaging is alive.","sender":"backup","to":"info","provider":"all"}'"'"''
 ```
+
+**Request body fields — all required:**
+
+| Field | Example | Description |
+|-------|---------|-------------|
+| `app` | `"smoke-test"` | Identifies the calling application (used in rate limiting and logs). |
+| `title` | `"Smoke test"` | Short subject line for the notification. |
+| `message` | `"Secure messaging is alive."` | Full notification body text. |
+| `sender` | `"backup"` | Sender key from your `secure_messaging_telegram_metadata` / `secure_messaging_email_metadata`. |
+| `to` | `"info"` | Recipient key in the sender's receiver map, or a direct chat-ID / email address. |
+| `provider` | `"all"` | `"telegram"`, `"email"`, or `"all"`. |
+
+**Expected success response (`200 OK`):**
+
+```json
+{
+  "status": "sent",
+  "providers": {
+    "telegram": {
+      "status": "sent",
+      "sender": "backup",
+      "error": null
+    }
+  }
+}
+```
+
+**Common mistakes:**
+
+- Using `/api/v1/messages/send` — that path does not exist; use `/v1/notify`.
+- Using `X-Auth-Token` header — auth must be `Authorization: Bearer <token>`.
+- Using `"recipient"` field — the field name is `"to"`, not `"recipient"`.
+- Using `"backup.info"` as the `to` value — use just `"info"` (the key inside the sender's receiver map).
 
 ## Authentication
 
