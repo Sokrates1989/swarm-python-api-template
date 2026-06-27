@@ -261,19 +261,25 @@ file-backup notify-test
 
 ### Pattern 3: Host CLI Tool via Direct HTTP (Explicit Opt-In Only)
 
-When the Docker host-bridge pattern is impractical, `secure_messaging` can be
-deployed with the `secure_messaging_direct_host` profile
-(`site-configs/secure_messaging_direct_host.json`). This binds port 8095 on
-`127.0.0.1` only.
+When the Docker host-bridge pattern is impractical, the same `secure_messaging`
+profile can be deployed with a reachable host port instead of internal-only. This
+is **not** a separate deployment profile — it is the standard exposure choice
+offered by the setup wizard:
+
+- Run the setup wizard and select the **Secure Messaging** profile.
+- At the **Proxy type** prompt choose either:
+  - `1) Traefik` to place the API behind your reverse proxy with TLS, or
+  - `2) None (direct port)` to publish a host port directly.
 
 **Security requirements for this mode:**
 
-- Bind only to `127.0.0.1`, never to `0.0.0.0`.
-- Add a TLS-terminating reverse proxy before any external exposure.
+- Prefer binding the published port to `127.0.0.1` only; never expose `0.0.0.0`
+  without a TLS-terminating reverse proxy in front.
 - Use a dedicated per-client token. Do not share the token with Swarm services.
 - Prefer Pattern 2 (Docker host-bridge) unless there is a specific reason not to.
 
-Configure `file-backup` for direct HTTP:
+Configure `file-backup` for direct HTTP (adjust the URL to match the published
+port or Traefik domain you chose in the wizard):
 
 ```bash
 FILE_BACKUP_NOTIFY_ENABLED=true
