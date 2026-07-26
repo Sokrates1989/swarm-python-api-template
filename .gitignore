@@ -2,6 +2,7 @@
 # Deployment artifacts (generated at runtime, never committed)
 # ==============================================================================
 .env
+prod.env
 swarm-stack.yml
 .setup-complete
 generated/

@@ -4,6 +4,20 @@ Docker Swarm deployment management for Python API backends.
 
 ## Overview
 
+Candidate release orchestration starts from tracked `prod.env.example`. Copy it
+to ignored `prod.env`, replace the rejected public placeholders, and validate
+it without shell sourcing:
+
+```bash
+python3 scripts/release_profile.py
+```
+
+The optional `--materialize` action atomically generates the public-only root
+`.env` compatibility artifact after validation. It refuses to replace an
+existing `.env` unless `--force` is explicit. Database/service completion and
+deployment remain separate later gates; neither validation nor
+materialization starts Docker.
+
 Each **clone** of this repository on a server IS one deployment instance.
 Deployment artifacts (`.env`, `swarm-stack.yml`, data directories) live at
 the **project root** — not nested inside subdirectories.
