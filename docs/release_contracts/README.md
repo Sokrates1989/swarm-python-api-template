@@ -1,0 +1,35 @@
+# Felix Swarm Release Contract
+
+## Purpose and ownership
+
+`felix_swarm_contract.v1.json` is the Swarm repository's public, secret-free
+release-orchestration export. It freezes candidate versus legacy deployment
+identity, environment and secret-file field names, immutable-image policy, and
+the approval boundary around forwarding the old hostname.
+
+The Swarm repository owns these values. Cross-repository tooling may read the
+file but must not write or materialize secrets from it.
+
+## Structure
+
+- `candidate` identifies `felix-app.fe-wi.com`, realm `felix-new`, and client
+  `felix-new-frontend`.
+- `legacyProtection` protects `felix.app.fe-wi.com` plus possible legacy realms
+  `felix` and `felixappnew`.
+- `requiredEnvironmentFields` names public runtime settings.
+- `requiredSecretFileFields` names mounted secret-file settings.
+- `deploymentBoundary` keeps candidate and legacy routers distinct and makes
+  old-host forwarding an explicit, reversible cutover action.
+
+## Safe editing
+
+Keep the fixture strict JSON. Never store passwords, tokens, client secrets,
+private keys, credential-bearing URLs, or generated stack environment dumps.
+Intentional public changes must update this fixture, its tests, and the Flutter
+snapshot together.
+
+Run:
+
+```powershell
+python tests/test_release_orchestration_contract.py
+```
