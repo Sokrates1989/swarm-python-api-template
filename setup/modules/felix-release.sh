@@ -66,10 +66,10 @@ felix_release_menu() {
         echo "  2) Run strict preflight"
         echo "  3) Backup, deploy candidate, and require strict health"
         echo "  4) Run strict health and legacy continuity checks"
-        echo "  5) Run bad-candidate automatic rollback drill"
+        echo "  5) Run WebApp/API automatic rollback and data-continuity drill"
         echo "  6) Show sanitized candidate status"
-        echo "  7) Show redacted candidate API logs"
-        echo "  8) Explicitly rollback the candidate API service"
+        echo "  7) Show redacted candidate WebApp/API logs"
+        echo "  8) Explicitly rollback candidate WebApp/API services"
         echo "  0) Back"
         read -r -p "Felix release choice (0-8): " choice
 

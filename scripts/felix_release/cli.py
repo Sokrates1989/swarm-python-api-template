@@ -55,14 +55,17 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     commands.add_parser(
         "rollback",
-        help="Explicitly rollback only the candidate API service.",
+        help="Explicitly rollback candidate WebApp and API services.",
     )
     commands.add_parser(
         "drill-rollback",
         help="Inject a bad candidate and verify rollback plus database continuity.",
     )
     commands.add_parser("status", help="Show sanitized candidate stack state.")
-    commands.add_parser("logs", help="Show redacted recent candidate API logs.")
+    commands.add_parser(
+        "logs",
+        help="Show redacted recent candidate WebApp and API logs.",
+    )
     return parser
 
 

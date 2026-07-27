@@ -1,8 +1,8 @@
 """Strict replicas, HTTPS, runtime identity, auth, and migration health.
 
 The health gate validates the digest-bound Swarm services and the public Felix
-API, rejects anonymous protected-route access, checks candidate discovery and
-JWKS, and conservatively scans recent logs for likely credential disclosure.
+WebApp/API, rejects anonymous protected-route access, checks candidate
+discovery/JWKS, and scans recent public-service logs for credential patterns.
 """
 
 from __future__ import annotations
@@ -11,16 +11,24 @@ import hashlib
 import json
 import re
 import ssl
+from collections.abc import Sequence
 from typing import Any
 from urllib import error, request
 
 from .command import CommandRunner
 from .errors import FelixReleaseError
 from .models import HealthEvidence, ImageIdentity
-from .preflight import CANDIDATE_API_ORIGIN, CANDIDATE_ISSUER
+from felix_site_contract import FelixSiteProfile
+
+from .preflight import (
+    CANDIDATE_API_ORIGIN,
+    CANDIDATE_ISSUER,
+    CANDIDATE_WEB_ORIGIN,
+)
 
 
 SERVICE_NAMES = (
+    "felix-new_web",
     "felix-new_api",
     "felix-new_postgres",
     "felix-new_redis",
@@ -169,6 +177,44 @@ def _validate_api_health(payload: dict[str, Any]) -> dict[str, bool]:
     }
 
 
+def _validate_web_metadata(
+    payload: dict[str, Any],
+    image: ImageIdentity,
+) -> dict[str, bool]:
+    """Validate public WebApp release metadata against its exact image.
+
+    Args:
+        payload: WebApp `/release-metadata.json` object.
+        image: Resolved immutable WebApp image identity.
+
+    Returns:
+        Named public identity checks.
+    """
+
+    return {
+        "webMetadataKind": payload.get("kind") == "flutter-web-release",
+        "webAppId": payload.get("appId") == "felix",
+        "webAppPath": payload.get("appPath") == "apps/felix",
+        "webEnvironment": payload.get("environment") == "production",
+        "webImageRepository": (
+            payload.get("imageRepository") == image.tag_reference.rsplit(":", 1)[0]
+        ),
+        "webVersion": payload.get("imageTag") == image.version,
+        "webProfileFingerprint": (
+            payload.get("profileFingerprint") == image.profile_fingerprint
+        ),
+        "webSourceRevision": payload.get("sourceRevision") == image.revision,
+        "webOrigin": payload.get("webOrigin") == CANDIDATE_WEB_ORIGIN,
+        "webBackendOrigin": payload.get("backendOrigin") == CANDIDATE_API_ORIGIN,
+        "webKeycloakIssuer": payload.get("keycloakIssuer") == CANDIDATE_ISSUER,
+        "webKeycloakRealm": payload.get("keycloakRealm") == "felix-new",
+        "webKeycloakClient": (
+            payload.get("keycloakClientId") == "felix-new-frontend"
+        ),
+        "webCleanSource": payload.get("sourceDirty") is False,
+    }
+
+
 def _keycloak_health_checks() -> dict[str, bool]:
     """Verify exact candidate discovery issuer and non-empty JWKS.
 
@@ -193,11 +239,15 @@ def _keycloak_health_checks() -> dict[str, bool]:
     }
 
 
-def _scan_service_logs(runner: CommandRunner) -> int:
-    """Scan recent API logs and refuse likely credential leakage.
+def _scan_service_logs(
+    runner: CommandRunner,
+    service_names: Sequence[str],
+) -> int:
+    """Scan recent public-service logs and refuse credential patterns.
 
     Args:
         runner: Shell-free command runner.
+        service_names: Exact candidate public service names.
 
     Returns:
         Number of scanned log lines.
@@ -206,33 +256,127 @@ def _scan_service_logs(runner: CommandRunner) -> int:
         FelixReleaseError: If a sensitive value pattern appears.
     """
 
-    logs = runner.run(
-        [
-            "docker",
-            "service",
-            "logs",
-            "--raw",
-            "--tail",
-            "500",
-            "felix-new_api",
-        ],
-        check=False,
+    scanned_lines = 0
+    for service_name in service_names:
+        logs = runner.run(
+            [
+                "docker",
+                "service",
+                "logs",
+                "--raw",
+                "--tail",
+                "500",
+                service_name,
+            ],
+            check=False,
+        )
+        combined = f"{logs.stdout}\n{logs.stderr}"
+        if SENSITIVE_LOG_PATTERN.search(combined):
+            raise FelixReleaseError(
+                f"Recent {service_name} logs contain a sensitive-value pattern."
+            )
+        scanned_lines += len(combined.splitlines())
+    return scanned_lines
+
+
+def _collect_service_health(
+    runner: CommandRunner,
+    image: ImageIdentity,
+    web_image: ImageIdentity,
+    profile: FelixSiteProfile,
+) -> tuple[dict[str, str], dict[str, bool]]:
+    """Collect replica and immutable-image checks for active services.
+
+    Args:
+        runner: Shell-free command runner.
+        image: Expected immutable API image.
+        web_image: Expected immutable WebApp image.
+        profile: Validated profile controlling optional pgAdmin.
+
+    Returns:
+        Service-image mapping and named service checks.
+    """
+
+    service_names = list(SERVICE_NAMES)
+    if profile.deployment["PGADMIN_ENABLED"] == "true":
+        service_names.append("felix-new_pgadmin")
+    service_images: dict[str, str] = {}
+    checks: dict[str, bool] = {}
+    for service_name in service_names:
+        service_image, replicas_healthy = _service_evidence(runner, service_name)
+        service_images[service_name] = service_image
+        checks[f"replicas:{service_name}"] = replicas_healthy
+    checks["apiImageDigest"] = (
+        service_images["felix-new_api"] == image.digest_reference
     )
-    combined = f"{logs.stdout}\n{logs.stderr}"
-    if SENSITIVE_LOG_PATTERN.search(combined):
-        raise FelixReleaseError("Recent API logs contain a sensitive-value pattern.")
-    return len(combined.splitlines())
+    checks["webImageDigest"] = (
+        service_images["felix-new_web"] == web_image.digest_reference
+    )
+    return service_images, checks
+
+
+def _collect_public_health(
+    image: ImageIdentity,
+    web_image: ImageIdentity,
+) -> tuple[dict[str, bool], dict[str, Any], dict[str, Any]]:
+    """Collect WebApp/API HTTPS, identity, auth, and migration checks.
+
+    Args:
+        image: Expected immutable API image.
+        web_image: Expected immutable WebApp image.
+
+    Returns:
+        Named checks, sanitized API health, and public WebApp metadata.
+
+    Raises:
+        FelixReleaseError: If HTTPS or JSON endpoints cannot be verified.
+    """
+
+    checks: dict[str, bool] = {}
+    web_status, _ = _https_response(f"{CANDIDATE_WEB_ORIGIN}/health")
+    checks["webHttpsHealth"] = web_status == 200
+    web_metadata = _https_json(
+        f"{CANDIDATE_WEB_ORIGIN}/release-metadata.json",
+        "Felix WebApp metadata",
+    )
+    checks.update(_validate_web_metadata(web_metadata, web_image))
+    api_health = _https_json(f"{CANDIDATE_API_ORIGIN}/health", "Felix API health")
+    checks.update(_validate_api_health(api_health))
+    version = _https_json(f"{CANDIDATE_API_ORIGIN}/version", "Felix API version")
+    checks["apiVersion"] = version.get("IMAGE_TAG") == image.version
+    protected_status, _ = _https_response(f"{CANDIDATE_API_ORIGIN}/v1/dashboard")
+    checks["protectedRouteRejectsAnonymous"] = protected_status in {401, 403}
+    checks.update(_keycloak_health_checks())
+    return checks, api_health, web_metadata
+
+
+def _payload_fingerprint(payload: dict[str, Any]) -> str:
+    """Hash one sanitized public health/metadata object.
+
+    Args:
+        payload: Secret-free public evidence mapping.
+
+    Returns:
+        Lowercase canonical SHA-256.
+    """
+
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def run_strict_health(
     runner: CommandRunner,
     image: ImageIdentity,
+    web_image: ImageIdentity,
+    profile: FelixSiteProfile,
 ) -> HealthEvidence:
     """Run every required post-deployment health assertion.
 
     Args:
         runner: Shell-free command runner.
         image: Expected immutable candidate API image.
+        web_image: Expected immutable candidate WebApp image.
+        profile: Validated profile controlling optional services.
 
     Returns:
         Sanitized strict health evidence.
@@ -242,23 +386,21 @@ def run_strict_health(
             route, discovery/JWKS, version, or log check fails.
     """
 
-    service_images: dict[str, str] = {}
-    checks: dict[str, bool] = {}
-    for service_name in SERVICE_NAMES:
-        service_image, replicas_healthy = _service_evidence(runner, service_name)
-        service_images[service_name] = service_image
-        checks[f"replicas:{service_name}"] = replicas_healthy
-    checks["apiImageDigest"] = (
-        service_images["felix-new_api"] == image.digest_reference
+    service_images, checks = _collect_service_health(
+        runner,
+        image,
+        web_image,
+        profile,
     )
-    api_health = _https_json(f"{CANDIDATE_API_ORIGIN}/health", "Felix API health")
-    checks.update(_validate_api_health(api_health))
-    version = _https_json(f"{CANDIDATE_API_ORIGIN}/version", "Felix API version")
-    checks["apiVersion"] = version.get("IMAGE_TAG") == image.version
-    protected_status, _ = _https_response(f"{CANDIDATE_API_ORIGIN}/v1/dashboard")
-    checks["protectedRouteRejectsAnonymous"] = protected_status in {401, 403}
-    checks.update(_keycloak_health_checks())
-    log_lines = _scan_service_logs(runner)
+    public_checks, api_health, web_metadata = _collect_public_health(
+        image,
+        web_image,
+    )
+    checks.update(public_checks)
+    log_lines = _scan_service_logs(
+        runner,
+        ("felix-new_web", "felix-new_api"),
+    )
     checks["recentLogsSecretSafe"] = True
     safe_health = {
         key: api_health.get(key)
@@ -275,10 +417,13 @@ def run_strict_health(
             "auth_provider",
         )
     }
-    fingerprint = hashlib.sha256(
-        json.dumps(safe_health, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    evidence = HealthEvidence(checks, service_images, fingerprint, log_lines)
+    evidence = HealthEvidence(
+        checks,
+        service_images,
+        _payload_fingerprint(safe_health),
+        log_lines,
+        _payload_fingerprint(web_metadata),
+    )
     if not evidence.healthy:
         failed = sorted(name for name, passed in checks.items() if not passed)
         raise FelixReleaseError("Strict Felix health failed: " + ", ".join(failed))

@@ -1,8 +1,8 @@
 """Strict profile, Docker, registry, storage, DNS/TLS, and identity preflight.
 
-The preflight resolves a semantic Felix tag to one immutable registry digest,
-validates its OCI identity/platform, renders a secret-free digest-bound stack,
-and requires the exact Swarm resources plus candidate and legacy public state.
+The preflight resolves semantic Felix WebApp and API tags to immutable registry
+digests, validates their OCI identities/platforms, renders a secret-free
+digest-bound stack, and requires exact Swarm plus public identity state.
 """
 
 from __future__ import annotations
@@ -17,13 +17,17 @@ from urllib import error, request
 
 from felix_site_contract import FelixSiteProfile, load_felix_site_profile
 from felix_stack_renderer import render_stack, validate_rendered_stack
+from felix_web_stack import web_image_reference
 
 from .command import CommandRunner
 from .errors import FelixReleaseError
+from .images import resolve_image_identity, resolve_web_image_identity
 from .models import ImageIdentity, PreflightEvidence
 
 
 CANDIDATE_STACK = "felix-new"
+CANDIDATE_WEB_HOST = "felix-app.fe-wi.com"
+CANDIDATE_WEB_ORIGIN = f"https://{CANDIDATE_WEB_HOST}"
 CANDIDATE_API_HOST = "api.felix-app.fe-wi.com"
 CANDIDATE_API_ORIGIN = f"https://{CANDIDATE_API_HOST}"
 CANDIDATE_ISSUER = "https://keycloak.fe-wi.com/realms/felix-new"
@@ -32,9 +36,6 @@ LEGACY_DISCOVERY = (
     "https://keycloak.fe-wi.com/realms/felixappnew/"
     ".well-known/openid-configuration"
 )
-DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
-REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SECRET_TEXT_PATTERN = re.compile(
     r"(?i)(password|client_secret|api_key|private_key)\s*[:=]\s*[^\s]+"
 )
@@ -112,95 +113,40 @@ def _load_json(text: str, context: str) -> Any:
         raise FelixReleaseError(f"Invalid JSON from {context}.") from exc
 
 
-def resolve_image_identity(
-    runner: CommandRunner,
+def _digest_bound_stack(
     profile: FelixSiteProfile,
-) -> ImageIdentity:
-    """Pull and resolve the semantic image tag to an immutable digest.
-
-    Args:
-        runner: Shell-free command runner.
-        profile: Validated Felix candidate profile.
-
-    Returns:
-        Verified OCI label, digest, and platform identity.
-
-    Raises:
-        FelixReleaseError: If pull, digest, labels, or platform are invalid.
-
-    Side Effects:
-        Pulls the selected semantic-version image into the local Docker cache.
-    """
-
-    tag_reference = profile.image_reference
-    runner.run(["docker", "pull", tag_reference])
-    inspected = _load_json(
-        runner.run(["docker", "image", "inspect", tag_reference]).stdout,
-        "Docker image inspect",
-    )
-    if not isinstance(inspected, list) or len(inspected) != 1:
-        raise FelixReleaseError("Docker image inspect did not return one image.")
-    image = inspected[0]
-    labels = image.get("Config", {}).get("Labels", {})
-    repository = tag_reference.rsplit(":", 1)[0]
-    repo_digests = [
-        str(value)
-        for value in image.get("RepoDigests", [])
-        if str(value).startswith(f"{repository}@sha256:")
-    ]
-    if len(repo_digests) != 1:
-        raise FelixReleaseError("Published Felix image has no unique registry digest.")
-    digest_reference = repo_digests[0]
-    digest = digest_reference.split("@", 1)[1]
-    version = tag_reference.rsplit(":", 1)[1]
-    revision = str(labels.get("org.opencontainers.image.revision", ""))
-    lock_hash = str(labels.get("com.fe-wi.dependency-lock-sha256", ""))
-    if (
-        not DIGEST_PATTERN.fullmatch(digest)
-        or labels.get("org.opencontainers.image.version") != version
-        or labels.get("com.fe-wi.app-profile") != "felix"
-        or labels.get("com.fe-wi.backend-app-id") != "felix"
-        or not REVISION_PATTERN.fullmatch(revision)
-        or not HASH_PATTERN.fullmatch(lock_hash)
-    ):
-        raise FelixReleaseError("Published Felix image labels/digest are invalid.")
-    architecture = str(image.get("Architecture", ""))
-    operating_system = str(image.get("Os", ""))
-    if architecture != "amd64" or operating_system != "linux":
-        raise FelixReleaseError("Felix image platform must be linux/amd64.")
-    return ImageIdentity(
-        tag_reference,
-        digest_reference,
-        digest,
-        version,
-        revision,
-        lock_hash,
-        architecture,
-        operating_system,
-    )
-
-
-def _digest_bound_stack(profile: FelixSiteProfile, image: ImageIdentity) -> str:
-    """Replace exactly one validated semantic API tag with its digest.
+    image: ImageIdentity,
+    web_image: ImageIdentity,
+) -> str:
+    """Replace exact semantic API/WebApp tags with immutable digests.
 
     Args:
         profile: Validated Felix candidate profile.
-        image: Resolved immutable image identity.
+        image: Resolved immutable API image identity.
+        web_image: Resolved immutable WebApp image identity.
 
     Returns:
         Secret-free digest-bound Swarm Compose text.
 
     Raises:
-        FelixReleaseError: If the semantic image occurs other than once.
+        FelixReleaseError: If either semantic image occurs other than once.
     """
 
     rendered = render_stack(profile)
     validate_rendered_stack(rendered, profile)
-    source = f'    image: "{profile.image_reference}"'
-    target = f'    image: "{image.digest_reference}"'
-    if rendered.count(source) != 1:
-        raise FelixReleaseError("Rendered stack API image replacement is ambiguous.")
-    digest_stack = rendered.replace(source, target, 1)
+    replacements = (
+        (profile.image_reference, image.digest_reference, "API"),
+        (web_image_reference(profile), web_image.digest_reference, "WebApp"),
+    )
+    digest_stack = rendered
+    for semantic, digest, component in replacements:
+        source = f'    image: "{semantic}"'
+        target = f'    image: "{digest}"'
+        if digest_stack.count(source) != 1:
+            raise FelixReleaseError(
+                f"Rendered stack {component} image replacement is ambiguous."
+            )
+        digest_stack = digest_stack.replace(source, target, 1)
     if SECRET_TEXT_PATTERN.search(digest_stack) or "${" in digest_stack:
         raise FelixReleaseError("Digest-bound stack contains unsafe material.")
     return digest_stack
@@ -210,6 +156,7 @@ def write_digest_bound_stack(
     root: Path,
     profile: FelixSiteProfile,
     image: ImageIdentity,
+    web_image: ImageIdentity,
     runner: CommandRunner,
 ) -> Path:
     """Write and validate the exact runtime-only digest-bound stack.
@@ -217,7 +164,8 @@ def write_digest_bound_stack(
     Args:
         root: Swarm repository root.
         profile: Validated Felix candidate profile.
-        image: Resolved immutable image identity.
+        image: Resolved immutable API image identity.
+        web_image: Resolved immutable WebApp image identity.
         runner: Shell-free command runner.
 
     Returns:
@@ -233,7 +181,10 @@ def write_digest_bound_stack(
     output = root / "build" / "felix-release" / "deploy-stack.yml"
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(_digest_bound_stack(profile, image), encoding="utf-8")
+        output.write_text(
+            _digest_bound_stack(profile, image, web_image),
+            encoding="utf-8",
+        )
     except OSError as exc:
         raise FelixReleaseError("Unable to write digest-bound deploy stack.") from exc
     configured = runner.run(
@@ -447,7 +398,9 @@ def run_preflight(root: Path, runner: CommandRunner) -> PreflightEvidence:
     secrets = _verify_docker_resources(runner, profile)
     directories = _verify_data_directories(profile)
     image = resolve_image_identity(runner, profile)
-    stack_path = write_digest_bound_stack(root, profile, image, runner)
+    web_image = resolve_web_image_identity(runner, profile)
+    stack_path = write_digest_bound_stack(root, profile, image, web_image, runner)
+    _verify_dns_and_tls(CANDIDATE_WEB_HOST)
     _verify_dns_and_tls(CANDIDATE_API_HOST)
     _verify_dns_and_tls("felix.app.fe-wi.com")
     verify_public_identity_continuity()
@@ -459,7 +412,7 @@ def run_preflight(root: Path, runner: CommandRunner) -> PreflightEvidence:
         directories,
         {
             "profileAndIdentity": True,
-            "publishedImageDigestAndPlatform": True,
+            "publishedImageDigestsAndPlatforms": True,
             "swarmManager": True,
             "dockerSecrets": True,
             "overlayNetwork": True,
@@ -469,4 +422,5 @@ def run_preflight(root: Path, runner: CommandRunner) -> PreflightEvidence:
             "keycloakDiscoveryJwks": True,
             "legacyWebAndOidcUnchanged": True,
         },
+        web_image,
     )

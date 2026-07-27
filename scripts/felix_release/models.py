@@ -22,9 +22,11 @@ class ImageIdentity:
         digest: Bare registry SHA-256 digest.
         version: OCI image version label.
         revision: OCI source-revision label.
-        dependency_lock_sha256: App dependency-lock label.
+        dependency_lock_sha256: Optional API dependency-lock label.
         architecture: Image CPU architecture.
         operating_system: Image operating system.
+        component: Public component role (`api` or `web`).
+        profile_fingerprint: Optional WebApp production-profile fingerprint.
     """
 
     tag_reference: str
@@ -32,9 +34,11 @@ class ImageIdentity:
     digest: str
     version: str
     revision: str
-    dependency_lock_sha256: str
+    dependency_lock_sha256: str | None
     architecture: str
     operating_system: str
+    component: str = "api"
+    profile_fingerprint: str | None = None
 
     def as_dict(self) -> dict[str, str]:
         """Serialize public immutable image evidence.
@@ -43,16 +47,21 @@ class ImageIdentity:
             JSON-ready image identity mapping.
         """
 
-        return {
+        payload = {
+            "component": self.component,
             "tagReference": self.tag_reference,
             "digestReference": self.digest_reference,
             "digest": self.digest,
             "version": self.version,
             "revision": self.revision,
-            "dependencyLockSha256": self.dependency_lock_sha256,
             "architecture": self.architecture,
             "operatingSystem": self.operating_system,
         }
+        if self.dependency_lock_sha256 is not None:
+            payload["dependencyLockSha256"] = self.dependency_lock_sha256
+        if self.profile_fingerprint is not None:
+            payload["profileFingerprint"] = self.profile_fingerprint
+        return payload
 
 
 @dataclass(frozen=True)
@@ -96,14 +105,20 @@ class PreviousDeployment:
     Attributes:
         stack_exists: Whether the candidate stack existed before deploy.
         service_exists: Whether the candidate API service existed.
-        image_reference: Prior service image tag/digest, if any.
-        image_digest: Prior immutable digest when inspectable.
+        image_reference: Prior API image tag/digest, if any.
+        image_digest: Prior API immutable digest when inspectable.
+        web_service_exists: Whether the candidate WebApp service existed.
+        web_image_reference: Prior WebApp image tag/digest, if any.
+        web_image_digest: Prior WebApp immutable digest when inspectable.
     """
 
     stack_exists: bool
     service_exists: bool
     image_reference: str | None
     image_digest: str | None
+    web_service_exists: bool = False
+    web_image_reference: str | None = None
+    web_image_digest: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Serialize prior candidate deployment identity.
@@ -117,6 +132,9 @@ class PreviousDeployment:
             "serviceExists": self.service_exists,
             "imageReference": self.image_reference,
             "imageDigest": self.image_digest,
+            "webServiceExists": self.web_service_exists,
+            "webImageReference": self.web_image_reference,
+            "webImageDigest": self.web_image_digest,
         }
 
 
@@ -126,11 +144,12 @@ class PreflightEvidence:
 
     Attributes:
         profile_fingerprint: Validated site-profile SHA-256.
-        image: Resolved immutable image identity.
+        image: Resolved immutable API image identity.
         stack_path: Exact generated digest-bound stack path.
         docker_secret_names: Verified external Docker secret identifiers.
         data_directories: Verified candidate host directories.
         checks: Named successful preflight checks.
+        web_image: Resolved immutable WebApp image identity.
     """
 
     profile_fingerprint: str
@@ -139,6 +158,7 @@ class PreflightEvidence:
     docker_secret_names: tuple[str, ...]
     data_directories: tuple[str, ...]
     checks: dict[str, bool]
+    web_image: ImageIdentity | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Serialize sanitized preflight evidence.
@@ -147,9 +167,12 @@ class PreflightEvidence:
             JSON-ready preflight result.
         """
 
+        images = {"api": self.image.as_dict()}
+        if self.web_image is not None:
+            images["web"] = self.web_image.as_dict()
         return {
             "profileFingerprint": self.profile_fingerprint,
-            "image": self.image.as_dict(),
+            "images": images,
             "stackPath": str(self.stack_path),
             "dockerSecretNames": list(self.docker_secret_names),
             "dataDirectories": list(self.data_directories),
@@ -166,12 +189,14 @@ class HealthEvidence:
         service_images: Deployed service image references.
         api_health_fingerprint: SHA-256 of sanitized API health fields.
         log_scan_lines: Number of recent API log lines scanned.
+        web_metadata_fingerprint: Optional SHA-256 of public WebApp metadata.
     """
 
     checks: dict[str, bool]
     service_images: dict[str, str]
     api_health_fingerprint: str
     log_scan_lines: int
+    web_metadata_fingerprint: str | None = None
 
     @property
     def healthy(self) -> bool:
@@ -190,13 +215,16 @@ class HealthEvidence:
             JSON-ready health result.
         """
 
-        return {
+        payload = {
             "healthy": self.healthy,
             "checks": dict(sorted(self.checks.items())),
             "serviceImages": dict(sorted(self.service_images.items())),
             "apiHealthFingerprint": self.api_health_fingerprint,
             "logScanLines": self.log_scan_lines,
         }
+        if self.web_metadata_fingerprint is not None:
+            payload["webMetadataFingerprint"] = self.web_metadata_fingerprint
+        return payload
 
 
 @dataclass
@@ -233,7 +261,7 @@ class ReleaseReceipt:
         """
 
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "kind": "felix-swarm-release-receipt",
             "operationId": self.operation_id,
             "startedAt": self.started_at,

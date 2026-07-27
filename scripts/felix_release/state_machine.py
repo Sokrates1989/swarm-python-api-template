@@ -17,10 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from felix_site_contract import load_felix_site_profile
+from felix_site_contract import FelixSiteProfile, load_felix_site_profile
 
 from .backup import (
     API_SERVICE,
+    WEB_SERVICE,
     capture_previous_deployment,
     create_continuity_marker,
     create_verified_backup,
@@ -37,6 +38,11 @@ from .models import (
     ReleaseReceipt,
 )
 from .preflight import run_preflight, verify_public_identity_continuity
+from .rollback import (
+    explicit_rollback_services,
+    inject_and_verify_service_rollback as _inject_and_verify_service_rollback,
+    rollback_to_previous as _rollback_to_previous,
+)
 
 
 STACK_NAME = "felix-new"
@@ -98,67 +104,11 @@ def _write_receipt(root: Path, receipt: ReleaseReceipt) -> Path:
     return final_path
 
 
-def _current_api_image(runner: CommandRunner) -> str | None:
-    """Read the deployed candidate API image reference.
-
-    Args:
-        runner: Shell-free command runner.
-
-    Returns:
-        Image reference, or None when the service is absent.
-    """
-
-    result = runner.run(
-        [
-            "docker",
-            "service",
-            "inspect",
-            API_SERVICE,
-            "--format",
-            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
-        ],
-        check=False,
-    )
-    if result.return_code != 0:
-        return None
-    try:
-        value = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise FelixReleaseError("Current API service image is invalid JSON.") from exc
-    return str(value)
-
-
-def _wait_for_image(
-    runner: CommandRunner,
-    expected_image: str,
-    *,
-    timeout_seconds: int = 180,
-) -> None:
-    """Wait until the API service reports an exact image reference.
-
-    Args:
-        runner: Shell-free command runner.
-        expected_image: Exact prior or candidate digest reference.
-        timeout_seconds: Maximum wait duration.
-
-    Returns:
-        None.
-
-    Raises:
-        FelixReleaseError: If the expected image does not become active.
-    """
-
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        if _current_api_image(runner) == expected_image:
-            return
-        time.sleep(2)
-    raise FelixReleaseError("Timed out waiting for the expected API service image.")
-
-
 def _wait_for_health(
     runner: CommandRunner,
     image: ImageIdentity,
+    web_image: ImageIdentity,
+    profile: FelixSiteProfile,
     *,
     timeout_seconds: int = 240,
 ) -> HealthEvidence:
@@ -166,7 +116,9 @@ def _wait_for_health(
 
     Args:
         runner: Shell-free command runner.
-        image: Expected immutable candidate image.
+        image: Expected immutable candidate API image.
+        web_image: Expected immutable candidate WebApp image.
+        profile: Validated Felix site profile.
         timeout_seconds: Maximum wait duration.
 
     Returns:
@@ -180,7 +132,7 @@ def _wait_for_health(
     last_error: FelixReleaseError | None = None
     while time.monotonic() < deadline:
         try:
-            return run_strict_health(runner, image)
+            return run_strict_health(runner, image, web_image, profile)
         except FelixReleaseError as exc:
             last_error = exc
             time.sleep(5)
@@ -189,142 +141,108 @@ def _wait_for_health(
     raise FelixReleaseError("Strict health timed out without an observation.")
 
 
-def _rollback_to_previous(
+def _failure_injection_image(profile: FelixSiteProfile) -> str:
+    """Resolve the digest-pinned incompatible image used by rollback drills.
+
+    Args:
+        profile: Validated Felix site profile.
+
+    Returns:
+        Digest-pinned Redis image reference.
+
+    Raises:
+        FelixReleaseError: If the services declaration or digest is invalid.
+    """
+
+    services = profile.data["services"]
+    if not isinstance(services, dict):
+        raise FelixReleaseError("Felix services profile is not an object.")
+    bad_image = str(services["redisImage"])
+    if not DIGEST_PATTERN.search(bad_image):
+        raise FelixReleaseError("Failure-injection image is not digest pinned.")
+    return bad_image
+
+
+def _drill_public_service_rollbacks(
     runner: CommandRunner,
     previous: PreviousDeployment,
-) -> dict[str, Any]:
-    """Rollback only the candidate stack/service to its captured prior state.
+    bad_image: str,
+) -> dict[str, dict[str, Any]]:
+    """Inject and prove independent API and WebApp automatic rollbacks.
 
     Args:
         runner: Shell-free command runner.
-        previous: Captured pre-deployment candidate state.
+        previous: Captured healthy public-service state.
+        bad_image: Digest-pinned incompatible image.
 
     Returns:
-        Sanitized rollback result.
+        Component-keyed automatic rollback evidence.
 
     Raises:
-        FelixReleaseError: If rollback cannot restore the exact prior image.
-
-    Side Effects:
-        Rolls back the candidate API service, or removes a failed first-time
-        candidate stack when no prior candidate existed.
+        FelixReleaseError: If required prior image identity is incomplete or
+            either rollback does not complete exactly.
     """
 
-    if previous.service_exists and previous.image_reference:
-        runner.run(
-            [
-                "docker",
-                "service",
-                "rollback",
-                "--detach=false",
-                API_SERVICE,
-            ]
-        )
-        _wait_for_image(runner, previous.image_reference)
-        return {
-            "performed": True,
-            "mode": "service-rollback",
-            "restoredImage": previous.image_reference,
-            "priorDigest": previous.image_digest,
-        }
-    runner.run(["docker", "stack", "rm", STACK_NAME])
+    api_reference = previous.image_reference
+    api_digest = previous.image_digest
+    web_reference = previous.web_image_reference
+    web_digest = previous.web_image_digest
+    if (
+        not api_reference
+        or not api_digest
+        or not web_reference
+        or not web_digest
+    ):
+        raise FelixReleaseError("Rollback drill prior image identity is incomplete.")
     return {
-        "performed": True,
-        "mode": "remove-failed-first-candidate",
-        "restoredImage": None,
-        "priorDigest": None,
+        "api": _inject_and_verify_service_rollback(
+            runner,
+            API_SERVICE,
+            "api",
+            api_reference,
+            api_digest,
+            bad_image,
+        ),
+        "web": _inject_and_verify_service_rollback(
+            runner,
+            WEB_SERVICE,
+            "web",
+            web_reference,
+            web_digest,
+            bad_image,
+        ),
     }
 
 
-def _wait_for_automatic_rollback(
+def _redacted_service_logs(
     runner: CommandRunner,
-    previous: PreviousDeployment,
-    prior_service_version: int,
-    *,
-    timeout_seconds: int = 240,
-) -> dict[str, Any]:
-    """Require Docker to complete rollback to the exact captured image.
+    service_name: str,
+) -> str:
+    """Read and redact one candidate public service's recent logs.
 
     Args:
         runner: Shell-free command runner.
-        previous: Exact healthy state captured before failure injection.
-        prior_service_version: Docker service version before failure injection.
-        timeout_seconds: Maximum wait duration.
+        service_name: Exact candidate Docker service name.
 
     Returns:
-        Sanitized automatic-rollback evidence.
-
-    Raises:
-        FelixReleaseError: If Docker does not report ``rollback_completed`` at
-            the exact prior image before timeout.
-    """
-
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        inspected = runner.run(
-            ["docker", "service", "inspect", API_SERVICE, "--format", "{{json .}}"],
-            check=False,
-        )
-        if inspected.return_code == 0:
-            try:
-                service = json.loads(inspected.stdout)
-            except json.JSONDecodeError:
-                service = {}
-            image = (
-                service.get("Spec", {})
-                .get("TaskTemplate", {})
-                .get("ContainerSpec", {})
-                .get("Image")
-            )
-            state = service.get("UpdateStatus", {}).get("State")
-            version = service.get("Version", {}).get("Index")
-            if (
-                state == "rollback_completed"
-                and image == previous.image_reference
-                and isinstance(version, int)
-                and version > prior_service_version
-            ):
-                return {
-                    "performed": True,
-                    "mode": "automatic-service-rollback",
-                    "restoredImage": image,
-                    "priorDigest": previous.image_digest,
-                    "dockerUpdateState": state,
-                }
-        time.sleep(2)
-    raise FelixReleaseError("Docker did not complete automatic rollback safely.")
-
-
-def _service_version(runner: CommandRunner) -> int:
-    """Read the candidate API service version before failure injection.
-
-    Args:
-        runner: Shell-free command runner.
-
-    Returns:
-        Positive Docker service specification version.
-
-    Raises:
-        FelixReleaseError: If the version is unavailable or invalid.
+        Recent logs with credential and bearer values replaced.
     """
 
     result = runner.run(
-        [
-            "docker",
-            "service",
-            "inspect",
-            API_SERVICE,
-            "--format",
-            "{{json .Version.Index}}",
-        ]
+        ["docker", "service", "logs", "--raw", "--tail", "200", service_name],
+        check=False,
     )
-    try:
-        version = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise FelixReleaseError("Candidate API service version is invalid.") from exc
-    if not isinstance(version, int) or version < 1:
-        raise FelixReleaseError("Candidate API service version is invalid.")
-    return version
+    combined = f"{result.stdout}\n{result.stderr}"
+    redacted = re.sub(
+        r"(?i)((password|client_secret|api_key|private_key)\s*[:=]\s*)\S+",
+        r"\1[REDACTED]",
+        combined,
+    )
+    return re.sub(
+        r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|bearer\s+)\S+",
+        r"\1[REDACTED]",
+        redacted,
+    )
 
 
 class FelixReleaseStateMachine:
@@ -398,7 +316,14 @@ class FelixReleaseStateMachine:
                 ]
             )
             receipt.events.append("candidate-deployed")
-            receipt.health = _wait_for_health(self.runner, receipt.preflight.image)
+            if receipt.preflight.web_image is None:
+                raise FelixReleaseError("Preflight omitted the WebApp image.")
+            receipt.health = _wait_for_health(
+                self.runner,
+                receipt.preflight.image,
+                receipt.preflight.web_image,
+                profile,
+            )
             receipt.events.append("strict-health-passed")
             verify_public_identity_continuity()
             receipt.events.append("legacy-continuity-passed")
@@ -438,7 +363,15 @@ class FelixReleaseStateMachine:
 
         receipt = ReleaseReceipt(_new_operation_id(), _utc_timestamp())
         receipt.preflight = run_preflight(self.root, self.runner)
-        receipt.health = run_strict_health(self.runner, receipt.preflight.image)
+        if receipt.preflight.web_image is None:
+            raise FelixReleaseError("Preflight omitted the WebApp image.")
+        profile = load_felix_site_profile(self.root)
+        receipt.health = run_strict_health(
+            self.runner,
+            receipt.preflight.image,
+            receipt.preflight.web_image,
+            profile,
+        )
         verify_public_identity_continuity()
         receipt.state = "healthy"
         receipt.events.extend(
@@ -451,41 +384,34 @@ class FelixReleaseStateMachine:
         return receipt.health, _write_receipt(self.root, receipt)
 
     def rollback(self) -> Path:
-        """Explicitly invoke Docker's candidate API service rollback.
+        """Explicitly rollback both candidate public services.
 
         Returns:
             Sanitized rollback receipt path.
 
         Raises:
-            FelixReleaseError: If no rollback-capable service exists.
+            FelixReleaseError: If no rollback-capable public service exists or
+                either requested rollback cannot be proven.
 
         Side Effects:
-            Rolls back only ``felix-new_api`` to Docker's prior service spec.
+            Rolls back `felix-new_web` and `felix-new_api` when present.
         """
 
         current = capture_previous_deployment(self.runner)
-        if not current.service_exists:
-            raise FelixReleaseError("Candidate API service does not exist.")
         receipt = ReleaseReceipt(_new_operation_id(), _utc_timestamp())
         receipt.previous = current
-        self.runner.run(
-            ["docker", "service", "rollback", "--detach=false", API_SERVICE]
-        )
-        restored = _current_api_image(self.runner)
-        if not restored or restored == current.image_reference:
-            raise FelixReleaseError("Explicit rollback did not change the API image.")
+        restored_services = explicit_rollback_services(self.runner, current)
         receipt.rollback = {
             "performed": True,
-            "mode": "explicit-service-rollback",
-            "replacedImage": current.image_reference,
-            "restoredImage": restored,
+            "mode": "explicit-full-stack-service-rollback",
+            "services": restored_services,
         }
         receipt.events.append("explicit-rollback-completed")
         receipt.state = "rolled-back"
         return _write_receipt(self.root, receipt)
 
     def failure_injection_drill(self) -> Path:
-        """Inject a pinned non-API image and prove rollback plus data continuity.
+        """Prove WebApp/API automatic rollback plus data continuity.
 
         Returns:
             Sanitized successful drill receipt path.
@@ -495,51 +421,52 @@ class FelixReleaseStateMachine:
                 the prior digest, post-rollback health fails, or data is lost.
 
         Side Effects:
-            Inserts one isolated database marker, temporarily updates the
-            candidate API service to the profile's pinned Redis image, requires
-            Docker's automatic rollback, and retains a receipt.
+            Inserts one database marker, injects the pinned Redis image into
+            each public service in turn, proves both automatic rollbacks, and
+            retains data-continuity evidence.
         """
 
         receipt = ReleaseReceipt(_new_operation_id(), _utc_timestamp())
         receipt.preflight = run_preflight(self.root, self.runner)
         profile = load_felix_site_profile(self.root)
         receipt.previous = capture_previous_deployment(self.runner)
-        if not receipt.previous.service_exists or not receipt.previous.image_digest:
-            raise FelixReleaseError("Rollback drill requires a healthy prior digest.")
-        receipt.health = run_strict_health(self.runner, receipt.preflight.image)
+        if (
+            not receipt.previous.service_exists
+            or not receipt.previous.image_reference
+            or not receipt.previous.image_digest
+            or not receipt.previous.web_service_exists
+            or not receipt.previous.web_image_reference
+            or not receipt.previous.web_image_digest
+            or receipt.preflight.web_image is None
+        ):
+            raise FelixReleaseError(
+                "Rollback drill requires healthy prior WebApp and API digests."
+            )
+        receipt.health = run_strict_health(
+            self.runner,
+            receipt.preflight.image,
+            receipt.preflight.web_image,
+            profile,
+        )
         marker = uuid.uuid4().hex
         create_continuity_marker(self.runner, profile, marker)
-        services = profile.data["services"]
-        if not isinstance(services, dict):
-            raise FelixReleaseError("Felix services profile is not an object.")
-        bad_image = str(services["redisImage"])
-        if not DIGEST_PATTERN.search(bad_image):
-            raise FelixReleaseError("Failure-injection image is not digest pinned.")
-        prior_service_version = _service_version(self.runner)
-        update_result = self.runner.run(
-            [
-                "docker",
-                "service",
-                "update",
-                "--image",
-                bad_image,
-                "--detach=false",
-                "--update-order",
-                "start-first",
-                "--update-failure-action",
-                "rollback",
-                API_SERVICE,
-            ],
-            check=False,
-        )
-        receipt.events.append("bad-candidate-update-attempted")
-        receipt.rollback = _wait_for_automatic_rollback(
+        service_rollbacks = _drill_public_service_rollbacks(
             self.runner,
             receipt.previous,
-            prior_service_version,
+            _failure_injection_image(profile),
         )
-        receipt.rollback["updateCommandExitCode"] = update_result.return_code
-        receipt.health = _wait_for_health(self.runner, receipt.preflight.image)
+        receipt.events.append("bad-candidates-update-attempted")
+        receipt.rollback = {
+            "performed": True,
+            "mode": "automatic-full-stack-service-rollback",
+            "services": service_rollbacks,
+        }
+        receipt.health = _wait_for_health(
+            self.runner,
+            receipt.preflight.image,
+            receipt.preflight.web_image,
+            profile,
+        )
         verify_public_identity_continuity()
         verify_continuity_marker(self.runner, profile, marker)
         receipt.rollback["dataContinuityMarkerSha256"] = hashlib.sha256(
@@ -560,37 +487,30 @@ class FelixReleaseStateMachine:
         """Return sanitized candidate stack/service state.
 
         Returns:
-            Public stack and API image state.
+            Public stack plus WebApp/API image state.
         """
 
         previous = capture_previous_deployment(self.runner)
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "kind": "felix-swarm-status",
             "stackName": STACK_NAME,
             **previous.as_dict(),
         }
 
     def sanitized_logs(self) -> str:
-        """Return recent API logs with conservative value redaction.
+        """Return recent WebApp/API logs with conservative redaction.
 
         Returns:
-            Recent log text with sensitive assignments replaced.
+            Component-labeled log text with sensitive assignments replaced.
         """
 
-        result = self.runner.run(
-            ["docker", "service", "logs", "--raw", "--tail", "200", API_SERVICE],
-            check=False,
+        sections = (
+            ("WebApp", WEB_SERVICE),
+            ("API", API_SERVICE),
         )
-        combined = f"{result.stdout}\n{result.stderr}"
-        redacted = re.sub(
-            r"(?i)((password|client_secret|api_key|private_key)\s*[:=]\s*)\S+",
-            r"\1[REDACTED]",
-            combined,
+        return "".join(
+            f"===== {label} =====\n"
+            f"{_redacted_service_logs(self.runner, service_name)}"
+            for label, service_name in sections
         )
-        redacted = re.sub(
-            r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|bearer\s+)\S+",
-            r"\1[REDACTED]",
-            redacted,
-        )
-        return redacted

@@ -112,39 +112,42 @@ Open **Felix strict deploy / health / rollback** and run:
 3. **Backup, deploy candidate, and require strict health.**
 4. **Run strict health and legacy continuity checks.**
 
-Preflight fails closed unless the public profile, registry digest/platform and
-OCI labels, active Swarm manager, Docker secrets, overlay network, candidate
-directories, Compose render, DNS/TLS, candidate issuer/JWKS, legacy issuer,
-and legacy web application all match.
+Preflight fails closed unless the public profile, both registry
+digests/platforms and component-specific OCI labels, active Swarm manager,
+Docker secrets, overlay network, candidate directories, Compose render,
+WebApp/API DNS/TLS, candidate issuer/JWKS, legacy issuer, and legacy web
+application all match.
 
 The first deployment retains a mode-0600 declaration proving the PostgreSQL
 directory was empty. Later deployments retain and structurally verify a
 custom-format `pg_dump` before changing the service.
 
-The API update uses `start-first` order with Docker
+The WebApp and API updates use `start-first` order with Docker
 `failure_action: rollback`. The command additionally requires converged
-replicas, the exact API digest, HTTPS health, production/Felix/PostgreSQL/SQL
-runtime identity, successful startup and migrations, Keycloak configuration
-and audience enforcement, an anonymous protected-route rejection, exact
-version, issuer/JWKS, and secret-safe recent logs.
+replicas, both exact digests, WebApp HTTPS health and release metadata,
+production/Felix/PostgreSQL/SQL API identity, successful startup and
+migrations, Keycloak configuration and audience enforcement, an anonymous
+protected-route rejection, exact versions, issuer/JWKS, and secret-safe recent
+public-service logs.
 
 ## Rollback proof
 
-After the first healthy deployment, choose **Run bad-candidate automatic
-rollback drill** once. The drill:
+After the first healthy deployment, choose **Run WebApp/API automatic rollback
+and data-continuity drill** once. The drill:
 
 1. requires a healthy digest-bound candidate;
 2. inserts one isolated random marker into
    `release_orchestration.markers`;
-3. attempts an API update to the already pinned Redis image;
-4. requires a newer Docker service version in state
-   `rollback_completed` at the exact prior API digest;
-5. repeats strict health and legacy-continuity checks; and
-6. verifies that the database marker survived.
+3. attempts API and WebApp updates, one at a time, to the already pinned Redis
+   image;
+4. requires newer Docker service versions in state `rollback_completed` at
+   both exact prior digests;
+5. repeats strict full-stack health and legacy-continuity checks; and
+6. verifies that the database marker survived both rollbacks.
 
 The drill never publishes an intentionally bad image and never touches a
-legacy service. An explicit candidate API rollback remains available as menu
-option 8 for a later real release incident.
+legacy service. An explicit candidate WebApp/API rollback remains available as
+menu option 8 for a later real release incident.
 
 ## Evidence and failure behavior
 
@@ -153,9 +156,10 @@ Sanitized mode-0600 JSON receipts are written under ignored
 `/swarm/volumes/felix-new/backups/release/`.
 
 If deployment fails after it starts, the state machine restores the captured
-candidate API service image. A failed first candidate deployment removes only
-the `felix-new` stack. If rollback itself cannot be proved, the command exits
-nonzero and retains a `rollback-failed` receipt; it never reports success.
+candidate WebApp and API service images. A failed first candidate deployment
+removes only the `felix-new` stack. If rollback itself cannot be proved, the
+command exits nonzero and retains a `rollback-failed` receipt; it never reports
+success.
 
 Do not configure forwarding from `felix.app.fe-wi.com` during RLS-13. That is
 an explicit later cutover decision.

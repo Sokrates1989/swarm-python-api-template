@@ -22,12 +22,56 @@ from .models import BackupEvidence, PreviousDeployment
 
 
 API_SERVICE = "felix-new_api"
+WEB_SERVICE = "felix-new_web"
 POSTGRES_SERVICE = "felix-new_postgres"
 DIGEST_SEARCH = re.compile(r"@(?P<digest>sha256:[0-9a-f]{64})$")
 
 
+def _capture_service_image(
+    runner: CommandRunner,
+    service_name: str,
+    component: str,
+) -> tuple[bool, str | None, str | None]:
+    """Capture one candidate service's prior image identity.
+
+    Args:
+        runner: Shell-free command runner.
+        service_name: Exact candidate Docker service name.
+        component: Human-readable component used in diagnostics.
+
+    Returns:
+        Existence, image reference, and optional immutable digest.
+
+    Raises:
+        FelixReleaseError: If Docker returns malformed image JSON.
+    """
+
+    inspected = runner.run(
+        [
+            "docker",
+            "service",
+            "inspect",
+            service_name,
+            "--format",
+            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
+        ],
+        check=False,
+    )
+    if inspected.return_code != 0:
+        return False, None, None
+    try:
+        image_reference = str(json.loads(inspected.stdout))
+    except json.JSONDecodeError as exc:
+        raise FelixReleaseError(
+            f"Prior {component} service image is invalid JSON."
+        ) from exc
+    digest_match = DIGEST_SEARCH.search(image_reference)
+    digest = digest_match.group("digest") if digest_match else None
+    return True, image_reference, digest
+
+
 def capture_previous_deployment(runner: CommandRunner) -> PreviousDeployment:
-    """Capture candidate-only prior stack/service/image identity.
+    """Capture candidate-only prior WebApp/API stack identity.
 
     Args:
         runner: Shell-free command runner.
@@ -41,30 +85,24 @@ def capture_previous_deployment(runner: CommandRunner) -> PreviousDeployment:
         check=False,
     )
     stack_exists = "felix-new" in stacks.stdout.splitlines()
-    inspected = runner.run(
-        [
-            "docker",
-            "service",
-            "inspect",
-            API_SERVICE,
-            "--format",
-            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
-        ],
-        check=False,
+    api_exists, api_reference, api_digest = _capture_service_image(
+        runner,
+        API_SERVICE,
+        "API",
     )
-    if inspected.return_code != 0:
-        return PreviousDeployment(stack_exists, False, None, None)
-    try:
-        image_reference = json.loads(inspected.stdout)
-    except json.JSONDecodeError as exc:
-        raise FelixReleaseError("Prior API service image is invalid JSON.") from exc
-    digest_match = DIGEST_SEARCH.search(str(image_reference))
-    digest = digest_match.group("digest") if digest_match else None
+    web_exists, web_reference, web_digest = _capture_service_image(
+        runner,
+        WEB_SERVICE,
+        "WebApp",
+    )
     return PreviousDeployment(
         stack_exists,
-        True,
-        str(image_reference),
-        digest,
+        api_exists,
+        api_reference,
+        api_digest,
+        web_exists,
+        web_reference,
+        web_digest,
     )
 
 

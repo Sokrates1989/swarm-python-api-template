@@ -23,8 +23,12 @@ SCRIPTS_DIRECTORY = REPOSITORY_ROOT / "scripts"
 if str(SCRIPTS_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
+from felix_release import health as release_health  # noqa: E402
 from felix_release import state_machine  # noqa: E402
-from felix_release.backup import create_verified_backup  # noqa: E402
+from felix_release.backup import (  # noqa: E402
+    capture_previous_deployment,
+    create_verified_backup,
+)
 from felix_release.command import CommandResult  # noqa: E402
 from felix_release.errors import FelixReleaseError  # noqa: E402
 from felix_release.health import _validate_api_health  # noqa: E402
@@ -38,12 +42,15 @@ from felix_release.models import (  # noqa: E402
 from felix_release.preflight import (  # noqa: E402
     _digest_bound_stack,
     resolve_image_identity,
+    resolve_web_image_identity,
 )
+from felix_release.rollback import rollback_to_previous  # noqa: E402
 from felix_site_contract import load_felix_site_profile  # noqa: E402
 from felix_stack_renderer import render_stack  # noqa: E402
 from tests.felix_profile_fixture import PRODUCTION_PROFILE  # noqa: E402
 IMAGE_DIGEST = "sha256:" + ("a" * 64)
 REDIS_DIGEST = "sha256:" + ("b" * 64)
+WEB_DIGEST = "sha256:" + ("e" * 64)
 
 
 class FakeRunner:
@@ -127,9 +134,73 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             "amd64",
             "linux",
         )
+        self.web_image = ImageIdentity(
+            "sokrates1989/felix-webapp:1.0.5",
+            f"sokrates1989/felix-webapp@{WEB_DIGEST}",
+            WEB_DIGEST,
+            "1.0.5",
+            "f" * 40,
+            None,
+            "amd64",
+            "linux",
+            component="web",
+            profile_fingerprint="9" * 64,
+        )
+
+    def _api_health_payload(self) -> dict[str, object]:
+        """Build one exact healthy Felix API response fixture.
+
+        Returns:
+            Production runtime, migration, and Keycloak health mapping.
+        """
+
+        return {
+            "status": "OK",
+            "app_environment": "production",
+            "app_profile": "felix",
+            "backend_app_id": "felix",
+            "build_backend_app_id": "felix",
+            "backend_data_profile": "postgresql",
+            "provider_profile": "sql",
+            "startup_probe_status": "success",
+            "startup_complete": True,
+            "migration_status": "success",
+            "auth_provider": "keycloak",
+            "keycloak": {
+                "configured": True,
+                "realm": "felix-new",
+                "issuer": "https://keycloak.fe-wi.com/realms/felix-new",
+                "audience": "felix-new-backend",
+                "audience_enforced": True,
+            },
+        }
+
+    def _web_metadata_payload(self) -> dict[str, object]:
+        """Build one exact healthy Felix WebApp metadata fixture.
+
+        Returns:
+            Public production WebApp release identity mapping.
+        """
+
+        return {
+            "kind": "flutter-web-release",
+            "appId": "felix",
+            "appPath": "apps/felix",
+            "environment": "production",
+            "imageRepository": "sokrates1989/felix-webapp",
+            "imageTag": "1.0.5",
+            "profileFingerprint": "9" * 64,
+            "sourceRevision": "f" * 40,
+            "sourceDirty": False,
+            "webOrigin": "https://felix-app.fe-wi.com",
+            "backendOrigin": "https://api.felix-app.fe-wi.com",
+            "keycloakIssuer": "https://keycloak.fe-wi.com/realms/felix-new",
+            "keycloakRealm": "felix-new",
+            "keycloakClientId": "felix-new-frontend",
+        }
 
     def test_renderer_declares_automatic_start_first_rollback(self) -> None:
-        """Require bounded automatic rollback in the candidate API service."""
+        """Require bounded automatic rollback in both public services."""
 
         stack = render_stack(self.profile)
 
@@ -138,13 +209,15 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
         self.assertIn("monitor: 60s", stack)
         self.assertIn("order: start-first", stack)
 
-    def test_digest_bound_stack_replaces_only_candidate_api_tag(self) -> None:
-        """Deploy the API by immutable digest while preserving pinned services."""
+    def test_digest_bound_stack_replaces_both_public_image_tags(self) -> None:
+        """Deploy WebApp/API digests while preserving pinned data services."""
 
-        stack = _digest_bound_stack(self.profile, self.image)
+        stack = _digest_bound_stack(self.profile, self.image, self.web_image)
 
         self.assertIn(f'image: "{self.image.digest_reference}"', stack)
         self.assertNotIn(f'image: "{self.image.tag_reference}"', stack)
+        self.assertIn(f'image: "{self.web_image.digest_reference}"', stack)
+        self.assertNotIn(f'image: "{self.web_image.tag_reference}"', stack)
         self.assertIn("redis@sha256:", stack)
         self.assertIn("postgres@sha256:", stack)
 
@@ -157,7 +230,7 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
 
         stack_path = self.root / "digest-stack.yml"
         stack_path.write_text(
-            _digest_bound_stack(self.profile, self.image),
+            _digest_bound_stack(self.profile, self.image, self.web_image),
             encoding="utf-8",
         )
 
@@ -214,6 +287,160 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
 
         self.assertEqual(resolved, self.image)
 
+    def test_web_image_resolution_requires_exact_public_oci_identity(self) -> None:
+        """Accept one published WebApp with exact profile and public labels."""
+
+        inspect_payload = [
+            {
+                "RepoDigests": [self.web_image.digest_reference],
+                "Architecture": "amd64",
+                "Os": "linux",
+                "Config": {
+                    "Labels": {
+                        "org.opencontainers.image.version": "1.0.5",
+                        "org.opencontainers.image.revision": "f" * 40,
+                        "com.felicitas_wisdom.app.id": "felix",
+                        "com.felicitas_wisdom.profile.environment": "production",
+                        "com.felicitas_wisdom.profile.fingerprint": "9" * 64,
+                        "com.felicitas_wisdom.web.origin": (
+                            "https://felix-app.fe-wi.com"
+                        ),
+                        "com.felicitas_wisdom.backend.origin": (
+                            "https://api.felix-app.fe-wi.com"
+                        ),
+                        "com.felicitas_wisdom.keycloak.issuer": (
+                            "https://keycloak.fe-wi.com/realms/felix-new"
+                        ),
+                        "com.felicitas_wisdom.keycloak.realm": "felix-new",
+                        "com.felicitas_wisdom.keycloak.client_id": (
+                            "felix-new-frontend"
+                        ),
+                    }
+                },
+            }
+        ]
+        command = (
+            "docker",
+            "image",
+            "inspect",
+            self.web_image.tag_reference,
+        )
+        runner = FakeRunner(
+            {
+                command: CommandResult(
+                    command,
+                    0,
+                    json.dumps(inspect_payload),
+                    "",
+                )
+            }
+        )
+
+        resolved = resolve_web_image_identity(runner, self.profile)
+
+        self.assertEqual(resolved, self.web_image)
+
+    def test_previous_deployment_captures_both_public_image_digests(self) -> None:
+        """Capture exact WebApp/API state before a full-stack deployment."""
+
+        stack_command = ("docker", "stack", "ls", "--format", "{{.Name}}")
+        api_command = (
+            "docker",
+            "service",
+            "inspect",
+            "felix-new_api",
+            "--format",
+            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
+        )
+        web_command = (
+            "docker",
+            "service",
+            "inspect",
+            "felix-new_web",
+            "--format",
+            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
+        )
+        runner = FakeRunner(
+            {
+                stack_command: CommandResult(stack_command, 0, "felix-new\n", ""),
+                api_command: CommandResult(
+                    api_command,
+                    0,
+                    json.dumps(self.image.digest_reference),
+                    "",
+                ),
+                web_command: CommandResult(
+                    web_command,
+                    0,
+                    json.dumps(self.web_image.digest_reference),
+                    "",
+                ),
+            }
+        )
+
+        previous = capture_previous_deployment(runner)
+
+        self.assertTrue(previous.stack_exists)
+        self.assertEqual(previous.image_digest, self.image.digest)
+        self.assertEqual(previous.web_image_digest, self.web_image.digest)
+
+    def test_failed_update_restores_both_prior_public_images(self) -> None:
+        """Rollback WebApp/API services to their independently captured digests."""
+
+        api_command = (
+            "docker",
+            "service",
+            "inspect",
+            "felix-new_api",
+            "--format",
+            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
+        )
+        web_command = (
+            "docker",
+            "service",
+            "inspect",
+            "felix-new_web",
+            "--format",
+            "{{json .Spec.TaskTemplate.ContainerSpec.Image}}",
+        )
+        previous = PreviousDeployment(
+            True,
+            True,
+            self.image.digest_reference,
+            self.image.digest,
+            True,
+            self.web_image.digest_reference,
+            self.web_image.digest,
+        )
+        runner = FakeRunner(
+            {
+                api_command: CommandResult(
+                    api_command,
+                    0,
+                    json.dumps(self.image.digest_reference),
+                    "",
+                ),
+                web_command: CommandResult(
+                    web_command,
+                    0,
+                    json.dumps(self.web_image.digest_reference),
+                    "",
+                ),
+            }
+        )
+
+        evidence = rollback_to_previous(runner, previous)
+
+        self.assertEqual(evidence["mode"], "full-stack-service-rollback")
+        self.assertEqual(
+            evidence["services"]["api"]["restoredImage"],
+            self.image.digest_reference,
+        )
+        self.assertEqual(
+            evidence["services"]["web"]["restoredImage"],
+            self.web_image.digest_reference,
+        )
+
     def test_first_deploy_records_empty_database_beside_postgres_root(self) -> None:
         """Retain initial evidence under backups without misreading that path."""
 
@@ -240,30 +467,75 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
     def test_health_identity_requires_every_production_runtime_field(self) -> None:
         """Reject a health payload when any required identity field drifts."""
 
-        payload = {
-            "status": "OK",
-            "app_environment": "production",
-            "app_profile": "felix",
-            "backend_app_id": "felix",
-            "build_backend_app_id": "felix",
-            "backend_data_profile": "postgresql",
-            "provider_profile": "sql",
-            "startup_probe_status": "success",
-            "startup_complete": True,
-            "migration_status": "success",
-            "auth_provider": "keycloak",
-            "keycloak": {
-                "configured": True,
-                "realm": "felix-new",
-                "issuer": "https://keycloak.fe-wi.com/realms/felix-new",
-                "audience": "felix-new-backend",
-                "audience_enforced": True,
-            },
-        }
+        payload = self._api_health_payload()
 
         self.assertTrue(all(_validate_api_health(payload).values()))
         payload["migration_status"] = "failed"
         self.assertFalse(_validate_api_health(payload)["migration"])
+
+    def test_strict_health_binds_web_and_api_digests_and_metadata(self) -> None:
+        """Require both public services, HTTPS identities, and exact digests."""
+
+        images = {
+            "felix-new_web": self.web_image.digest_reference,
+            "felix-new_api": self.image.digest_reference,
+            "felix-new_postgres": f"postgres@{REDIS_DIGEST}",
+            "felix-new_redis": f"redis@{REDIS_DIGEST}",
+        }
+        results: dict[tuple[str, ...], CommandResult] = {}
+        for service_name, image in images.items():
+            command = (
+                "docker",
+                "service",
+                "inspect",
+                service_name,
+                "--format",
+                "{{json .}}",
+            )
+            payload = {
+                "Spec": {
+                    "Mode": {"Replicated": {"Replicas": 1}},
+                    "TaskTemplate": {"ContainerSpec": {"Image": image}},
+                },
+                "ServiceStatus": {"RunningTasks": 1, "DesiredTasks": 1},
+            }
+            results[command] = CommandResult(
+                command,
+                0,
+                json.dumps(payload),
+                "",
+            )
+        https_payloads = [
+            self._web_metadata_payload(),
+            self._api_health_payload(),
+            {"IMAGE_TAG": "0.1.1"},
+            {"issuer": "https://keycloak.fe-wi.com/realms/felix-new"},
+            {"keys": [{"kid": "safe-public-key-id"}]},
+        ]
+
+        with (
+            mock.patch.object(
+                release_health,
+                "_https_response",
+                side_effect=[(200, b""), (401, b"")],
+            ),
+            mock.patch.object(
+                release_health,
+                "_https_json",
+                side_effect=https_payloads,
+            ),
+        ):
+            evidence = release_health.run_strict_health(
+                FakeRunner(results),
+                self.image,
+                self.web_image,
+                self.profile,
+            )
+
+        self.assertTrue(evidence.healthy)
+        self.assertTrue(evidence.checks["webImageDigest"])
+        self.assertTrue(evidence.checks["apiImageDigest"])
+        self.assertRegex(str(evidence.web_metadata_fingerprint), r"^[0-9a-f]{64}$")
 
     @mock.patch.object(state_machine, "_rollback_to_previous")
     @mock.patch.object(state_machine, "_wait_for_health")
@@ -289,12 +561,16 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             (),
             (),
             {"ready": True},
+            self.web_image,
         )
         previous = PreviousDeployment(
             True,
             True,
             self.image.digest_reference,
             self.image.digest,
+            True,
+            self.web_image.digest_reference,
+            self.web_image.digest,
         )
         backup_path = self.root / "backup.pgdump"
         backup_path.write_bytes(b"verified-backup")
@@ -356,12 +632,16 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             (),
             (),
             {"ready": True},
+            self.web_image,
         )
         previous = PreviousDeployment(
             True,
             True,
             self.image.digest_reference,
             self.image.digest,
+            True,
+            self.web_image.digest_reference,
+            self.web_image.digest,
         )
         profile = SimpleNamespace(
             data={"services": {"redisImage": f"redis@{REDIS_DIGEST}"}}
@@ -395,15 +675,52 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             "--format",
             "{{json .Version.Index}}",
         )
+        web_inspect_command = (
+            "docker",
+            "service",
+            "inspect",
+            "felix-new_web",
+            "--format",
+            "{{json .}}",
+        )
+        web_version_command = (
+            "docker",
+            "service",
+            "inspect",
+            "felix-new_web",
+            "--format",
+            "{{json .Version.Index}}",
+        )
+        rolled_back_web_service = {
+            "Version": {"Index": 10},
+            "Spec": {
+                "TaskTemplate": {
+                    "ContainerSpec": {"Image": self.web_image.digest_reference}
+                }
+            },
+            "UpdateStatus": {"State": "rollback_completed"},
+        }
         runner = FakeRunner(
             {
                 version_command: CommandResult(version_command, 0, "7", ""),
+                web_version_command: CommandResult(
+                    web_version_command,
+                    0,
+                    "9",
+                    "",
+                ),
                 inspect_command: CommandResult(
                     inspect_command,
                     0,
                     json.dumps(rolled_back_service),
                     "",
-                )
+                ),
+                web_inspect_command: CommandResult(
+                    web_inspect_command,
+                    0,
+                    json.dumps(rolled_back_web_service),
+                    "",
+                ),
             }
         )
 
@@ -412,15 +729,21 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             runner,
         ).failure_injection_drill()
 
-        update_call = next(call for call in runner.calls if "update" in call)
-        self.assertIn(f"redis@{REDIS_DIGEST}", update_call)
+        update_calls = [call for call in runner.calls if "update" in call]
+        self.assertEqual(len(update_calls), 2)
+        for update_call in update_calls:
+            self.assertIn(f"redis@{REDIS_DIGEST}", update_call)
         create_marker.assert_called_once()
         verify_public_identity.assert_called_once()
         verify_marker.assert_called_once()
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         self.assertEqual(receipt["state"], "rollback-drill-passed")
         self.assertEqual(
-            receipt["rollback"]["dockerUpdateState"],
+            receipt["rollback"]["services"]["api"]["dockerUpdateState"],
+            "rollback_completed",
+        )
+        self.assertEqual(
+            receipt["rollback"]["services"]["web"]["dockerUpdateState"],
             "rollback_completed",
         )
         self.assertTrue(receipt["rollback"]["dataContinuityVerified"])
