@@ -33,7 +33,8 @@
 #   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT,
 #   APP_EXPOSURE_TYPE, APP_INTERNAL_URL, APP_INTERNAL_SERVICE,
 #   APP_INTERNAL_NETWORK, APP_SECRETS_TEMPLATE, APP_SECRETS_PREFIXED,
-#   APP_SECRET_NAMES
+#   APP_SECRET_NAMES, APP_OPTIONAL_SECRET_NAMES, APP_ENV_KEYS,
+#   APP_RENDERER_TYPE, APP_RENDERER_STRICT
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
@@ -182,6 +183,13 @@ load_app_config() {
     APP_SECRETS_TEMPLATE="$(_jq_or_default "$config_file" '.secretsConfig.template' "")"
     APP_SECRETS_PREFIXED="$(_jq_or_default "$config_file" '.secretsConfig.prefixed' "true")"
     APP_SECRET_NAMES="$(jq -r '.secrets[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
+    APP_OPTIONAL_SECRET_NAMES="$(jq -r '.optionalSecrets[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
+
+    # Executable renderer metadata. Schema 4 profiles use envKeys as the exact
+    # rendered environment allowlist instead of informational documentation.
+    APP_RENDERER_TYPE="$(_jq_or_default "$config_file" '.renderer.type' "generic")"
+    APP_RENDERER_STRICT="$(_jq_or_default "$config_file" '.renderer.strict' "false")"
+    APP_ENV_KEYS="$(jq -r '.envKeys[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
 
     # Database requirements
     APP_DB_TYPE="$(_jq_or_default "$config_file" '.database.type' "postgresql")"

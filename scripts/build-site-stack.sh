@@ -3,9 +3,9 @@
 # build-site-stack.sh - Build root swarm-stack.yml from compose modules
 # ==============================================================================
 #
-# Reads the root .env to determine DB_TYPE, DB_MODE, PROXY_TYPE, and SSL_MODE,
-# then calls the config-builder.sh build_stack_file function to assemble
-# swarm-stack.yml from compose-module templates + snippets.
+# Reads the root .env to determine the selected profile. Felix production uses
+# the strict schema-4 Python renderer; generic profiles continue through the
+# compose-module templates and snippets.
 #
 # Output: PROJECT_ROOT/swarm-stack.yml
 #
@@ -39,6 +39,21 @@ fi
 _env_val() {
     grep "^${1}=" "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
 }
+
+# Strict Felix rendering owns its complete environment and Docker secret
+# declarations. Do not feed this profile through generic placeholder rewriting.
+if [ "$(_env_val APP_PROFILE)" = "felix" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_COMMAND="python3"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_COMMAND="python"
+    else
+        echo "Error: Python 3.10 or newer is required for Felix rendering."
+        exit 1
+    fi
+    exec "$PYTHON_COMMAND" "${PROJECT_ROOT}/scripts/felix_site_profile.py" \
+        --root "$PROJECT_ROOT" render --compose-check
+fi
 
 STACK_FAMILY="$(_env_val STACK_FAMILY)"
 STACK_FAMILY="${STACK_FAMILY:-api}"

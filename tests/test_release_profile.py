@@ -52,7 +52,7 @@ _PRODUCTION_VALUES = {
     "KEYCLOAK_BASE_URL": "https://keycloak.fe-wi.com",
     "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
     "KEYCLOAK_REALM": "felix-new",
-    "KEYCLOAK_AUDIENCE": "felix-api",
+    "KEYCLOAK_AUDIENCE": "felix-new-backend",
     "KEYCLOAK_FRONTEND_CLIENT_ID": "felix-new-frontend",
     "STACK_NAME": "felix-new",
 }
@@ -367,6 +367,24 @@ class SwarmReleaseProfileTest(unittest.TestCase):
         self.assertEqual(destination.read_text(encoding="utf-8"), "EXISTING=value\n")
 
         materialize_compatibility_env(profile, destination, overwrite=True)
+        self.assertEqual(
+            destination.read_text(encoding="utf-8"),
+            render_compatibility_env(profile),
+        )
+
+    def test_materialization_accepts_identical_existing_output(self) -> None:
+        """Treats deterministic generated compatibility data as idempotent.
+
+        Returns:
+            None.
+        """
+
+        profile = self._parse()
+        destination = self.root / ".env"
+        destination.write_text(render_compatibility_env(profile), encoding="utf-8")
+
+        materialize_compatibility_env(profile, destination)
+
         self.assertEqual(
             destination.read_text(encoding="utf-8"),
             render_compatibility_env(profile),

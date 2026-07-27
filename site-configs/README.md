@@ -11,3 +11,16 @@ Profiles can describe API stacks or nginx-only stacks. API profiles use the hist
 - `routing.containerPort`, usually `80` for nginx images
 
 Nginx-only profiles must not declare API/database secrets unless the image genuinely needs them. Public static media images should keep `secrets` empty.
+
+## Strict executable profiles
+
+Schema `4.0` profiles may declare `renderer.type=felix-production`. For these
+profiles, `environment`, `envKeys`, `secretMounts`, and enabled capability
+declarations are executable inputs. The setup wizard delegates directly to the
+strict Python adapter and never routes them through generic placeholder
+substitution.
+
+`site-configs/felix.json` is the first strict profile. Its companion
+`felix.json.md` documents candidate/legacy isolation, immutable images, local
+PostgreSQL, Keycloak clients, and safe capability selection. The ignored
+operator `prod.env` must pass validation before a stack can be rendered.

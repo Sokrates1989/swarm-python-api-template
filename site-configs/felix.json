@@ -1,0 +1,224 @@
+{
+  "$schema": "site-config-schema",
+  "version": "4.0",
+  "appId": "felix",
+  "name": "Felix Candidate API",
+  "description": "Candidate Felix production backend isolated from the legacy deployment",
+  "kind": "api",
+  "renderer": {
+    "type": "felix-production",
+    "strict": true
+  },
+  "stack": {
+    "family": "api",
+    "role": "candidate-api",
+    "primaryService": "api",
+    "name": "felix-new"
+  },
+  "exposure": {
+    "type": "public",
+    "publicDomainRequired": true,
+    "traefik": true,
+    "publishedPorts": false
+  },
+  "routing": {
+    "containerPort": 8080,
+    "apiBaseUrl": "https://api.felix-app.fe-wi.com",
+    "domain": "api.felix-app.fe-wi.com",
+    "healthPath": "/health",
+    "traefikNetwork": "traefik-public",
+    "sslMode": "proxy"
+  },
+  "database": {
+    "type": "postgresql",
+    "defaultMode": "local",
+    "allowedModes": [
+      "local"
+    ],
+    "image": "postgres@sha256:79c06d285ed9186efbbc45c73413b3c3510c3c94ffede2f25d1e523f74d07f28"
+  },
+  "services": {
+    "api": true,
+    "redis": true,
+    "database": true,
+    "redisImage": "redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+  },
+  "image": {
+    "name": "sokrates1989/python-api-felix",
+    "defaultVersion": "0.1.0",
+    "mutableTagsAllowed": false
+  },
+  "resources": {
+    "defaultReplicas": 1,
+    "defaultMemoryLimit": "512M"
+  },
+  "storage": {
+    "dataRoot": "/swarm/volumes/felix-new"
+  },
+  "cors": {
+    "origins": [
+      "https://felix-app.fe-wi.com"
+    ]
+  },
+  "auth": {
+    "provider": "keycloak",
+    "serverUrl": "https://keycloak.fe-wi.com",
+    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
+    "jwksUrl": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
+    "realm": "felix-new",
+    "frontendClientId": "felix-new-frontend",
+    "audience": "felix-new-backend",
+    "adminClientId": "felix-new-backend",
+    "redirectUris": [
+      "https://felix-app.fe-wi.com/auth/callback",
+      "felixkc:/callback"
+    ],
+    "webOrigins": [
+      "https://felix-app.fe-wi.com"
+    ]
+  },
+  "environment": {
+    "APP_ENVIRONMENT": "production",
+    "BACKEND_APP_ID": "felix",
+    "APP_PROFILE": "felix",
+    "PORT": "8080",
+    "IMAGE_TAG": "0.1.0",
+    "REDIS_URL": "redis://redis:6379/0",
+    "DB_TYPE": "postgresql",
+    "DB_MODE": "local",
+    "DB_HOST": "postgres",
+    "DB_PORT": "5432",
+    "DB_NAME": "felix",
+    "DB_USER": "felix",
+    "CORS_ORIGINS": "https://felix-app.fe-wi.com",
+    "AUTH_PROVIDER": "keycloak",
+    "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
+    "KEYCLOAK_REALM": "felix-new",
+    "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
+    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
+    "KEYCLOAK_JWKS_URL": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
+    "KEYCLOAK_ENFORCE_AUDIENCE": "true",
+    "KEYCLOAK_AUDIENCE": "felix-new-backend",
+    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
+    "DEBUG": "false",
+    "DEBUG_ENABLED": "false",
+    "SQL_ECHO_ENABLED": "false",
+    "ENABLE_HTTP_DEBUG_LOGGING": "false",
+    "LOG_LEVEL": "INFO",
+    "LOG_TIMEZONE": "Europe/Berlin",
+    "LOG_REQUEST_HEADERS": "false",
+    "LOG_REQUEST_BODY": "false",
+    "LOG_RESPONSE_HEADERS": "false",
+    "LOG_RESPONSE_BODY": "false",
+    "AI_CHAT_DEBUG_ENABLED": "false",
+    "AI_CHAT_DEBUG_INCLUDE_PROMPTS": "false"
+  },
+  "envKeys": [
+    "APP_ENVIRONMENT",
+    "BACKEND_APP_ID",
+    "APP_PROFILE",
+    "PORT",
+    "IMAGE_TAG",
+    "REDIS_URL",
+    "DB_TYPE",
+    "DB_MODE",
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USER",
+    "CORS_ORIGINS",
+    "AUTH_PROVIDER",
+    "KEYCLOAK_SERVER_URL",
+    "KEYCLOAK_REALM",
+    "KEYCLOAK_CLIENT_ID",
+    "KEYCLOAK_ISSUER_URL",
+    "KEYCLOAK_JWKS_URL",
+    "KEYCLOAK_ENFORCE_AUDIENCE",
+    "KEYCLOAK_AUDIENCE",
+    "KEYCLOAK_ADMIN_CLIENT_ID",
+    "DEBUG",
+    "DEBUG_ENABLED",
+    "SQL_ECHO_ENABLED",
+    "ENABLE_HTTP_DEBUG_LOGGING",
+    "LOG_LEVEL",
+    "LOG_TIMEZONE",
+    "LOG_REQUEST_HEADERS",
+    "LOG_REQUEST_BODY",
+    "LOG_RESPONSE_HEADERS",
+    "LOG_RESPONSE_BODY",
+    "AI_CHAT_DEBUG_ENABLED",
+    "AI_CHAT_DEBUG_INCLUDE_PROMPTS",
+    "DB_PASSWORD_FILE",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
+  ],
+  "secrets": [
+    "FELIX_NEW_DB_PASSWORD",
+    "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"
+  ],
+  "optionalSecrets": [
+    "FELIX_NEW_AI_CHAT_API_KEY",
+    "FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY",
+    "FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY"
+  ],
+  "secretsConfig": {
+    "template": "setup/templates/secrets.felix.env.template",
+    "prefixed": false
+  },
+  "secretMounts": [
+    {
+      "name": "FELIX_NEW_DB_PASSWORD",
+      "envKey": "DB_PASSWORD_FILE",
+      "target": "/run/secrets/FELIX_NEW_DB_PASSWORD"
+    },
+    {
+      "name": "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET",
+      "envKey": "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE",
+      "target": "/run/secrets/FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"
+    }
+  ],
+  "capabilities": {
+    "aiChat": {
+      "enabled": false,
+      "environment": {
+        "AI_CHAT_COMPLETIONS_ENDPOINT": "https://api.openai.com/v1/chat/completions",
+        "AI_CHAT_MODEL": "gpt-5-mini"
+      },
+      "secretMounts": [
+        {
+          "name": "FELIX_NEW_AI_CHAT_API_KEY",
+          "envKey": "AI_CHAT_API_KEY_FILE",
+          "target": "/run/secrets/FELIX_NEW_AI_CHAT_API_KEY"
+        }
+      ]
+    },
+    "webPush": {
+      "enabled": false,
+      "environment": {
+        "WEB_PUSH_VAPID_SUBJECT": "mailto:operations@fe-wi.com",
+        "WEB_PUSH_DISPATCH_ENABLED": "true"
+      },
+      "secretMounts": [
+        {
+          "name": "FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY",
+          "envKey": "WEB_PUSH_VAPID_PUBLIC_KEY_FILE",
+          "target": "/run/secrets/FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY"
+        },
+        {
+          "name": "FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY",
+          "envKey": "WEB_PUSH_VAPID_PRIVATE_KEY_FILE",
+          "target": "/run/secrets/FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY"
+        }
+      ]
+    }
+  },
+  "health": {
+    "path": "/health",
+    "expected": {
+      "appId": "felix",
+      "appProfile": "felix",
+      "dataProfile": "postgresql",
+      "authProvider": "keycloak",
+      "startup": "ok"
+    }
+  }
+}

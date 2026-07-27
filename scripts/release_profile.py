@@ -506,12 +506,16 @@ def materialize_compatibility_env(
 
     Raises:
         SwarmReleaseProfileError: If the destination exists without explicit
-            overwrite approval.
+            overwrite approval and differs from the deterministic materialized
+            content.
         OSError: If the temporary or destination file cannot be written.
     """
 
     resolved_destination = destination.resolve()
+    rendered = render_compatibility_env(profile)
     if resolved_destination.exists() and not overwrite:
+        if resolved_destination.read_text(encoding="utf-8") == rendered:
+            return
         raise SwarmReleaseProfileError(
             f"Compatibility file exists: {resolved_destination}; pass --force to replace it."
         )
@@ -525,7 +529,7 @@ def materialize_compatibility_env(
     temporary_path = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
-            output.write(render_compatibility_env(profile))
+            output.write(rendered)
         temporary_path.replace(resolved_destination)
     except BaseException:
         temporary_path.unlink(missing_ok=True)

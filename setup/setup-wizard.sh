@@ -22,6 +22,7 @@
 #
 # Dependencies:
 #   - jq
+#   - Python 3.10+ for strict Felix production-profile validation/rendering
 #   - Docker (for secrets, deploy)
 #   - Modules: site_helpers, user-prompts, config-builder, data-dirs,
 #     secret-manager, stack-conflict-check, deploy-stack, health-check
@@ -119,6 +120,51 @@ build_current_stack_file() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# run_strict_felix_setup
+# ------------------------------------------------------------------------------
+# Validates the operator-owned public prod.env, materializes an idempotent
+# public-only compatibility .env, and renders the resolved Felix candidate
+# stack. This path stops before secret creation or deploy; hardened deployment
+# is owned by later release slices.
+#
+# Returns:
+#   0 when validation/materialization/rendering/Compose checks pass, 1 otherwise.
+# ------------------------------------------------------------------------------
+run_strict_felix_setup() {
+    local python_command=""
+    if command -v python3 >/dev/null 2>&1; then
+        python_command="python3"
+    elif command -v python >/dev/null 2>&1; then
+        python_command="python"
+    else
+        echo "Python 3.10 or newer is required for the Felix production renderer."
+        return 1
+    fi
+
+    if [ ! -f "${PROJECT_ROOT}/prod.env" ]; then
+        echo ""
+        echo "Felix candidate public profile is missing: ${PROJECT_ROOT}/prod.env"
+        echo "Copy prod.env.example to prod.env and set:"
+        echo "  API_BASE_URL=https://api.felix-app.fe-wi.com"
+        echo "  DOMAIN=api.felix-app.fe-wi.com"
+        echo "Do not put passwords, tokens, or client secrets in prod.env."
+        return 1
+    fi
+
+    echo ""
+    echo "Validating strict Felix candidate production inputs..."
+    "$python_command" "${PROJECT_ROOT}/scripts/release_profile.py" \
+        --root "$PROJECT_ROOT" --materialize || return 1
+    "$python_command" "${PROJECT_ROOT}/scripts/felix_site_profile.py" \
+        --root "$PROJECT_ROOT" render --compose-check || return 1
+
+    echo ""
+    echo "Felix candidate stack rendered and Compose-validated."
+    echo "No Docker secret, Keycloak, stack, route, or deployment state was changed."
+    return 0
+}
+
 # ===========================================================================
 # jq check
 # ===========================================================================
@@ -189,6 +235,14 @@ fi
 
 # Load app manifest for defaults
 load_app_config "$PROJECT_ROOT" "$SELECTED_CONFIG"
+
+# Schema 4 Felix profiles use the fail-closed Python adapter. They must not pass
+# through the generic prompt path, which cannot express capability-selected
+# secret mounts or the fixed candidate/legacy isolation contract.
+if [ "${APP_RENDERER_TYPE:-generic}" = "felix-production" ]; then
+    run_strict_felix_setup
+    exit $?
+fi
 
 APP_SECRET_COUNT="${APP_SECRET_COUNT:-0}"
 SECRETS_REQUIRED="false"

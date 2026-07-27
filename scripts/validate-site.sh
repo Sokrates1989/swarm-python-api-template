@@ -3,8 +3,9 @@
 # validate-site.sh - Deployment validation for root-level model
 # ==============================================================================
 #
-# Validates that the root .env, swarm-stack.yml, secrets, and compose modules
-# are consistent and ready for deployment.
+# Validates that the root public profile, swarm-stack.yml, secrets, and compose
+# modules are consistent. Strict Felix profiles validate their executable JSON
+# contract and exact resolved Compose artifact before generic checks.
 #
 # Usage:
 #   ./scripts/validate-site.sh
@@ -80,6 +81,21 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 _pass "Root .env exists"
+
+# Strict Felix validation is profile-driven and must not fall through to the
+# generic key-presence checks or hard-coded legacy secret list.
+if [ "$(_env_val APP_PROFILE)" = "felix" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_COMMAND="python3"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_COMMAND="python"
+    else
+        _fail "Python 3.10 or newer is required for Felix validation."
+        exit 1
+    fi
+    exec "$PYTHON_COMMAND" "${PROJECT_ROOT}/scripts/felix_site_profile.py" \
+        --root "$PROJECT_ROOT" validate-stack --compose-check
+fi
 
 # Determine stack family before required-key validation.
 STACK_FAMILY="$(_env_val STACK_FAMILY)"

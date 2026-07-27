@@ -13,7 +13,8 @@ file but must not write or materialize secrets from it.
 ## Structure
 
 - `candidate` identifies `felix-app.fe-wi.com`, realm `felix-new`, and client
-  `felix-new-frontend`.
+  `felix-new-frontend`, plus API audience and least-privilege administration
+  client `felix-new-backend`.
 - `legacyProtection` protects `felix.app.fe-wi.com` plus possible legacy realms
   `felix` and `felixappnew`.
 - `requiredEnvironmentFields` names public runtime settings.

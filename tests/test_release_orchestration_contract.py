@@ -18,6 +18,7 @@ CONTRACT_PATH = (
     / "release_contracts"
     / "felix_swarm_contract.v1.json"
 )
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class FelixSwarmReleaseContractTests(unittest.TestCase):
@@ -38,6 +39,8 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertEqual(candidate["webOrigin"], "https://felix-app.fe-wi.com")
         self.assertEqual(candidate["realm"], "felix-new")
         self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
+        self.assertEqual(candidate["backendAudience"], "felix-new-backend")
+        self.assertEqual(candidate["backendAdminClientId"], "felix-new-backend")
         self.assertNotEqual(boundary["candidateHost"], boundary["legacyHost"])
         self.assertNotIn(candidate["realm"], protection["protectedRealms"])
 
@@ -72,6 +75,25 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
 
         self.assertIs(boundary["legacyForwardingRequiresCutoverApproval"], True)
         self.assertIs(boundary["mutableImageTagsAllowed"], False)
+
+    def test_strict_felix_renderer_is_wired_into_shell_adapters(self) -> None:
+        """Keep setup, direct build, and validation on one strict adapter.
+
+        Returns:
+            None.
+        """
+
+        expected_adapter = "scripts/felix_site_profile.py"
+        sources = [
+            REPOSITORY_ROOT / "setup" / "setup-wizard.sh",
+            REPOSITORY_ROOT / "scripts" / "build-site-stack.sh",
+            REPOSITORY_ROOT / "scripts" / "validate-site.sh",
+        ]
+
+        for source in sources:
+            content = source.read_text(encoding="utf-8")
+            self.assertIn(expected_adapter, content, source)
+            self.assertIn("--compose-check", content, source)
 
 
 if __name__ == "__main__":
