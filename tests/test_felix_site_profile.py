@@ -176,7 +176,7 @@ class FelixSiteProfileTests(unittest.TestCase):
 
         profile = self._load()
 
-        self.assertEqual(profile.image_reference, "sokrates1989/python-api-felix:0.1.2")
+        self.assertEqual(profile.image_reference, "sokrates1989/python-api-felix:0.1.1")
         self.assertEqual(profile.active_capabilities, ())
         self.assertEqual(
             [mount.name for mount in profile.secret_mounts],
@@ -204,7 +204,7 @@ class FelixSiteProfileTests(unittest.TestCase):
 
         stack = render_stack(self._load())
 
-        self.assertIn('image: "sokrates1989/python-api-felix:0.1.2"', stack)
+        self.assertIn('image: "sokrates1989/python-api-felix:0.1.1"', stack)
         self.assertIn('KEYCLOAK_AUDIENCE: "felix-new-backend"', stack)
         self.assertIn(
             'KEYCLOAK_ADMIN_CLIENT_SECRET_FILE: '

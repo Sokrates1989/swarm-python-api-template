@@ -137,10 +137,10 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
         )
         self.profile = load_felix_site_profile(self.root)
         self.image = ImageIdentity(
-            "sokrates1989/python-api-felix:0.1.2",
+            "sokrates1989/python-api-felix:0.1.1",
             f"sokrates1989/python-api-felix@{IMAGE_DIGEST}",
             IMAGE_DIGEST,
-            "0.1.2",
+            "0.1.1",
             "c" * 40,
             "d" * 64,
             "amd64",
@@ -203,7 +203,7 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
                 "Os": "linux",
                 "Config": {
                     "Labels": {
-                        "org.opencontainers.image.version": "0.1.2",
+                        "org.opencontainers.image.version": "0.1.1",
                         "org.opencontainers.image.revision": "c" * 40,
                         "com.fe-wi.dependency-lock-sha256": "d" * 64,
                         "com.fe-wi.app-profile": "felix",
