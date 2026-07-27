@@ -333,7 +333,12 @@ show_main_menu() {
             MENU_NEXT=$((MENU_NEXT+1))
         fi
         local MENU_SETUP_AUTH=""
-        if declare -F setup_auth_provider >/dev/null; then
+        local MENU_FELIX_KEYCLOAK=""
+        if declare -F felix_keycloak_release_menu >/dev/null &&
+            _is_felix_candidate_profile; then
+            MENU_FELIX_KEYCLOAK=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
+        elif declare -F setup_auth_provider >/dev/null; then
             MENU_SETUP_AUTH=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         fi
@@ -387,6 +392,9 @@ show_main_menu() {
         fi
         if [ -n "$MENU_SETUP_AUTH" ]; then
             echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
+        fi
+        if [ -n "$MENU_FELIX_KEYCLOAK" ]; then
+            echo "  ${MENU_FELIX_KEYCLOAK}) Felix candidate Keycloak"
         fi
         echo ""
 
@@ -448,6 +456,11 @@ show_main_menu() {
             show_auth_status
             echo ""
             read -r -p "Press Enter to continue..."
+            continue
+        fi
+        if [ -n "$MENU_FELIX_KEYCLOAK" ] &&
+            [ "$choice" = "$MENU_FELIX_KEYCLOAK" ]; then
+            felix_keycloak_release_menu
             continue
         fi
 

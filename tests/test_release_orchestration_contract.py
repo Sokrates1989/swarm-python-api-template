@@ -95,6 +95,35 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             self.assertIn(expected_adapter, content, source)
             self.assertIn("--compose-check", content, source)
 
+    def test_keycloak_menu_uses_pinned_candidate_adapter(self) -> None:
+        """Route Felix to canonical Keycloak while keeping Cognito advanced.
+
+        Returns:
+            None.
+        """
+
+        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
+            encoding="utf-8"
+        )
+        menu_handlers = (
+            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
+        ).read_text(encoding="utf-8")
+        keycloak_menu = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "felix-keycloak-release.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'source "${PROJECT_ROOT}/setup/modules/felix-keycloak-release.sh"',
+            quick_start,
+        )
+        self.assertIn("felix_keycloak_release_menu", menu_handlers)
+        self.assertIn("scripts/felix_keycloak_adapter.py", keycloak_menu)
+        self.assertIn("Advanced Cognito compatibility", keycloak_menu)
+        self.assertNotIn("KEYCLOAK_CLIENT_SECRET=", keycloak_menu)
+
 
 if __name__ == "__main__":
     unittest.main()

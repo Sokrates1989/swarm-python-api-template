@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "appId": "felix",
+  "toolVersion": "0.1.0",
+  "sourceRepository": "https://github.com/Sokrates1989/keycloak.git",
+  "sourceCommit": "5096ea7820874bbb66dbc6162043c4348c8c95e5",
+  "entrypoint": "tools/felix_keycloak.py",
+  "candidateRealm": "felix-new",
+  "frontendClientId": "felix-new-frontend",
+  "backendClientId": "felix-new-backend",
+  "dockerSecretName": "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"
+}
