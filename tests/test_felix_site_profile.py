@@ -44,26 +44,10 @@ from felix_stack_renderer import (  # noqa: E402
     validate_rendered_stack,
 )
 from felix_site_profile import main as site_profile_main  # noqa: E402
-
-
-_PRODUCTION_VALUES = {
-    "PROFILE_SCHEMA_VERSION": "1",
-    "APP_ID": "felix",
-    "APP_ENVIRONMENT": "production",
-    "APP_PROFILE": "felix",
-    "BACKEND_APP_ID": "felix",
-    "BACKEND_DATA_PROFILE": "postgresql",
-    "AUTH_PROVIDER": "keycloak",
-    "API_BASE_URL": "https://api.felix-app.fe-wi.com",
-    "DOMAIN": "api.felix-app.fe-wi.com",
-    "CORS_ORIGINS": "https://felix-app.fe-wi.com",
-    "KEYCLOAK_BASE_URL": "https://keycloak.fe-wi.com",
-    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
-    "KEYCLOAK_REALM": "felix-new",
-    "KEYCLOAK_AUDIENCE": "felix-new-backend",
-    "KEYCLOAK_FRONTEND_CLIENT_ID": "felix-new-frontend",
-    "STACK_NAME": "felix-new",
-}
+from tests.felix_profile_fixture import (  # noqa: E402
+    PRODUCTION_PROFILE,
+    production_profile,
+)
 
 
 class FelixSiteProfileTests(unittest.TestCase):
@@ -111,20 +95,20 @@ class FelixSiteProfileTests(unittest.TestCase):
         self,
         values: dict[str, str] | None = None,
     ) -> Path:
-        """Write one candidate public `prod.env`.
+        """Write one candidate public root `.env`.
 
         Args:
             values: Optional complete replacement mapping.
 
         Returns:
-            Written root `prod.env` path.
+            Written root `.env` path.
 
         Side Effects:
             Replaces the temporary public production profile.
         """
 
-        selected = values or _PRODUCTION_VALUES
-        path = self.root / "prod.env"
+        selected = values or PRODUCTION_PROFILE
+        path = self.root / ".env"
         path.write_text(
             "".join(f"{key}={value}\n" for key, value in selected.items()),
             encoding="utf-8",
@@ -214,6 +198,10 @@ class FelixSiteProfileTests(unittest.TestCase):
         self.assertIn("api.felix-app.fe-wi.com", stack)
         self.assertIn("entrypoints=http", stack)
         self.assertIn("X-Forwarded-Proto=https", stack)
+        self.assertIn(
+            "/swarm/volumes/felix-new/postgres_data:/var/lib/postgresql/data",
+            stack,
+        )
         self.assertNotIn(".tls=true", stack)
         self.assertNotIn("felix.app.fe-wi.com", stack)
         self.assertNotIn("KEYCLOAK_ADMIN_CLIENT_SECRET:", stack)
@@ -221,6 +209,110 @@ class FelixSiteProfileTests(unittest.TestCase):
         self.assertNotIn("${", stack)
         self.assertNotIn("XXX_CHANGE", stack)
         self.assertNotIn("###", stack)
+
+    def test_external_database_omits_local_postgres_service(self) -> None:
+        """Render external PostgreSQL metadata without a local database service.
+
+        Returns:
+            None.
+        """
+
+        self._write_production_profile(
+            production_profile(
+                DB_MODE="external",
+                DB_HOST="postgresql.fe-wi.com",
+            )
+        )
+
+        stack = render_stack(self._load())
+
+        self.assertNotIn("\n  postgres:\n", stack)
+        self.assertIn('DB_HOST: "postgresql.fe-wi.com"', stack)
+
+    def test_no_proxy_publishes_api_without_traefik_network(self) -> None:
+        """Render the selected host port when an external proxy owns routing.
+
+        Returns:
+            None.
+        """
+
+        self._write_production_profile(
+            production_profile(
+                PROXY_TYPE="none",
+                SSL_MODE="proxy",
+                TRAEFIK_NETWORK="none",
+            )
+        )
+
+        stack = render_stack(self._load())
+
+        self.assertIn("        published: 8083", stack)
+        self.assertNotIn("traefik.enable=true", stack)
+        self.assertNotIn('"traefik-public":', stack)
+
+    def test_letsencrypt_mode_renders_tls_labels(self) -> None:
+        """Render direct Traefik certificate ownership when selected.
+
+        Returns:
+            None.
+        """
+
+        self._write_production_profile(
+            production_profile(SSL_MODE="letsencrypt")
+        )
+
+        stack = render_stack(self._load())
+
+        self.assertIn("tls.certresolver=le", stack)
+        self.assertIn("tls=true", stack)
+
+    def test_enabled_pgadmin_is_file_secret_backed_and_routed(self) -> None:
+        """Render optional pgAdmin in the same stack without plaintext secrets.
+
+        Returns:
+            None.
+        """
+
+        self._write_production_profile(
+            production_profile(
+                PGADMIN_ENABLED="true",
+                PGADMIN_DOMAIN="pgadmin.felix-app.fe-wi.com",
+                PGADMIN_EMAIL="admin@fe-wi.com",
+                PGADMIN_REPLICAS="1",
+            )
+        )
+
+        profile = self._load()
+        stack = render_stack(profile)
+
+        self.assertIn("\n  pgadmin:\n", stack)
+        self.assertIn("dpage/pgadmin4@sha256:", stack)
+        self.assertIn("FELIX_NEW_PGADMIN_PASSWORD", stack)
+        self.assertIn(
+            "FELIX_NEW_PGADMIN_PASSWORD",
+            profile.safe_summary()["dockerSecretNames"],
+        )
+        self.assertIn("pgadmin.felix-app.fe-wi.com", stack)
+        self.assertNotIn("PGADMIN_DEFAULT_PASSWORD:", stack)
+
+    def test_enabled_webapp_fails_until_its_renderer_slice_exists(self) -> None:
+        """Reject silent WebApp omission before its immutable image slice.
+
+        Returns:
+            None.
+        """
+
+        self._write_production_profile(
+            production_profile(
+                WEB_ENABLED="true",
+                WEB_IMAGE_NAME="sokrates1989/felix-webapp",
+                WEB_IMAGE_VERSION="1.0.5",
+                WEB_REPLICAS="1",
+            )
+        )
+
+        with self.assertRaisesRegex(FelixSiteProfileError, "remains deferred"):
+            render_stack(self._load())
 
     def test_ai_capability_selects_only_its_environment_and_secret(self) -> None:
         """Wire file-backed AI provider input only when explicitly enabled.
@@ -311,7 +403,7 @@ class FelixSiteProfileTests(unittest.TestCase):
             None.
         """
 
-        wrong_audience = dict(_PRODUCTION_VALUES)
+        wrong_audience = production_profile()
         wrong_audience["KEYCLOAK_AUDIENCE"] = "felix-api"
         self._write_production_profile(wrong_audience)
         with self.assertRaisesRegex(FelixSiteProfileError, "KEYCLOAK_AUDIENCE"):
@@ -437,6 +529,64 @@ class FelixSiteProfileTests(unittest.TestCase):
             0,
             completed.stderr or completed.stdout,
         )
+
+    @unittest.skipUnless(
+        os.environ.get("RUN_DOCKER_COMPOSE_TESTS") == "1",
+        "set RUN_DOCKER_COMPOSE_TESTS=1 for the host integration gate",
+    )
+    def test_optional_deployment_variants_pass_docker_compose_config(self) -> None:
+        """Require Compose to accept pgAdmin, external DB, and no-proxy forms.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Rewrites only temporary test profiles and a temporary stack file.
+        """
+
+        variants = {
+            "pgadmin": production_profile(
+                PGADMIN_ENABLED="true",
+                PGADMIN_DOMAIN="pgadmin.felix-app.fe-wi.com",
+                PGADMIN_EMAIL="admin@fe-wi.com",
+                PGADMIN_REPLICAS="1",
+            ),
+            "external-db": production_profile(
+                DB_MODE="external",
+                DB_HOST="postgresql.fe-wi.com",
+            ),
+            "no-proxy": production_profile(
+                PROXY_TYPE="none",
+                SSL_MODE="proxy",
+                TRAEFIK_NETWORK="none",
+            ),
+        }
+        stack_path = self.root / "swarm-stack.yml"
+        for name, values in variants.items():
+            with self.subTest(name=name):
+                self._write_production_profile(values)
+                stack_path.write_text(
+                    render_stack(self._load()),
+                    encoding="utf-8",
+                )
+                completed = subprocess.run(
+                    [
+                        "docker",
+                        "compose",
+                        "-f",
+                        str(stack_path),
+                        "config",
+                        "--quiet",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stderr or completed.stdout,
+                )
 
 
 if __name__ == "__main__":

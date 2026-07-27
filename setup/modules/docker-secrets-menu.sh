@@ -111,8 +111,97 @@ _require_stopped_stack_for_secret_change() {
     return 0
 }
 
+# _show_felix_candidate_secret_menu
+# Displays exact Felix secret status and available ownership-safe actions.
+#
+# Arguments:
+#   None.
+#
+# Returns:
+#   0 after rendering the menu.
+#
+# Side effects:
+#   Queries Docker secret metadata without reading secret values.
+_show_felix_candidate_secret_menu() {
+    echo ""
+    echo "Felix candidate Docker secrets"
+    echo "--------------------------------"
+    _secret_status_line "FELIX_NEW_DB_PASSWORD" || true
+    _secret_status_line "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET" || true
+    if [ "${PGADMIN_ENABLED:-false}" = "true" ]; then
+        _secret_status_line "FELIX_NEW_PGADMIN_PASSWORD" || true
+    fi
+    echo ""
+    echo "  1) Create or replace the database password"
+    echo "  2) Show production Keycloak secret owner"
+    if [ "${PGADMIN_ENABLED:-false}" = "true" ]; then
+        echo "  3) Create or replace the pgAdmin password"
+    else
+        echo "  3) pgAdmin password (disabled by deployment profile)"
+    fi
+    echo "  4) Refresh exact secret status"
+    echo "  0) Back"
+}
+
+# _create_felix_editor_secret
+# Opens the protected editor flow for one exact Felix Docker secret.
+#
+# Arguments:
+#   $1 - Exact allowlisted Docker secret name.
+#
+# Returns:
+#   The secret creation result, or 1 when no supported editor exists.
+#
+# Side effects:
+#   May create or replace the selected Docker secret.
+_create_felix_editor_secret() {
+    local secret_name="$1"
+    local editor=""
+
+    editor="$(_secret_editor)" || {
+        echo "[ERROR] Install nano, vim, or vi for secret entry."
+        return 1
+    }
+    create_single_secret "$secret_name" "$editor"
+}
+
+# _show_felix_keycloak_secret_owner
+# Delegates client-secret maintenance to the production Keycloak checkout.
+#
+# Arguments:
+#   None.
+#
+# Returns:
+#   The production-owner helper result, or 1 when unavailable.
+_show_felix_keycloak_secret_owner() {
+    if ! declare -F show_felix_production_keycloak_handoff >/dev/null; then
+        echo "[ERROR] Production Keycloak ownership helper is unavailable."
+        return 1
+    fi
+    show_felix_production_keycloak_handoff
+}
+
+# _create_enabled_pgadmin_secret
+# Creates the optional pgAdmin password only for an enabled profile.
+#
+# Arguments:
+#   None.
+#
+# Returns:
+#   The protected editor flow result, or 1 when pgAdmin is disabled.
+#
+# Side effects:
+#   May create or replace FELIX_NEW_PGADMIN_PASSWORD.
+_create_enabled_pgadmin_secret() {
+    if [ "${PGADMIN_ENABLED:-false}" != "true" ]; then
+        echo "[INFO] Enable pgAdmin in the Felix setup wizard first."
+        return 1
+    fi
+    _create_felix_editor_secret "FELIX_NEW_PGADMIN_PASSWORD"
+}
+
 # _manage_felix_candidate_secrets
-# Manages only the two exact Felix secret boundaries.
+# Manages exact Felix backend, Keycloak, and optional pgAdmin boundaries.
 #
 # Arguments:
 #   None.
@@ -121,44 +210,21 @@ _require_stopped_stack_for_secret_change() {
 #   0 after returning to the main menu.
 #
 # Side effects:
-#   May create/recreate FELIX_NEW_DB_PASSWORD. The Keycloak owner action is
-#   informational and never mutates Keycloak or Docker state.
+#   May create/recreate Felix database or enabled pgAdmin passwords. The
+#   Keycloak owner action is informational and never accepts a secret value.
 _manage_felix_candidate_secrets() {
     local choice=""
-    local editor=""
 
     while true; do
-        echo ""
-        echo "Felix candidate Docker secrets"
-        echo "--------------------------------"
-        _secret_status_line "FELIX_NEW_DB_PASSWORD" || true
-        _secret_status_line "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET" || true
-        echo ""
-        echo "  1) Create or replace the database password"
-        echo "  2) Show production Keycloak secret owner"
-        echo "  3) Refresh exact secret status"
-        echo "  0) Back"
-        read -r -p "Felix secret choice (0-3): " choice
-
+        _show_felix_candidate_secret_menu
+        read -r -p "Felix secret choice (0-4): " choice
         case "$choice" in
-            1)
-                editor="$(_secret_editor)" || {
-                    echo "[ERROR] Install nano, vim, or vi for secret entry."
-                    continue
-                }
-                create_single_secret "FELIX_NEW_DB_PASSWORD" "$editor" || true
-                ;;
-            2)
-                if ! declare -F show_felix_production_keycloak_handoff \
-                    >/dev/null; then
-                    echo "[ERROR] Production Keycloak ownership helper is unavailable."
-                    continue
-                fi
-                show_felix_production_keycloak_handoff
-                ;;
-            3) ;;
+            1) _create_felix_editor_secret "FELIX_NEW_DB_PASSWORD" || true ;;
+            2) _show_felix_keycloak_secret_owner || true ;;
+            3) _create_enabled_pgadmin_secret || true ;;
+            4) ;;
             0) return 0 ;;
-            *) echo "[WARN] Enter a value from 0 through 3." ;;
+            *) echo "[WARN] Enter a value from 0 through 4." ;;
         esac
     done
 }

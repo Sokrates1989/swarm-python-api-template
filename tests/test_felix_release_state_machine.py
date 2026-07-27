@@ -41,26 +41,7 @@ from felix_release.preflight import (  # noqa: E402
 )
 from felix_site_contract import load_felix_site_profile  # noqa: E402
 from felix_stack_renderer import render_stack  # noqa: E402
-
-
-PRODUCTION_PROFILE = {
-    "PROFILE_SCHEMA_VERSION": "1",
-    "APP_ID": "felix",
-    "APP_ENVIRONMENT": "production",
-    "APP_PROFILE": "felix",
-    "BACKEND_APP_ID": "felix",
-    "BACKEND_DATA_PROFILE": "postgresql",
-    "AUTH_PROVIDER": "keycloak",
-    "API_BASE_URL": "https://api.felix-app.fe-wi.com",
-    "DOMAIN": "api.felix-app.fe-wi.com",
-    "CORS_ORIGINS": "https://felix-app.fe-wi.com",
-    "KEYCLOAK_BASE_URL": "https://keycloak.fe-wi.com",
-    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
-    "KEYCLOAK_REALM": "felix-new",
-    "KEYCLOAK_AUDIENCE": "felix-new-backend",
-    "KEYCLOAK_FRONTEND_CLIENT_ID": "felix-new-frontend",
-    "STACK_NAME": "felix-new",
-}
+from tests.felix_profile_fixture import PRODUCTION_PROFILE  # noqa: E402
 IMAGE_DIGEST = "sha256:" + ("a" * 64)
 REDIS_DIGEST = "sha256:" + ("b" * 64)
 
@@ -129,7 +110,7 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             encoding="utf-8"
         )
         (config_directory / "felix.json").write_text(config, encoding="utf-8")
-        (self.root / "prod.env").write_text(
+        (self.root / ".env").write_text(
             "".join(
                 f"{key}={value}\n" for key, value in PRODUCTION_PROFILE.items()
             ),
@@ -237,9 +218,9 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
         """Retain initial evidence under backups without misreading that path."""
 
         data_root = self.root / "data"
-        (data_root / "postgres").mkdir(parents=True)
+        (data_root / "postgres_data").mkdir(parents=True)
         profile = SimpleNamespace(
-            data={"storage": {"dataRoot": str(data_root)}},
+            deployment={"DATA_ROOT": str(data_root)},
             environment={"DB_USER": "felix", "DB_NAME": "felix"},
         )
 

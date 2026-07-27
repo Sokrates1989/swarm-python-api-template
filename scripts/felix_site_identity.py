@@ -96,12 +96,14 @@ def _validate_release_alignment(
         None when both inputs target the same candidate.
 
     Raises:
-        FelixSiteProfileError: If `prod.env` drifts from the site profile.
+        FelixSiteProfileError: If root `.env` drifts from the site profile.
     """
 
     expected = {
         "API_BASE_URL": _CANDIDATE_API_ORIGIN,
         "DOMAIN": "api.felix-app.fe-wi.com",
+        "WEB_BASE_URL": _CANDIDATE_WEB_ORIGIN,
+        "WEB_DOMAIN": "felix-app.fe-wi.com",
         "CORS_ORIGINS": _CANDIDATE_WEB_ORIGIN,
         "KEYCLOAK_BASE_URL": auth["serverUrl"],
         "KEYCLOAK_ISSUER_URL": auth["issuerUrl"],
@@ -113,7 +115,7 @@ def _validate_release_alignment(
     for key, expected_value in expected.items():
         if release.values[key] != expected_value:
             raise FelixSiteProfileError(
-                f"prod.env {key} must agree with site profile value {expected_value!r}."
+                f".env {key} must agree with site profile value {expected_value!r}."
             )
 
 

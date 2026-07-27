@@ -132,13 +132,14 @@ profile
 **Functions (Bash)**:
 - `manage_docker_secrets_menu()` - Selects strict Felix or generic secret
   management
-- `_manage_felix_candidate_secrets()` - Exposes the exact Felix database
-  secret and production Keycloak owner handoff
+- `_manage_felix_candidate_secrets()` - Exposes the exact Felix database and
+  optional pgAdmin secrets plus the production Keycloak owner handoff
 - `_manage_generic_docker_secrets()` - Preserves prefixed secret workflows for
   non-Felix profiles
 
 **Felix behavior**:
 - Uses the literal `FELIX_NEW_DB_PASSWORD` Docker secret name
+- Uses `FELIX_NEW_PGADMIN_PASSWORD` only when pgAdmin is enabled
 - Uses the literal `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` status check
 - Directs client-secret maintenance to the already deployed
   `/swarm/administration/keycloak` production owner
@@ -147,6 +148,26 @@ profile
 
 This module has no PowerShell counterpart because the Windows launcher enters
 the same Bash menu through WSL.
+
+### 8. felix-setup-wizard
+
+**Purpose**: Owns the guided, strict Felix Backend and WebApp deployment
+configuration.
+
+**Functions (Bash)**:
+
+- `run_guided_felix_setup()` - Collects public deployment values, atomically
+  writes root `.env`, validates it, and renders `swarm-stack.yml`
+- `_felix_collect_database()` - Selects local/external PostgreSQL metadata
+- `_felix_collect_routing()` - Selects Traefik/external proxy and TLS ownership
+- `_felix_collect_api_resources()` - Selects immutable backend image/resources
+- `_felix_collect_pgadmin()` - Configures optional same-stack pgAdmin
+- `_felix_collect_web()` - Records explicit deferral until the WebApp image
+  release slice is complete
+
+The module never deploys a stack and never reads a password or client-secret
+value. Its final menu can create data directories, enter the profile-aware
+Docker secret menu, or show the existing production Keycloak owner.
 
 ## Module Design Principles
 
@@ -227,7 +248,12 @@ setup-wizard
 ├── network-check (no dependencies)
 ├── data-dirs (no dependencies)
 ├── secret-manager (no dependencies)
-└── deploy-stack (no dependencies)
+├── deploy-stack (no dependencies)
+├── felix-setup-wizard
+│   ├── strict Python profile/stack adapters
+│   ├── data-dirs
+│   └── docker-secrets-menu
+└── felix-production-keycloak (handoff only)
 ```
 
 The setup-wizard modules above are independent. The Bash-only

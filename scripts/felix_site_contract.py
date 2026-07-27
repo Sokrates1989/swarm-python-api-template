@@ -10,13 +10,10 @@ Dependencies:
     - Python 3.10 or newer standard library.
     - scripts/release_profile.py.
 
-Usage:
-    Import `load_felix_site_profile` from the command-line adapter or tests.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -28,6 +25,10 @@ from release_profile import (
     SwarmReleaseProfile,
     SwarmReleaseProfileError,
     load_release_profile,
+)
+from felix_site_runtime import (
+    build_profile_fingerprint,
+    build_release_environment_values,
 )
 
 
@@ -74,9 +75,7 @@ _SEMANTIC_VERSION_PATTERN = re.compile(
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
     r"(?:-[0-9A-Za-z.-]+)?"
 )
-_DIGEST_IMAGE_PATTERN = re.compile(
-    r"[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}"
-)
+_DIGEST_IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}")
 _SECRET_NAME_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,127}")
 _MARKER_PATTERN = re.compile(r"\$\{[^}]*\}|XXX_CHANGE|###[A-Za-z0-9_]")
 _DIRECT_SECRET_ENV_KEYS = frozenset(
@@ -137,6 +136,7 @@ class FelixSiteProfile:
     Attributes:
         path: Canonical tracked JSON profile path.
         data: Parsed, validated public profile object.
+        deployment: Validated wizard-generated deployment-instance values.
         environment: Active non-secret API environment mapping.
         env_keys: Canonical executable environment-key order.
         secret_mounts: Active base and capability-selected secret mounts.
@@ -147,6 +147,7 @@ class FelixSiteProfile:
 
     path: Path
     data: Mapping[str, object]
+    deployment: Mapping[str, str]
     environment: Mapping[str, str]
     env_keys: tuple[str, ...]
     secret_mounts: tuple[SecretMount, ...]
@@ -162,13 +163,18 @@ class FelixSiteProfile:
             active capabilities, and deterministic profile fingerprint.
         """
 
+        secret_names = [mount.name for mount in self.secret_mounts]
+        if self.deployment["PGADMIN_ENABLED"] == "true":
+            database = _as_mapping(self.data["database"], "database")
+            secret_names.append(str(database["pgadminSecret"]))
         return {
             "appId": "felix",
             "schemaVersion": _SCHEMA_VERSION,
             "imageReference": self.image_reference,
             "environmentFieldNames": list(self.env_keys),
-            "dockerSecretNames": [mount.name for mount in self.secret_mounts],
+            "dockerSecretNames": secret_names,
             "activeCapabilities": list(self.active_capabilities),
+            "deploymentFieldNames": list(self.deployment),
             "profileFingerprint": self.fingerprint,
         }
 
@@ -435,7 +441,7 @@ def _validate_stack_and_database(data: Mapping[str, object]) -> None:
     _require_exact_keys(stack, {"family", "role", "primaryService", "name"}, "stack")
     expected_stack = {
         "family": "api",
-        "role": "candidate-api",
+        "role": "full-stack",
         "primaryService": "api",
         "name": _CANDIDATE_STACK,
     }
@@ -445,15 +451,34 @@ def _validate_stack_and_database(data: Mapping[str, object]) -> None:
     database = _as_mapping(data["database"], "database")
     _require_exact_keys(
         database,
-        {"type", "defaultMode", "allowedModes", "image"},
+        {
+            "type",
+            "defaultMode",
+            "allowedModes",
+            "image",
+            "pgadminImage",
+            "pgadminSecret",
+        },
         "database",
     )
     _require_value(database["type"], "postgresql", "database.type")
     _require_value(database["defaultMode"], "local", "database.defaultMode")
-    _require_value(database["allowedModes"], ["local"], "database.allowedModes")
+    _require_value(
+        database["allowedModes"],
+        ["local", "external"],
+        "database.allowedModes",
+    )
     image = _as_text(database["image"], "database.image")
     if not _DIGEST_IMAGE_PATTERN.fullmatch(image):
         raise FelixSiteProfileError("database.image must be pinned by SHA-256 digest.")
+    pgadmin_image = _as_text(database["pgadminImage"], "database.pgadminImage")
+    if not _DIGEST_IMAGE_PATTERN.fullmatch(pgadmin_image):
+        raise FelixSiteProfileError(
+            "database.pgadminImage must be pinned by SHA-256 digest."
+        )
+    pgadmin_secret = _as_text(database["pgadminSecret"], "database.pgadminSecret")
+    if not _SECRET_NAME_PATTERN.fullmatch(pgadmin_secret):
+        raise FelixSiteProfileError("database.pgadminSecret is invalid.")
 
 
 def _validate_metadata_and_exposure(data: Mapping[str, object]) -> None:
@@ -477,7 +502,7 @@ def _validate_metadata_and_exposure(data: Mapping[str, object]) -> None:
         "type": "public",
         "publicDomainRequired": True,
         "traefik": True,
-        "publishedPorts": False,
+        "publishedPorts": True,
     }
     _require_value(exposure, expected_exposure, "exposure")
     secrets_config = _as_mapping(data["secretsConfig"], "secretsConfig")
@@ -757,46 +782,41 @@ def _active_inputs(
     return environment, tuple(mounts), tuple(active_names)
 
 
-def _expected_environment_values() -> dict[str, str]:
-    """Build fixed production-safe Felix API runtime values.
+def _apply_release_environment(
+    environment: dict[str, str],
+    release: SwarmReleaseProfile,
+) -> None:
+    """Overlay tracked defaults with validated deployment-instance values.
+
+    Args:
+        environment: Active public environment mutated in place.
+        release: Validated wizard-generated deployment configuration.
 
     Returns:
-        Expected base environment subset.
+        None.
+
+    Side Effects:
+        Replaces only deployment-owned keys already declared by the site
+        profile.
     """
 
-    return {
-        "APP_ENVIRONMENT": "production",
-        "BACKEND_APP_ID": "felix",
-        "APP_PROFILE": "felix",
-        "PORT": "8080",
-        "REDIS_URL": "redis://redis:6379/0",
-        "DB_TYPE": "postgresql",
-        "DB_MODE": "local",
-        "DB_HOST": "postgres",
-        "DB_PORT": "5432",
-        "DB_NAME": "felix",
-        "DB_USER": "felix",
-        "CORS_ORIGINS": _CANDIDATE_WEB_ORIGIN,
-        "AUTH_PROVIDER": "keycloak",
-        "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
-        "KEYCLOAK_REALM": _CANDIDATE_REALM,
-        "KEYCLOAK_CLIENT_ID": _CANDIDATE_FRONTEND_CLIENT,
-        "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
-        "KEYCLOAK_JWKS_URL": (
-            "https://keycloak.fe-wi.com/realms/felix-new/"
-            "protocol/openid-connect/certs"
-        ),
-        "KEYCLOAK_ENFORCE_AUDIENCE": "true",
-        "KEYCLOAK_AUDIENCE": _CANDIDATE_BACKEND_CLIENT,
-        "KEYCLOAK_ADMIN_CLIENT_ID": _CANDIDATE_BACKEND_CLIENT,
-    }
+    for key, value in build_release_environment_values(release).items():
+        if key not in environment:
+            raise FelixSiteProfileError(
+                f"environment.{key} is required for deployment overlay."
+            )
+        environment[key] = value
 
 
-def _validate_environment_values(environment: Mapping[str, str]) -> None:
+def _validate_environment_values(
+    environment: Mapping[str, str],
+    release: SwarmReleaseProfile,
+) -> None:
     """Validate identity, debug policy, and capability endpoint safety.
 
     Args:
         environment: Active non-secret API environment.
+        release: Validated wizard-generated deployment configuration.
 
     Returns:
         None when fixed values and production flags are safe.
@@ -805,7 +825,7 @@ def _validate_environment_values(environment: Mapping[str, str]) -> None:
         FelixSiteProfileError: If a value drifts or contains a placeholder.
     """
 
-    for key, expected in _expected_environment_values().items():
+    for key, expected in build_release_environment_values(release).items():
         if environment.get(key) != expected:
             raise FelixSiteProfileError(f"environment.{key} must equal {expected!r}.")
     for key in _FALSE_ENV_KEYS:
@@ -825,6 +845,7 @@ def _validate_environment(
     data: Mapping[str, object],
     environment: Mapping[str, str],
     mounts: tuple[SecretMount, ...],
+    release: SwarmReleaseProfile,
 ) -> tuple[str, ...]:
     """Validate executable envKeys and production-safe API values.
 
@@ -832,6 +853,7 @@ def _validate_environment(
         data: Parsed root site profile.
         environment: Active non-secret environment.
         mounts: Active Docker secret file mappings.
+        release: Validated wizard-generated deployment configuration.
 
     Returns:
         Canonical executable environment-key order.
@@ -848,16 +870,21 @@ def _validate_environment(
         raise FelixSiteProfileError(
             "envKeys must exactly enumerate active environment and secret-file fields."
         )
-    _validate_environment_values(environment)
+    _validate_environment_values(environment, release)
     return env_keys
 
 
-def _validate_image(data: Mapping[str, object], environment: Mapping[str, str]) -> str:
+def _validate_image(
+    data: Mapping[str, object],
+    environment: Mapping[str, str],
+    release: SwarmReleaseProfile,
+) -> str:
     """Validate the Felix semantic release image policy.
 
     Args:
         data: Parsed root site profile.
         environment: Active environment containing the API image tag.
+        release: Validated deployment image selection.
 
     Returns:
         Versioned Felix image reference.
@@ -873,42 +900,26 @@ def _validate_image(data: Mapping[str, object], environment: Mapping[str, str]) 
     if not _SEMANTIC_VERSION_PATTERN.fullmatch(version):
         raise FelixSiteProfileError("image.defaultVersion must be a semantic version.")
     _require_value(image["mutableTagsAllowed"], False, "image.mutableTagsAllowed")
-    if environment.get("IMAGE_TAG") != version:
-        raise FelixSiteProfileError("environment.IMAGE_TAG must match the image version.")
-    return f"{_APP_IMAGE}:{version}"
-
-
-def _profile_fingerprint(data: Mapping[str, object]) -> str:
-    """Compute a deterministic public site-profile fingerprint.
-
-    Args:
-        data: Validated parsed JSON profile.
-
-    Returns:
-        Lowercase SHA-256 of canonical compact JSON.
-    """
-
-    canonical = json.dumps(
-        data,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    selected = release.values["IMAGE_VERSION"]
+    if environment.get("IMAGE_TAG") != selected:
+        raise FelixSiteProfileError(
+            "environment.IMAGE_TAG must match the deployment image version."
+        )
+    return f"{_APP_IMAGE}:{selected}"
 
 
 def load_felix_site_profile(root: Path) -> FelixSiteProfile:
     """Load and validate the fixed Felix site and operator public profiles.
 
     Args:
-        root: Swarm repository root containing `prod.env` and `site-configs`.
+        root: Swarm repository root containing `.env` and `site-configs`.
 
     Returns:
         Fully validated executable Felix profile.
 
     Raises:
         FelixSiteProfileError: If site configuration is unsafe or drifting.
-        SwarmReleaseProfileError: If `prod.env` is missing or invalid.
+        SwarmReleaseProfileError: If `.env` is missing or invalid.
         OSError: If another filesystem read failure occurs.
     """
 
@@ -923,15 +934,17 @@ def load_felix_site_profile(root: Path) -> FelixSiteProfile:
     _validate_fixed_sections(data)
     validate_auth_and_cors(data, release)
     environment, mounts, capabilities = _active_inputs(data)
-    env_keys = _validate_environment(data, environment, mounts)
-    image_reference = _validate_image(data, environment)
+    _apply_release_environment(environment, release)
+    env_keys = _validate_environment(data, environment, mounts, release)
+    image_reference = _validate_image(data, environment, release)
     return FelixSiteProfile(
         path=profile_path,
         data=data,
+        deployment=release.values,
         environment=environment,
         env_keys=env_keys,
         secret_mounts=mounts,
         image_reference=image_reference,
-        fingerprint=_profile_fingerprint(data),
+        fingerprint=build_profile_fingerprint(data, release),
         active_capabilities=capabilities,
     )

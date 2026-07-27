@@ -1,22 +1,19 @@
 # swarm-python-api-template
 
-Docker Swarm deployment management for Python API backends.
+Docker Swarm deployment management for Python API and full-stack services.
 
 ## Overview
 
-Candidate release orchestration starts from tracked `prod.env.example`. Copy it
-to ignored `prod.env`, replace the rejected public placeholders, and validate
-it without shell sourcing:
+Felix production setup is menu-driven. Start `./quick-start.sh`, choose
+**Run setup wizard**, then select **Felix Backend and WebApp**. The wizard asks
+about local/external PostgreSQL, Traefik or an external SSL terminator, TLS
+ownership, resources, image version, storage, and optional pgAdmin. It
+atomically writes the ignored public root `.env` and renders
+`swarm-stack.yml`; it never stores passwords or client secrets there.
 
-```bash
-python3 scripts/release_profile.py
-```
-
-The optional `--materialize` action atomically generates the public-only root
-`.env` compatibility artifact after validation. It refuses to replace an
-existing `.env` unless `--force` is explicit. Database/service completion and
-deployment remain separate later gates; neither validation nor
-materialization starts Docker.
+Tracked `.env.example` documents the complete public Felix schema. Operators
+do not copy it and do not create a second `prod.env`. Re-running the setup
+wizard can validate the existing `.env` without changing it.
 
 Each **clone** of this repository on a server IS one deployment instance.
 Deployment artifacts (`.env`, `swarm-stack.yml`, data directories) live at
@@ -33,6 +30,12 @@ redis_data/         ← persistent volume data (gitignored)
 deployment instance needs by default (backend app, database type, services,
 image name, secret keys). These are development-time defaults committed to the
 repo. The setup wizard reads them to provide sensible defaults.
+
+The Felix deployment is one `felix-new` stack. It owns the backend API, Redis,
+local PostgreSQL when selected, optional pgAdmin, and—after its immutable image
+is published—the Flutter WebApp. Production Keycloak remains a separate
+existing platform stack owned by `swarm-keycloak`; Felix only consumes its
+realm and secret-safe client handoff.
 
 ## Deployment Model
 

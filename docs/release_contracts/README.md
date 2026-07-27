@@ -25,6 +25,10 @@ checkout are not production dependencies.
   `felix` and `felixappnew`.
 - `requiredEnvironmentFields` names public runtime settings.
 - `requiredSecretFileFields` names mounted secret-file settings.
+- `configurationInput` requires wizard-generated root `.env` and rejects a
+  second production `prod.env` input.
+- `stackServices` declares one `felix-new` WebApp/API/Redis stack with selected
+  PostgreSQL mode and optional pgAdmin.
 - `deploymentBoundary` keeps candidate and legacy routers distinct and makes
   old-host forwarding an explicit, reversible cutover action.
 - `productionKeycloakOwner` records the non-secret production repository/path

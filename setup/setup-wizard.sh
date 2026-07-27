@@ -49,6 +49,9 @@ source "$SCRIPT_DIR/modules/secrets_template_sync.sh"
 source "$SCRIPT_DIR/modules/stack-conflict-check.sh"
 source "$SCRIPT_DIR/modules/deploy-stack.sh"
 source "$SCRIPT_DIR/modules/health-check.sh"
+source "$SCRIPT_DIR/modules/felix-production-keycloak.sh"
+source "$SCRIPT_DIR/modules/docker-secrets-menu.sh"
+source "$SCRIPT_DIR/modules/felix-setup-wizard.sh"
 
 # Source Cognito setup script if available
 if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
@@ -118,51 +121,6 @@ build_current_stack_file() {
     else
         echo "No Docker secrets required for this profile; skipping secret placeholders."
     fi
-}
-
-# ------------------------------------------------------------------------------
-# run_strict_felix_setup
-# ------------------------------------------------------------------------------
-# Validates the operator-owned public prod.env, materializes an idempotent
-# public-only compatibility .env, and renders the resolved Felix candidate
-# stack. This path stops before secret creation or deploy; hardened deployment
-# is owned by later release slices.
-#
-# Returns:
-#   0 when validation/materialization/rendering/Compose checks pass, 1 otherwise.
-# ------------------------------------------------------------------------------
-run_strict_felix_setup() {
-    local python_command=""
-    if command -v python3 >/dev/null 2>&1; then
-        python_command="python3"
-    elif command -v python >/dev/null 2>&1; then
-        python_command="python"
-    else
-        echo "Python 3.10 or newer is required for the Felix production renderer."
-        return 1
-    fi
-
-    if [ ! -f "${PROJECT_ROOT}/prod.env" ]; then
-        echo ""
-        echo "Felix candidate public profile is missing: ${PROJECT_ROOT}/prod.env"
-        echo "Copy prod.env.example to prod.env and set:"
-        echo "  API_BASE_URL=https://api.felix-app.fe-wi.com"
-        echo "  DOMAIN=api.felix-app.fe-wi.com"
-        echo "Do not put passwords, tokens, or client secrets in prod.env."
-        return 1
-    fi
-
-    echo ""
-    echo "Validating strict Felix candidate production inputs..."
-    "$python_command" "${PROJECT_ROOT}/scripts/release_profile.py" \
-        --root "$PROJECT_ROOT" --materialize || return 1
-    "$python_command" "${PROJECT_ROOT}/scripts/felix_site_profile.py" \
-        --root "$PROJECT_ROOT" render --compose-check || return 1
-
-    echo ""
-    echo "Felix candidate stack rendered and Compose-validated."
-    echo "No Docker secret, Keycloak, stack, route, or deployment state was changed."
-    return 0
 }
 
 # ===========================================================================
@@ -240,7 +198,7 @@ load_app_config "$PROJECT_ROOT" "$SELECTED_CONFIG"
 # through the generic prompt path, which cannot express capability-selected
 # secret mounts or the fixed candidate/legacy isolation contract.
 if [ "${APP_RENDERER_TYPE:-generic}" = "felix-production" ]; then
-    run_strict_felix_setup
+    run_guided_felix_setup
     exit $?
 fi
 

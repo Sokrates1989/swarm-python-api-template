@@ -45,7 +45,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Swarm repository root.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("validate", help="Validate prod.env and felix.json.")
+    commands.add_parser("validate", help="Validate root .env and felix.json.")
     render = commands.add_parser("render", help="Render root swarm-stack.yml.")
     render.add_argument("--output", type=Path, help="Exact root stack path.")
     render.add_argument(

@@ -2,24 +2,23 @@
 Module: release_profile.py
 
 Description:
-    Parses and validates the Swarm candidate-production public profile without
-    evaluating shell syntax. The adapter enforces Felix API, CORS, Keycloak,
-    stack, and legacy-isolation identities and can materialize a generated
-    public-only root `.env` compatibility artifact after validation.
+    Parses, validates, and atomically writes the guided Swarm deployment
+    instance's public root `.env` without evaluating shell syntax. The adapter
+    enforces Felix API, WebApp, database, proxy/TLS, image, Keycloak, stack,
+    and legacy-isolation identities.
 
 Dependencies:
     - Python 3.10 or newer standard library.
 
 Usage:
     python scripts/release_profile.py
-    python scripts/release_profile.py --materialize
+    python scripts/release_profile.py --set KEY=value [...]
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import ipaddress
 import json
 import os
 import re
@@ -28,11 +27,15 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import SplitResult, urlsplit
+
+from release_profile_deployment import validate_deployment
+from release_profile_errors import SwarmReleaseProfileError
+from release_profile_urls import validate_urls
 
 
 _PROFILE_KEYS = (
     "PROFILE_SCHEMA_VERSION",
+    "DEPLOYMENT_PROFILE_ID",
     "APP_ID",
     "APP_ENVIRONMENT",
     "APP_PROFILE",
@@ -41,6 +44,8 @@ _PROFILE_KEYS = (
     "AUTH_PROVIDER",
     "API_BASE_URL",
     "DOMAIN",
+    "WEB_BASE_URL",
+    "WEB_DOMAIN",
     "CORS_ORIGINS",
     "KEYCLOAK_BASE_URL",
     "KEYCLOAK_ISSUER_URL",
@@ -48,6 +53,32 @@ _PROFILE_KEYS = (
     "KEYCLOAK_AUDIENCE",
     "KEYCLOAK_FRONTEND_CLIENT_ID",
     "STACK_NAME",
+    "STACK_FAMILY",
+    "STACK_ROLE",
+    "PRIMARY_SERVICE",
+    "DB_TYPE",
+    "DB_MODE",
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USER",
+    "PROXY_TYPE",
+    "SSL_MODE",
+    "TRAEFIK_NETWORK",
+    "API_PUBLISHED_PORT",
+    "IMAGE_NAME",
+    "IMAGE_VERSION",
+    "API_REPLICAS",
+    "MEMORY_LIMIT",
+    "DATA_ROOT",
+    "PGADMIN_ENABLED",
+    "PGADMIN_DOMAIN",
+    "PGADMIN_EMAIL",
+    "PGADMIN_REPLICAS",
+    "WEB_ENABLED",
+    "WEB_IMAGE_NAME",
+    "WEB_IMAGE_VERSION",
+    "WEB_REPLICAS",
 )
 _PROFILE_KEY_SET = frozenset(_PROFILE_KEYS)
 _ASSIGNMENT_PATTERN = re.compile(r"([A-Z][A-Z0-9_]*)=(.*)")
@@ -63,23 +94,13 @@ _SECRET_KEY_MARKERS = (
     "TOKEN",
 )
 _PLACEHOLDER_MARKERS = ("change_me", "changeme", "placeholder", "todo", "xxx")
-_PLACEHOLDER_HOSTS = frozenset(("example.com", "example.net", "example.org"))
-_LOCAL_HOSTS = frozenset(
-    ("0.0.0.0", "10.0.2.2", "host.docker.internal", "localhost")
-)
-_CANDIDATE_WEB_ORIGIN = "https://felix-app.fe-wi.com"
 _CANDIDATE_REALM = "felix-new"
 _CANDIDATE_FRONTEND_CLIENT = "felix-new-frontend"
 _CANDIDATE_STACK = "felix-new"
-_PROTECTED_WEB_ORIGIN = "https://felix.app.fe-wi.com"
 _PROTECTED_REALMS = frozenset(("felix", "felixappnew"))
 _PROTECTED_CLIENTS = frozenset(("felix-frontend", "felixappnew-frontend"))
 _PROTECTED_STACKS = frozenset(("felix", "felixappnew"))
 ProfileOperation = Callable[["SwarmReleaseProfile"], int]
-
-
-class SwarmReleaseProfileError(ValueError):
-    """Reports an unsafe, inconsistent, malformed, or missing Swarm profile."""
 
 
 @dataclass(frozen=True)
@@ -87,7 +108,7 @@ class SwarmReleaseProfile:
     """Contains one validated public Swarm production profile.
 
     Attributes:
-        path: Canonical root `prod.env` source path.
+        path: Canonical wizard-generated root `.env` path.
         values: Canonically ordered allowlisted public values.
         fingerprint: SHA-256 of canonical public assignments.
     """
@@ -112,15 +133,15 @@ class SwarmReleaseProfile:
 
 
 def resolve_profile_path(root: Path, requested_path: Path | None = None) -> Path:
-    """Resolves the exact repository-owned `prod.env` input path.
+    """Resolves the exact deployment-instance `.env` input path.
 
     Args:
         root: Swarm repository root.
         requested_path: Optional override accepted only when it resolves to the
-            canonical root `prod.env`.
+            canonical root `.env`.
 
     Returns:
-        Canonical root `prod.env` path.
+        Canonical root `.env` path.
 
     Raises:
         SwarmReleaseProfileError: If an override tries to bypass the standard
@@ -128,7 +149,7 @@ def resolve_profile_path(root: Path, requested_path: Path | None = None) -> Path
     """
 
     resolved_root = root.resolve()
-    expected = (resolved_root / "prod.env").resolve()
+    expected = (resolved_root / ".env").resolve()
     if requested_path is not None:
         candidate = (
             requested_path
@@ -159,7 +180,7 @@ def _parse_assignments(path: Path) -> dict[str, str]:
 
     if not path.is_file():
         raise SwarmReleaseProfileError(
-            f"Profile is missing: {path}. Copy prod.env.example and replace placeholders."
+            f"Deployment configuration is missing: {path}. Run the setup wizard."
         )
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -219,94 +240,6 @@ def _is_placeholder(value: str) -> bool:
     return any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
 
 
-def _is_non_public_host(hostname: str) -> bool:
-    """Reports whether a host is local, emulator-only, private, or link-local.
-
-    Args:
-        hostname: Lowercase parsed URL hostname.
-
-    Returns:
-        True when the host is unsuitable for production.
-    """
-
-    if (
-        hostname in _LOCAL_HOSTS
-        or hostname.endswith(".localhost")
-        or hostname.endswith(".local")
-        or hostname.endswith(".internal")
-    ):
-        return True
-    try:
-        address = ipaddress.ip_address(hostname)
-    except ValueError:
-        return False
-    return not address.is_global
-
-
-def _is_placeholder_host(hostname: str) -> bool:
-    """Reports whether a host belongs to reserved example space.
-
-    Args:
-        hostname: Lowercase parsed URL hostname.
-
-    Returns:
-        True for `.invalid` and conventional example domains.
-    """
-
-    return (
-        hostname.endswith(".invalid")
-        or hostname in _PLACEHOLDER_HOSTS
-        or any(hostname.endswith(f".{item}") for item in _PLACEHOLDER_HOSTS)
-    )
-
-
-def _parse_public_url(
-    key: str,
-    value: str,
-    *,
-    origin_only: bool,
-) -> SplitResult:
-    """Validates one HTTPS production URL.
-
-    Args:
-        key: Profile field used in diagnostics.
-        value: Candidate absolute public URL.
-        origin_only: Whether paths other than `/` are forbidden.
-
-    Returns:
-        Parsed URL after production plausibility checks.
-
-    Raises:
-        SwarmReleaseProfileError: If the URL is unsafe, local, placeholder, or
-            not an origin where an origin is required.
-    """
-
-    parsed = urlsplit(value)
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise SwarmReleaseProfileError(f"{key} must be an absolute HTTPS URL.")
-    if parsed.username is not None or parsed.password is not None:
-        raise SwarmReleaseProfileError(f"{key} must not contain URL credentials.")
-    if parsed.query or parsed.fragment:
-        raise SwarmReleaseProfileError(
-            f"{key} must not contain a query or fragment."
-        )
-    if "*" in parsed.netloc:
-        raise SwarmReleaseProfileError(f"{key} must not contain a wildcard host.")
-    try:
-        parsed.port
-    except ValueError as error:
-        raise SwarmReleaseProfileError(f"{key} contains an invalid port.") from error
-    if origin_only and parsed.path not in ("", "/"):
-        raise SwarmReleaseProfileError(f"{key} must be an origin without a path.")
-
-    hostname = parsed.hostname.casefold()
-    if _is_non_public_host(hostname):
-        raise SwarmReleaseProfileError(f"{key} must not use a local or private host.")
-    if _is_placeholder_host(hostname) or _is_placeholder(value):
-        raise SwarmReleaseProfileError(f"{key} must not use a placeholder host.")
-    return parsed
-
-
 def _validate_identity(values: Mapping[str, str]) -> None:
     """Validates app, API runtime, Keycloak, and stack scalar identities.
 
@@ -323,6 +256,7 @@ def _validate_identity(values: Mapping[str, str]) -> None:
 
     expected_values = {
         "PROFILE_SCHEMA_VERSION": "1",
+        "DEPLOYMENT_PROFILE_ID": "felix",
         "APP_ID": "felix",
         "APP_ENVIRONMENT": "production",
         "APP_PROFILE": "felix",
@@ -332,6 +266,10 @@ def _validate_identity(values: Mapping[str, str]) -> None:
         "KEYCLOAK_REALM": _CANDIDATE_REALM,
         "KEYCLOAK_FRONTEND_CLIENT_ID": _CANDIDATE_FRONTEND_CLIENT,
         "STACK_NAME": _CANDIDATE_STACK,
+        "STACK_FAMILY": "api",
+        "STACK_ROLE": "full-stack",
+        "PRIMARY_SERVICE": "api",
+        "DB_TYPE": "postgresql",
     }
     if (
         values["KEYCLOAK_REALM"] in _PROTECTED_REALMS
@@ -347,64 +285,6 @@ def _validate_identity(values: Mapping[str, str]) -> None:
     for key in ("KEYCLOAK_AUDIENCE", "KEYCLOAK_FRONTEND_CLIENT_ID", "STACK_NAME"):
         if not _IDENTIFIER_PATTERN.fullmatch(values[key]):
             raise SwarmReleaseProfileError(f"{key} contains an invalid identifier.")
-
-
-def _validate_urls(values: Mapping[str, str]) -> None:
-    """Validates API, CORS, and Keycloak URL relationships.
-
-    Args:
-        values: Complete allowlisted profile mapping.
-
-    Returns:
-        None when public URLs are plausible and mutually consistent.
-
-    Raises:
-        SwarmReleaseProfileError: If URLs are unsafe, redundant, mismatched, or
-            target the protected legacy PWA.
-    """
-
-    api = _parse_public_url("API_BASE_URL", values["API_BASE_URL"], origin_only=False)
-    if api.path.rstrip("/") == "/api" or api.path.startswith("/api/"):
-        raise SwarmReleaseProfileError(
-            "API_BASE_URL must not contain a redundant /api service prefix."
-        )
-    if api.path not in ("", "/"):
-        raise SwarmReleaseProfileError("API_BASE_URL must not contain a path.")
-    if api.hostname != values["DOMAIN"].casefold():
-        raise SwarmReleaseProfileError("DOMAIN must match the API_BASE_URL hostname.")
-
-    keycloak = _parse_public_url(
-        "KEYCLOAK_BASE_URL",
-        values["KEYCLOAK_BASE_URL"],
-        origin_only=True,
-    )
-    _parse_public_url(
-        "KEYCLOAK_ISSUER_URL",
-        values["KEYCLOAK_ISSUER_URL"],
-        origin_only=False,
-    )
-    base = values["KEYCLOAK_BASE_URL"].rstrip("/")
-    expected_issuer = f"{base}/realms/{values['KEYCLOAK_REALM']}"
-    if values["KEYCLOAK_ISSUER_URL"] != expected_issuer:
-        raise SwarmReleaseProfileError(
-            "KEYCLOAK_ISSUER_URL must be the declared realm below the base URL."
-        )
-    if keycloak.hostname is None:
-        raise SwarmReleaseProfileError("KEYCLOAK_BASE_URL must contain a hostname.")
-
-    origins = values["CORS_ORIGINS"].split(",")
-    if len(origins) != len(set(origins)):
-        raise SwarmReleaseProfileError("CORS_ORIGINS must not contain duplicates.")
-    for origin in origins:
-        _parse_public_url("CORS_ORIGINS", origin, origin_only=True)
-    if _PROTECTED_WEB_ORIGIN in origins:
-        raise SwarmReleaseProfileError(
-            "Candidate CORS_ORIGINS must not claim the protected legacy origin."
-        )
-    if origins != [_CANDIDATE_WEB_ORIGIN]:
-        raise SwarmReleaseProfileError(
-            f"CORS_ORIGINS must equal {_CANDIDATE_WEB_ORIGIN!r}."
-        )
 
 
 def _profile_fingerprint(values: Mapping[str, str]) -> str:
@@ -425,7 +305,7 @@ def parse_release_profile(path: Path) -> SwarmReleaseProfile:
     """Parses and validates one root candidate-production profile.
 
     Args:
-        path: Canonical root `prod.env`.
+        path: Canonical wizard-generated root `.env`.
 
     Returns:
         Immutable validated profile with safe fingerprint.
@@ -440,7 +320,8 @@ def parse_release_profile(path: Path) -> SwarmReleaseProfile:
         if _is_placeholder(value):
             raise SwarmReleaseProfileError(f"{key} must not contain placeholder text.")
     _validate_identity(values)
-    _validate_urls(values)
+    validate_urls(values)
+    validate_deployment(values)
     return SwarmReleaseProfile(
         path=path.resolve(),
         values=values,
@@ -456,7 +337,7 @@ def load_release_profile(
 
     Args:
         root: Swarm repository root.
-        requested_path: Optional exact root `prod.env` path.
+        requested_path: Optional exact root `.env` path.
 
     Returns:
         Immutable validated public production profile.
@@ -469,60 +350,80 @@ def load_release_profile(
     return parse_release_profile(resolve_profile_path(root, requested_path))
 
 
-def render_compatibility_env(profile: SwarmReleaseProfile) -> str:
-    """Renders the validated public profile as generated root `.env` data.
+def render_release_env(values: Mapping[str, str]) -> str:
+    """Render deterministic public-only root `.env` content.
 
     Args:
-        profile: Validated candidate-production profile.
+        values: Complete guided deployment values in any mapping order.
 
     Returns:
-        Deterministic commentable public-only compatibility content.
+        Commented canonical assignments ending in one newline.
+
+    Raises:
+        SwarmReleaseProfileError: If required/unknown keys differ from the
+            strict guided schema.
     """
 
+    actual = set(values)
+    expected = set(_PROFILE_KEYS)
+    if actual != expected:
+        missing = ", ".join(sorted(expected - actual))
+        unknown = ", ".join(sorted(actual - expected))
+        details = []
+        if missing:
+            details.append(f"missing {missing}")
+        if unknown:
+            details.append(f"unknown {unknown}")
+        raise SwarmReleaseProfileError(
+            "Guided deployment values are incomplete: " + "; ".join(details)
+        )
     lines = [
-        "# Generated public release-profile compatibility materialization.",
-        "# Do not add credentials or edit by hand; regenerate from prod.env.",
-        *(f"{key}={profile.values[key]}" for key in _PROFILE_KEYS),
+        "# Generated by the Felix deployment setup wizard.",
+        "# Public values only. Store passwords and client secrets in Docker secrets.",
+        *(f"{key}={values[key]}" for key in _PROFILE_KEYS),
         "",
     ]
     return "\n".join(lines)
 
 
-def materialize_compatibility_env(
-    profile: SwarmReleaseProfile,
-    destination: Path,
+def write_release_env(
+    root: Path,
+    values: Mapping[str, str],
     *,
     overwrite: bool = False,
-) -> None:
-    """Atomically writes validated public values to a compatibility `.env`.
+) -> SwarmReleaseProfile:
+    """Validate and atomically write the deployment instance's root `.env`.
 
     Args:
-        profile: Validated source production profile.
-        destination: Generated compatibility artifact path.
-        overwrite: Whether an existing file may be replaced. Defaults to False.
+        root: Swarm repository root.
+        values: Complete public guided-deployment mapping.
+        overwrite: Whether a differing existing `.env` may be replaced.
+            Defaults to False.
 
     Returns:
-        None.
+        Validated profile whose path is the final root `.env`.
 
     Raises:
-        SwarmReleaseProfileError: If the destination exists without explicit
-            overwrite approval and differs from the deterministic materialized
-            content.
-        OSError: If the temporary or destination file cannot be written.
+        SwarmReleaseProfileError: If values are invalid or replacement is not
+            explicitly allowed.
+        OSError: If temporary or destination file operations fail.
+
+    Side Effects:
+        Creates or replaces only the repository-owned root `.env`.
     """
 
-    resolved_destination = destination.resolve()
-    rendered = render_compatibility_env(profile)
-    if resolved_destination.exists() and not overwrite:
-        if resolved_destination.read_text(encoding="utf-8") == rendered:
-            return
+    resolved_root = root.resolve()
+    destination = resolve_profile_path(resolved_root)
+    rendered = render_release_env(values)
+    if destination.exists() and not overwrite:
+        if destination.read_text(encoding="utf-8") == rendered:
+            return load_release_profile(resolved_root)
         raise SwarmReleaseProfileError(
-            f"Compatibility file exists: {resolved_destination}; pass --force to replace it."
+            f"Deployment configuration exists: {destination}; pass --force to replace it."
         )
-    resolved_destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
-        dir=resolved_destination.parent,
-        prefix=f".{resolved_destination.name}.",
+        dir=resolved_root,
+        prefix=".felix-env.",
         suffix=".tmp",
         text=True,
     )
@@ -530,10 +431,16 @@ def materialize_compatibility_env(
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
             output.write(rendered)
-        temporary_path.replace(resolved_destination)
+        temporary_profile = parse_release_profile(temporary_path)
+        temporary_path.replace(destination)
     except BaseException:
         temporary_path.unlink(missing_ok=True)
         raise
+    return SwarmReleaseProfile(
+        path=destination,
+        values=temporary_profile.values,
+        fingerprint=temporary_profile.fingerprint,
+    )
 
 
 def execute_with_validated_profile(
@@ -547,7 +454,7 @@ def execute_with_validated_profile(
     Args:
         root: Swarm repository root.
         operation: Callback receiving the validated public profile.
-        requested_path: Optional exact root `prod.env` path.
+        requested_path: Optional exact root `.env` path.
 
     Returns:
         Integer result returned by the operation.
@@ -562,15 +469,55 @@ def execute_with_validated_profile(
     return operation(profile)
 
 
+def _parse_cli_values(assignments: Sequence[str]) -> dict[str, str]:
+    """Parse repeated public `KEY=value` CLI arguments without evaluation.
+
+    Args:
+        assignments: Raw repeated `--set` values supplied by the setup wizard.
+
+    Returns:
+        Duplicate-free public assignment mapping.
+
+    Raises:
+        SwarmReleaseProfileError: If syntax, keys, duplicates, newlines, or
+            secret-looking names violate the public schema.
+    """
+
+    values: dict[str, str] = {}
+    for assignment in assignments:
+        if "\n" in assignment or "\r" in assignment:
+            raise SwarmReleaseProfileError("CLI deployment values must be one line.")
+        match = _ASSIGNMENT_PATTERN.fullmatch(assignment)
+        if match is None:
+            raise SwarmReleaseProfileError(
+                f"Invalid --set value: {assignment!r}; expected KEY=value."
+            )
+        key, value = match.groups()
+        if key not in _PROFILE_KEY_SET:
+            raise SwarmReleaseProfileError(f"Unknown guided deployment key: {key}")
+        if any(marker in key for marker in _SECRET_KEY_MARKERS):
+            raise SwarmReleaseProfileError(
+                f"Secret-looking guided deployment key is forbidden: {key}"
+            )
+        if key in values:
+            raise SwarmReleaseProfileError(f"Duplicate guided deployment key: {key}")
+        if not value or value != value.strip():
+            raise SwarmReleaseProfileError(
+                f"{key} must be non-empty without edge whitespace."
+            )
+        values[key] = value
+    return values
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     """Builds the Swarm public-profile CLI parser.
 
     Returns:
-        Configured validation/materialization parser.
+        Configured validation/guided-write parser.
     """
 
     parser = argparse.ArgumentParser(
-        description="Validate the Swarm Felix candidate production profile."
+        description="Validate or write the guided Felix deployment .env."
     )
     parser.add_argument(
         "--root",
@@ -581,23 +528,25 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile",
         type=Path,
-        help="Optional exact root prod.env path; arbitrary paths are rejected.",
+        help="Optional exact root .env path; arbitrary paths are rejected.",
     )
     parser.add_argument(
-        "--materialize",
-        action="store_true",
-        help="Write the validated public profile to generated root .env.",
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=value",
+        help="Public guided value; repeat for the complete schema to write .env.",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Allow materialization to replace an existing root .env.",
+        help="Allow guided writing to replace a differing root .env.",
     )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Validates a profile and optionally materializes generated public data.
+    """Validate an existing `.env` or atomically write guided public values.
 
     Args:
         argv: Optional CLI arguments excluding the executable name.
@@ -609,20 +558,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_argument_parser().parse_args(argv)
     root = arguments.root.resolve()
     try:
-        profile = load_release_profile(root, arguments.profile)
-        if arguments.materialize:
-            materialize_compatibility_env(
-                profile,
-                root / ".env",
+        if arguments.set:
+            if arguments.profile is not None:
+                raise SwarmReleaseProfileError(
+                    "--profile cannot be combined with guided --set values."
+                )
+            profile = write_release_env(
+                root,
+                _parse_cli_values(arguments.set),
                 overwrite=arguments.force,
             )
+        else:
+            profile = load_release_profile(root, arguments.profile)
     except (OSError, SwarmReleaseProfileError) as error:
         print(f"swarm-release-profile: ERROR: {error}", file=sys.stderr)
         return 2
 
     print(json.dumps(profile.safe_summary(), indent=2, sort_keys=True))
-    if arguments.materialize:
-        print("swarm-release-profile: generated root .env from validated public data.")
+    if arguments.set:
+        print("swarm-release-profile: wrote validated root .env.")
     return 0
 
 

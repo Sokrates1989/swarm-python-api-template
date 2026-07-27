@@ -3,9 +3,10 @@
 ## Purpose and ownership
 
 `felix.json` is the Swarm-owned, versioned and secret-free deployment profile
-for the candidate Felix backend. It deliberately targets stack `felix-new` and
-API host `api.felix-app.fe-wi.com`; it must never be changed to claim the
-legacy `felix.app.fe-wi.com` deployment.
+for the candidate Felix Backend and WebApp stack. It deliberately targets
+stack `felix-new`, API host `api.felix-app.fe-wi.com`, and WebApp host
+`felix-app.fe-wi.com`; it must never claim the legacy
+`felix.app.fe-wi.com` deployment.
 
 Schema `4.0` makes `environment`, `envKeys`, `secretMounts`, and capability
 declarations executable inputs to the strict Felix renderer. `envKeys` must
@@ -21,9 +22,13 @@ secret-file fields to `envKeys`.
 - The upstream version tag may be republished intentionally. Strict preflight
   resolves its current registry digest, and deployment uses that immutable
   digest rather than following later tag changes.
-- PostgreSQL 16 and Redis 7 are pinned by registry digest.
-- Local PostgreSQL is the only accepted database mode for the first candidate
-  production deployment.
+- PostgreSQL 16, Redis 7, and optional pgAdmin are pinned by registry digest.
+- PostgreSQL can run in the same stack or use operator-supplied external
+  connection metadata; passwords remain Docker secrets in both modes.
+- Optional pgAdmin is available only with local PostgreSQL and Traefik. It has
+  its own file-backed Docker secret and persistent directory. Its pinned
+  multi-platform digest was resolved from the explicit upstream `9.15.0` tag;
+  the data-directory action assigns documented container ownership `5050:5050`.
 - The Traefik router attaches only to `api.felix-app.fe-wi.com`.
 - Proxy SSL mode keeps TLS termination at the existing upstream proxy and
   forwards `X-Forwarded-Proto=https` to the candidate API.
@@ -48,7 +53,10 @@ Keep the JSON strict and duplicate-free. Do not add `${...}`,
 `XXX_CHANGE...`, `###...`, wildcard origins, localhost endpoints, direct
 secret values, or deployment aliases such as `latest`.
 
-Validate and render only after creating the ignored public `prod.env`:
+Use `./quick-start.sh` and select the setup wizard plus
+**Felix Backend and WebApp**. It writes the ignored root `.env` and renders the
+stack. The direct commands below are validation adapters, not the normal
+operator workflow:
 
 ```bash
 python3 scripts/felix_site_profile.py validate

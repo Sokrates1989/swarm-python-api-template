@@ -4,7 +4,7 @@ Module: test_release_profile.py
 Description:
     Verifies strict Swarm production-profile parsing, Felix candidate/legacy
     isolation, production endpoint plausibility, fail-before-operation
-    behavior, and public-only compatibility materialization.
+    behavior, and atomic guided root `.env` writing.
 
 Dependencies:
     - Python 3.10 or newer standard library.
@@ -31,31 +31,15 @@ from release_profile import (  # noqa: E402
     SwarmReleaseProfile,
     SwarmReleaseProfileError,
     execute_with_validated_profile,
-    materialize_compatibility_env,
     parse_release_profile,
-    render_compatibility_env,
+    render_release_env,
     resolve_profile_path,
+    write_release_env,
 )
-
-
-_PRODUCTION_VALUES = {
-    "PROFILE_SCHEMA_VERSION": "1",
-    "APP_ID": "felix",
-    "APP_ENVIRONMENT": "production",
-    "APP_PROFILE": "felix",
-    "BACKEND_APP_ID": "felix",
-    "BACKEND_DATA_PROFILE": "postgresql",
-    "AUTH_PROVIDER": "keycloak",
-    "API_BASE_URL": "https://api.fe-wi.com",
-    "DOMAIN": "api.fe-wi.com",
-    "CORS_ORIGINS": "https://felix-app.fe-wi.com",
-    "KEYCLOAK_BASE_URL": "https://keycloak.fe-wi.com",
-    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
-    "KEYCLOAK_REALM": "felix-new",
-    "KEYCLOAK_AUDIENCE": "felix-new-backend",
-    "KEYCLOAK_FRONTEND_CLIENT_ID": "felix-new-frontend",
-    "STACK_NAME": "felix-new",
-}
+from tests.felix_profile_fixture import (  # noqa: E402
+    PRODUCTION_PROFILE,
+    production_profile,
+)
 
 
 class SwarmReleaseProfileTest(unittest.TestCase):
@@ -71,7 +55,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.root = Path(self.temporary_directory.name)
-        self.path = self.root / "prod.env"
+        self.path = self.root / ".env"
 
     def _write_profile(
         self,
@@ -91,7 +75,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
             Written root profile path.
         """
 
-        selected = values or dict(_PRODUCTION_VALUES)
+        selected = values or production_profile()
         content = prefix + "".join(
             f"{key}={value}\n" for key, value in selected.items()
         ) + suffix
@@ -125,7 +109,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
             None.
         """
 
-        values = dict(_PRODUCTION_VALUES)
+        values = production_profile()
         values[key] = value
         with self.assertRaisesRegex(SwarmReleaseProfileError, message):
             self._parse(values)
@@ -143,20 +127,21 @@ class SwarmReleaseProfileTest(unittest.TestCase):
         self.assertEqual(summary["appId"], "felix")
         self.assertEqual(summary["environment"], "production")
         self.assertRegex(str(summary["profileFingerprint"]), r"^[0-9a-f]{64}$")
-        self.assertEqual(summary["publicFieldNames"], list(_PRODUCTION_VALUES))
-        self.assertNotIn("https://api.fe-wi.com", json.dumps(summary))
+        self.assertEqual(summary["publicFieldNames"], list(PRODUCTION_PROFILE))
+        self.assertNotIn("https://api.felix-app.fe-wi.com", json.dumps(summary))
 
-    def test_tracked_example_fails_closed_until_operator_input_exists(self) -> None:
-        """Rejects the committed `.invalid` API placeholder.
+    def test_tracked_example_documents_one_valid_public_schema(self) -> None:
+        """Accepts the tracked public defaults without using them as runtime.
 
         Returns:
             None.
         """
 
-        example = Path(__file__).resolve().parents[1] / "prod.env.example"
+        example = Path(__file__).resolve().parents[1] / ".env.example"
 
-        with self.assertRaisesRegex(SwarmReleaseProfileError, "placeholder"):
-            parse_release_profile(example)
+        profile = parse_release_profile(example)
+
+        self.assertEqual(profile.values, PRODUCTION_PROFILE)
 
     def test_missing_profile_prevents_operation_callback(self) -> None:
         """Does not invoke downstream deployment work without a profile.
@@ -180,7 +165,10 @@ class SwarmReleaseProfileTest(unittest.TestCase):
             calls.append(profile.fingerprint)
             return 0
 
-        with self.assertRaisesRegex(SwarmReleaseProfileError, "Profile is missing"):
+        with self.assertRaisesRegex(
+            SwarmReleaseProfileError,
+            "Deployment configuration is missing",
+        ):
             execute_with_validated_profile(self.root, record)
         self.assertEqual(calls, [])
 
@@ -238,7 +226,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
             None.
         """
 
-        missing = dict(_PRODUCTION_VALUES)
+        missing = production_profile()
         del missing["AUTH_PROVIDER"]
         with self.assertRaisesRegex(SwarmReleaseProfileError, "missing required"):
             self._parse(missing)
@@ -276,7 +264,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
         )
         for value, expected in cases:
             with self.subTest(value=value):
-                values = dict(_PRODUCTION_VALUES)
+                values = production_profile()
                 values["API_BASE_URL"] = value
                 parsed = value.split("://")[-1].split("/", 1)[0]
                 values["DOMAIN"] = parsed
@@ -317,7 +305,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
         )
         for key, value in cases:
             with self.subTest(key=key, value=value):
-                values = dict(_PRODUCTION_VALUES)
+                values = production_profile()
                 values[key] = value
                 if key == "KEYCLOAK_REALM":
                     values["KEYCLOAK_ISSUER_URL"] = (
@@ -329,33 +317,84 @@ class SwarmReleaseProfileTest(unittest.TestCase):
                 ):
                     self._parse(values)
 
-    def test_compatibility_materialization_is_public_and_deterministic(self) -> None:
+    def test_guided_database_and_proxy_modes_must_be_consistent(self) -> None:
+        """Reject impossible local/external database and proxy combinations.
+
+        Returns:
+            None.
+        """
+
+        cases = (
+            (
+                production_profile(DB_MODE="external"),
+                "External PostgreSQL",
+            ),
+            (
+                production_profile(
+                    PROXY_TYPE="none",
+                    SSL_MODE="letsencrypt",
+                    TRAEFIK_NETWORK="none",
+                ),
+                "No-proxy mode",
+            ),
+            (
+                production_profile(
+                    PGADMIN_ENABLED="true",
+                    PGADMIN_DOMAIN="pgadmin.felix-app.fe-wi.com",
+                    PGADMIN_EMAIL="admin@fe-wi.com",
+                    PGADMIN_REPLICAS="1",
+                    PROXY_TYPE="none",
+                    TRAEFIK_NETWORK="none",
+                ),
+                "pgAdmin requires Traefik",
+            ),
+        )
+        for values, expected in cases:
+            with self.subTest(expected=expected):
+                with self.assertRaisesRegex(SwarmReleaseProfileError, expected):
+                    self._parse(values)
+
+    def test_disabled_optional_services_require_explicit_sentinels(self) -> None:
+        """Reject stale image or management fields hidden behind disabled flags.
+
+        Returns:
+            None.
+        """
+
+        self._assert_field_rejected(
+            "WEB_IMAGE_NAME",
+            "sokrates1989/felix-webapp",
+            "Disabled WebApp",
+        )
+        self._assert_field_rejected(
+            "PGADMIN_EMAIL",
+            "admin@fe-wi.com",
+            "Disabled pgAdmin",
+        )
+
+    def test_guided_write_is_public_and_deterministic(self) -> None:
         """Writes only the canonical validated public mapping.
 
         Returns:
             None.
         """
 
-        profile = self._parse()
-        destination = self.root / ".env"
+        profile = write_release_env(self.root, production_profile())
+        persisted = profile.path.read_text(encoding="utf-8")
 
-        materialize_compatibility_env(profile, destination)
-        persisted = destination.read_text(encoding="utf-8")
-
-        self.assertEqual(persisted, render_compatibility_env(profile))
+        self.assertEqual(persisted, render_release_env(PRODUCTION_PROFILE))
         self.assertIn("PROFILE_SCHEMA_VERSION=1", persisted)
         self.assertNotIn("PASSWORD", persisted)
         self.assertNotIn("SECRET", persisted)
         self.assertNotIn("TOKEN", persisted)
 
-    def test_materialization_requires_explicit_overwrite(self) -> None:
+    def test_guided_write_requires_explicit_overwrite(self) -> None:
         """Protects an existing root `.env` from implicit replacement.
 
         Returns:
             None.
         """
 
-        profile = self._parse()
         destination = self.root / ".env"
         destination.write_text("EXISTING=value\n", encoding="utf-8")
 
@@ -363,31 +402,33 @@ class SwarmReleaseProfileTest(unittest.TestCase):
             SwarmReleaseProfileError,
             "pass --force",
         ):
-            materialize_compatibility_env(profile, destination)
+            write_release_env(self.root, production_profile())
         self.assertEqual(destination.read_text(encoding="utf-8"), "EXISTING=value\n")
 
-        materialize_compatibility_env(profile, destination, overwrite=True)
+        write_release_env(self.root, production_profile(), overwrite=True)
         self.assertEqual(
             destination.read_text(encoding="utf-8"),
-            render_compatibility_env(profile),
+            render_release_env(PRODUCTION_PROFILE),
         )
 
-    def test_materialization_accepts_identical_existing_output(self) -> None:
-        """Treats deterministic generated compatibility data as idempotent.
+    def test_guided_write_accepts_identical_existing_output(self) -> None:
+        """Treats deterministic generated public data as idempotent.
 
         Returns:
             None.
         """
 
-        profile = self._parse()
         destination = self.root / ".env"
-        destination.write_text(render_compatibility_env(profile), encoding="utf-8")
+        destination.write_text(
+            render_release_env(PRODUCTION_PROFILE),
+            encoding="utf-8",
+        )
 
-        materialize_compatibility_env(profile, destination)
+        write_release_env(self.root, production_profile())
 
         self.assertEqual(
             destination.read_text(encoding="utf-8"),
-            render_compatibility_env(profile),
+            render_release_env(PRODUCTION_PROFILE),
         )
 
     def test_profile_override_cannot_escape_repository_root(self) -> None:

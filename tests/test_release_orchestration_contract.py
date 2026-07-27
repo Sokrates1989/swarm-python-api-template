@@ -11,6 +11,8 @@ import json
 import unittest
 from pathlib import Path
 
+from tests.felix_profile_fixture import PRODUCTION_PROFILE
+
 
 CONTRACT_PATH = (
     Path(__file__).resolve().parents[1]
@@ -84,6 +86,36 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         )
         self.assertEqual(secret_file_fields, ["KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"])
 
+    def test_guided_configuration_targets_one_full_stack(self) -> None:
+        """Require normal root `.env` and the complete Felix service boundary.
+
+        Returns:
+            None.
+        """
+
+        configuration = self.contract["configurationInput"]
+        services = self.contract["stackServices"]
+        boundary = self.contract["deploymentBoundary"]
+
+        self.assertEqual(
+            self.contract["siteProfileDisplayName"],
+            "Felix Backend and WebApp",
+        )
+        self.assertEqual(configuration["trackedExample"], ".env.example")
+        self.assertEqual(configuration["wizardGenerated"], ".env")
+        self.assertEqual(configuration["forbiddenRequiredInput"], "prod.env")
+        self.assertEqual(set(services["required"]), {"web", "api", "redis"})
+        self.assertEqual(
+            set(services["databaseModes"]),
+            {"local-postgresql", "external-postgresql-secret-file"},
+        )
+        self.assertEqual(services["optional"], ["pgadmin"])
+        self.assertEqual(boundary["candidateStackName"], "felix-new")
+        self.assertEqual(
+            boundary["candidateApiHost"],
+            "api.felix-app.fe-wi.com",
+        )
+
     def test_forwarding_and_image_policy_fail_closed(self) -> None:
         """Ensure forwarding and mutable image deployment fail closed.
 
@@ -128,7 +160,12 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
 
         expected_adapter = "scripts/felix_site_profile.py"
         sources = [
-            REPOSITORY_ROOT / "setup" / "setup-wizard.sh",
+            (
+                REPOSITORY_ROOT
+                / "setup"
+                / "modules"
+                / "felix-setup-wizard.sh"
+            ),
             REPOSITORY_ROOT / "scripts" / "build-site-stack.sh",
             REPOSITORY_ROOT / "scripts" / "validate-site.sh",
         ]
@@ -137,6 +174,32 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             content = source.read_text(encoding="utf-8")
             self.assertIn(expected_adapter, content, source)
             self.assertIn("--compose-check", content, source)
+
+        setup_wizard = (
+            REPOSITORY_ROOT / "setup" / "setup-wizard.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("run_guided_felix_setup", setup_wizard)
+
+    def test_guided_wizard_owns_complete_public_schema_without_deploying(self) -> None:
+        """Keep every public field in the menu flow and runtime effects separate.
+
+        Returns:
+            None.
+        """
+
+        wizard = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "felix-setup-wizard.sh"
+        ).read_text(encoding="utf-8")
+
+        for key in PRODUCTION_PROFILE:
+            self.assertIn(f"{key}=", wizard, key)
+        self.assertIn("--force", wizard)
+        self.assertIn("render --compose-check", wizard)
+        self.assertNotIn("docker stack deploy", wizard)
+        self.assertNotIn("prod.env", wizard)
 
     def test_keycloak_menu_uses_existing_production_owner(self) -> None:
         """Route Felix to the deployed swarm-keycloak owner without an adapter.
@@ -232,7 +295,7 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             "KEYCLOAK_AUDIENCE",
         ):
             self.assertIn(
-                f'export {field}="$(_env_val {field})"',
+                f'export {field}="$(_root_env_value "$env_file" {field})"',
                 site_helpers,
                 field,
             )
@@ -267,8 +330,9 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             '"FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"',
             secret_menu,
         )
+        self.assertIn('"FELIX_NEW_PGADMIN_PASSWORD"', secret_menu)
         self.assertIn(
-            'create_single_secret "FELIX_NEW_DB_PASSWORD"',
+            '_create_felix_editor_secret "FELIX_NEW_DB_PASSWORD"',
             secret_menu,
         )
         self.assertNotIn(

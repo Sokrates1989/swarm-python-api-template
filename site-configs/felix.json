@@ -2,8 +2,8 @@
   "$schema": "site-config-schema",
   "version": "4.0",
   "appId": "felix",
-  "name": "Felix Candidate API",
-  "description": "Candidate Felix production backend isolated from the legacy deployment",
+  "name": "Felix Backend and WebApp",
+  "description": "Candidate Felix full stack isolated from the legacy deployment",
   "kind": "api",
   "renderer": {
     "type": "felix-production",
@@ -11,7 +11,7 @@
   },
   "stack": {
     "family": "api",
-    "role": "candidate-api",
+    "role": "full-stack",
     "primaryService": "api",
     "name": "felix-new"
   },
@@ -19,7 +19,7 @@
     "type": "public",
     "publicDomainRequired": true,
     "traefik": true,
-    "publishedPorts": false
+    "publishedPorts": true
   },
   "routing": {
     "containerPort": 8080,
@@ -33,9 +33,12 @@
     "type": "postgresql",
     "defaultMode": "local",
     "allowedModes": [
-      "local"
+      "local",
+      "external"
     ],
-    "image": "postgres@sha256:79c06d285ed9186efbbc45c73413b3c3510c3c94ffede2f25d1e523f74d07f28"
+    "image": "postgres@sha256:79c06d285ed9186efbbc45c73413b3c3510c3c94ffede2f25d1e523f74d07f28",
+    "pgadminImage": "dpage/pgadmin4@sha256:cefc4cc6b7d9d71a9e81e76fb9d7e14038ab5661b539a190eea1b63fa612589a",
+    "pgadminSecret": "FELIX_NEW_PGADMIN_PASSWORD"
   },
   "services": {
     "api": true,

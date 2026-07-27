@@ -22,5 +22,6 @@ substitution.
 
 `site-configs/felix.json` is the first strict profile. Its companion
 `felix.json.md` documents candidate/legacy isolation, digest-bound images,
-local PostgreSQL, Keycloak clients, and safe capability selection. The ignored
-operator `prod.env` must pass validation before a stack can be rendered.
+local or external PostgreSQL, optional pgAdmin, Keycloak clients, and safe
+capability selection. The guided wizard writes the ignored root `.env`, which
+must pass validation before a stack can be rendered.

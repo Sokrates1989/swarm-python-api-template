@@ -13,6 +13,7 @@
 # Directory structure created for API profiles:
 #   $DATA_ROOT/
 #     postgres_data/  (if PostgreSQL)
+#     pgadmin/         (if pgAdmin is enabled)
 #     neo4j_data/     (if Neo4j)
 #     neo4j_logs/     (if Neo4j)
 #     backups/
@@ -56,6 +57,36 @@ _create_data_dir() {
 }
 
 # ------------------------------------------------------------------------------
+# _set_pgadmin_directory_owner
+# ------------------------------------------------------------------------------
+# Assigns the persistent pgAdmin directory to the container's documented
+# runtime UID/GID so its configuration database remains writable.
+#
+# Arguments:
+#   $1 - path: existing pgAdmin data directory.
+#
+# Returns:
+#   0 after ownership is correct; 1 when chown is unavailable or fails.
+#
+# Side effects:
+#   Changes only the selected pgAdmin directory ownership to 5050:5050.
+# ------------------------------------------------------------------------------
+_set_pgadmin_directory_owner() {
+    local path="$1"
+
+    if ! command -v chown >/dev/null 2>&1; then
+        echo "[ERROR] chown is required for the pgAdmin data directory."
+        return 1
+    fi
+    if chown 5050:5050 "$path"; then
+        echo "[OK] pgAdmin ownership ready: ${path} (5050:5050)"
+        return 0
+    fi
+    echo "[ERROR] Could not assign pgAdmin ownership: $path"
+    return 1
+}
+
+# ------------------------------------------------------------------------------
 # create_data_directories
 # ------------------------------------------------------------------------------
 # Creates the data root and all profile-specific subdirectories. It skips service
@@ -92,6 +123,10 @@ create_data_directories() {
 
     if [ "$db_type" = "postgresql" ]; then
         _create_data_dir "$data_root/postgres_data" "PostgreSQL data directory" || return 1
+        if [ "${PGADMIN_ENABLED:-false}" = "true" ]; then
+            _create_data_dir "$data_root/pgadmin" "pgAdmin data directory" || return 1
+            _set_pgadmin_directory_owner "$data_root/pgadmin" || return 1
+        fi
     elif [ "$db_type" = "neo4j" ]; then
         _create_data_dir "$data_root/neo4j_data" "Neo4j data directory" || return 1
         _create_data_dir "$data_root/neo4j_logs" "Neo4j logs directory" || return 1

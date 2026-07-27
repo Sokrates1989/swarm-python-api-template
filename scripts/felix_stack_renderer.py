@@ -89,28 +89,71 @@ def _render_api_environment(profile: FelixSiteProfile) -> list[str]:
     return lines
 
 
-def _render_api_deploy(
-    profile: FelixSiteProfile,
-    network: str,
-    domain: str,
-) -> list[str]:
-    """Render bounded start-first deployment and exact Traefik labels.
+def _render_api_labels(profile: FelixSiteProfile) -> list[str]:
+    """Render proxy-mode-specific Traefik labels when enabled.
 
     Args:
         profile: Validated executable Felix profile.
-        network: External Traefik network name.
-        domain: Candidate API router hostname.
+
+    Returns:
+        Indented API label lines, or an empty list without Traefik.
+    """
+
+    values = profile.deployment
+    if values["PROXY_TYPE"] != "traefik":
+        return []
+    stack = _CANDIDATE_STACK
+    network = values["TRAEFIK_NETWORK"]
+    domain = values["DOMAIN"]
+    lines = [
+        "      labels:",
+        '        - "traefik.enable=true"',
+        '        - "traefik.constraint-label=traefik-public"',
+        f'        - "traefik.docker.network={network}"',
+        f'        - "traefik.http.routers.{stack}-api.service={stack}-api"',
+        f'        - "traefik.http.routers.{stack}-api.rule=Host(`{domain}`)"',
+        f'        - "traefik.http.services.{stack}-api.loadbalancer.server.port=8080"',
+    ]
+    if values["SSL_MODE"] == "letsencrypt":
+        lines.extend(
+            [
+                f'        - "traefik.http.routers.{stack}-api.entrypoints=https,http,web"',
+                f'        - "traefik.http.routers.{stack}-api.tls=true"',
+                f'        - "traefik.http.routers.{stack}-api.tls.certresolver=le"',
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f'        - "traefik.http.routers.{stack}-api.entrypoints=http"',
+                (
+                    f'        - "traefik.http.middlewares.{stack}-protoheader.headers.'
+                    'customrequestheaders.X-Forwarded-Proto=https"'
+                ),
+                (
+                    f'        - "traefik.http.routers.{stack}-api.middlewares='
+                    f'{stack}-protoheader"'
+                ),
+            ]
+        )
+    return lines
+
+
+def _render_api_deploy(profile: FelixSiteProfile) -> list[str]:
+    """Render bounded start-first deployment and optional proxy labels.
+
+    Args:
+        profile: Validated executable Felix profile.
 
     Returns:
         Indented API `deploy` mapping lines.
     """
 
-    resources = _as_mapping(profile.data["resources"], "resources")
-    stack = _CANDIDATE_STACK
+    values = profile.deployment
     return [
         "    deploy:",
         "      mode: replicated",
-        f"      replicas: {resources['defaultReplicas']}",
+        f"      replicas: {values['API_REPLICAS']}",
         "      update_config:",
         "        parallelism: 1",
         "        delay: 10s",
@@ -129,20 +172,8 @@ def _render_api_deploy(
         "        max_attempts: 3",
         "      resources:",
         "        limits:",
-        f"          memory: {_yaml_text(resources['defaultMemoryLimit'])}",
-        "      labels:",
-        '        - "traefik.enable=true"',
-        '        - "traefik.constraint-label=traefik-public"',
-        f'        - "traefik.docker.network={network}"',
-        f'        - "traefik.http.routers.{stack}-api.service={stack}-api"',
-        f'        - "traefik.http.routers.{stack}-api.rule=Host(`{domain}`)"',
-        f'        - "traefik.http.routers.{stack}-api.entrypoints=http"',
-        f'        - "traefik.http.services.{stack}-api.loadbalancer.server.port=8080"',
-        (
-            f'        - "traefik.http.middlewares.{stack}-protoheader.headers.'
-            'customrequestheaders.X-Forwarded-Proto=https"'
-        ),
-        f'        - "traefik.http.routers.{stack}-api.middlewares={stack}-protoheader"',
+        f"          memory: {_yaml_text(values['MEMORY_LIMIT'])}",
+        *_render_api_labels(profile),
     ]
 
 
@@ -156,11 +187,11 @@ def _render_api_runtime(profile: FelixSiteProfile) -> list[str]:
         Indented volume and healthcheck Compose lines.
     """
 
-    storage = _as_mapping(profile.data["storage"], "storage")
+    data_root = profile.deployment["DATA_ROOT"]
     return [
         "    volumes:",
-        f"      - {_yaml_text(str(storage['dataRoot']) + '/backups:/app/backups')}",
-        f"      - {_yaml_text(str(storage['dataRoot']) + '/logs/api:/app/logs')}",
+        f"      - {_yaml_text(data_root + '/backups:/app/backups')}",
+        f"      - {_yaml_text(data_root + '/logs/api:/app/logs')}",
         "    healthcheck:",
         (
             '      test: ["CMD", "python", "-c", '
@@ -184,17 +215,26 @@ def _render_api_service(profile: FelixSiteProfile) -> list[str]:
         API Compose lines without a top-level `services` key.
     """
 
-    routing = _as_mapping(profile.data["routing"], "routing")
-    network = str(routing["traefikNetwork"])
-    domain = str(routing["domain"])
+    values = profile.deployment
     lines = [
         "  api:",
         f"    image: {_yaml_text(profile.image_reference)}",
         "    networks:",
         "      - backend",
-        f"      - {_yaml_text(network)}",
-        "    secrets:",
     ]
+    if values["PROXY_TYPE"] == "traefik":
+        lines.append(f"      - {_yaml_text(values['TRAEFIK_NETWORK'])}")
+    if values["PROXY_TYPE"] == "none":
+        lines.extend(
+            [
+                "    ports:",
+                "      - target: 8080",
+                f"        published: {values['API_PUBLISHED_PORT']}",
+                "        protocol: tcp",
+                "        mode: host",
+            ]
+        )
+    lines.append("    secrets:")
     for mount in profile.secret_mounts:
         lines.extend(
             [
@@ -204,7 +244,7 @@ def _render_api_service(profile: FelixSiteProfile) -> list[str]:
         )
     lines.extend(_render_api_environment(profile))
     lines.extend(_render_api_runtime(profile))
-    lines.extend(_render_api_deploy(profile, network, domain))
+    lines.extend(_render_api_deploy(profile))
     return lines
 
 
@@ -219,7 +259,7 @@ def _render_postgres_service(profile: FelixSiteProfile) -> list[str]:
     """
 
     database = _as_mapping(profile.data["database"], "database")
-    storage = _as_mapping(profile.data["storage"], "storage")
+    data_root = profile.deployment["DATA_ROOT"]
     db_mount = next(
         mount for mount in profile.secret_mounts if mount.env_key == "DB_PASSWORD_FILE"
     )
@@ -236,7 +276,7 @@ def _render_postgres_service(profile: FelixSiteProfile) -> list[str]:
         f"      POSTGRES_USER: {_yaml_text(profile.environment['DB_USER'])}",
         f"      POSTGRES_PASSWORD_FILE: {_yaml_text(db_mount.target)}",
         "    volumes:",
-        f"      - {_yaml_text(str(storage['dataRoot']) + '/postgres:/var/lib/postgresql/data')}",
+        f"      - {_yaml_text(data_root + '/postgres_data:/var/lib/postgresql/data')}",
         "    deploy:",
         "      mode: replicated",
         "      replicas: 1",
@@ -254,6 +294,112 @@ def _render_postgres_service(profile: FelixSiteProfile) -> list[str]:
     ]
 
 
+def _render_pgadmin_labels(profile: FelixSiteProfile) -> list[str]:
+    """Render the optional pgAdmin Traefik route for the selected TLS mode.
+
+    Args:
+        profile: Validated executable Felix profile.
+
+    Returns:
+        Indented pgAdmin deployment label lines.
+    """
+
+    values = profile.deployment
+    stack = _CANDIDATE_STACK
+    network = values["TRAEFIK_NETWORK"]
+    domain = values["PGADMIN_DOMAIN"]
+    lines = [
+        "      labels:",
+        '        - "traefik.enable=true"',
+        '        - "traefik.constraint-label=traefik-public"',
+        f'        - "traefik.docker.network={network}"',
+        f'        - "traefik.http.routers.{stack}-pgadmin.service={stack}-pgadmin"',
+        f'        - "traefik.http.routers.{stack}-pgadmin.rule=Host(`{domain}`)"',
+        (
+            f'        - "traefik.http.services.{stack}-pgadmin.'
+            'loadbalancer.server.port=5050"'
+        ),
+    ]
+    if values["SSL_MODE"] == "letsencrypt":
+        lines.extend(
+            [
+                (
+                    f'        - "traefik.http.routers.{stack}-pgadmin.'
+                    'entrypoints=https,http,web"'
+                ),
+                f'        - "traefik.http.routers.{stack}-pgadmin.tls=true"',
+                (
+                    f'        - "traefik.http.routers.{stack}-pgadmin.'
+                    'tls.certresolver=le"'
+                ),
+            ]
+        )
+    else:
+        middleware = f"{stack}-pgadmin-protoheader"
+        lines.extend(
+            [
+                f'        - "traefik.http.routers.{stack}-pgadmin.entrypoints=http"',
+                (
+                    f'        - "traefik.http.middlewares.{middleware}.headers.'
+                    'customrequestheaders.X-Forwarded-Proto=https"'
+                ),
+                (
+                    f'        - "traefik.http.routers.{stack}-pgadmin.'
+                    f'middlewares={middleware}"'
+                ),
+            ]
+        )
+    return lines
+
+
+def _render_pgadmin_service(profile: FelixSiteProfile) -> list[str]:
+    """Render optional pgAdmin with a dedicated file-backed password secret.
+
+    Args:
+        profile: Validated executable Felix profile.
+
+    Returns:
+        pgAdmin Compose lines, or an empty list when disabled.
+    """
+
+    values = profile.deployment
+    if values["PGADMIN_ENABLED"] != "true":
+        return []
+    database = _as_mapping(profile.data["database"], "database")
+    secret = str(database["pgadminSecret"])
+    data_root = values["DATA_ROOT"]
+    return [
+        "  pgadmin:",
+        f"    image: {_yaml_text(database['pgadminImage'])}",
+        "    networks:",
+        "      - backend",
+        f"      - {_yaml_text(values['TRAEFIK_NETWORK'])}",
+        "    secrets:",
+        f"      - source: {_yaml_text(secret)}",
+        f"        target: {_yaml_text(secret)}",
+        "    environment:",
+        f"      PGADMIN_DEFAULT_EMAIL: {_yaml_text(values['PGADMIN_EMAIL'])}",
+        f"      PGADMIN_DEFAULT_PASSWORD_FILE: {_yaml_text('/run/secrets/' + secret)}",
+        '      PGADMIN_LISTEN_PORT: "5050"',
+        '      PGADMIN_CONFIG_SERVER_MODE: "True"',
+        "    volumes:",
+        f"      - {_yaml_text(data_root + '/pgadmin:/var/lib/pgadmin')}",
+        "    deploy:",
+        "      mode: replicated",
+        f"      replicas: {values['PGADMIN_REPLICAS']}",
+        "      restart_policy:",
+        "        condition: on-failure",
+        "        delay: 5s",
+        "      placement:",
+        "        constraints:",
+        "          - node.role == manager",
+        "      resources:",
+        "        limits:",
+        '          memory: "256M"',
+        *_render_pgadmin_labels(profile),
+    ]
+
+
 def _render_footer(profile: FelixSiteProfile) -> list[str]:
     """Render networks and active external Docker secret declarations.
 
@@ -264,20 +410,32 @@ def _render_footer(profile: FelixSiteProfile) -> list[str]:
         Top-level Compose network and secret lines.
     """
 
-    routing = _as_mapping(profile.data["routing"], "routing")
-    network = str(routing["traefikNetwork"])
+    values = profile.deployment
     lines = [
         "networks:",
         "  backend:",
         "    driver: overlay",
-        f"  {_yaml_text(network)}:",
-        "    external: true",
-        "secrets:",
     ]
+    if values["PROXY_TYPE"] == "traefik":
+        lines.extend(
+            [
+                f"  {_yaml_text(values['TRAEFIK_NETWORK'])}:",
+                "    external: true",
+            ]
+        )
+    lines.append("secrets:")
     for mount in profile.secret_mounts:
         lines.extend(
             [
                 f"  {_yaml_text(mount.name)}:",
+                "    external: true",
+            ]
+        )
+    if values["PGADMIN_ENABLED"] == "true":
+        database = _as_mapping(profile.data["database"], "database")
+        lines.extend(
+            [
+                f"  {_yaml_text(database['pgadminSecret'])}:",
                 "    external: true",
             ]
         )
@@ -298,13 +456,22 @@ def render_stack(profile: FelixSiteProfile) -> str:
             lacks a value.
     """
 
+    if profile.deployment["WEB_ENABLED"] == "true":
+        raise FelixSiteProfileError(
+            "WebApp rendering remains deferred until its immutable image slice."
+        )
     lines = [
-        "# Generated from site-configs/felix.json and validated prod.env.",
+        "# Generated from site-configs/felix.json and validated root .env.",
         "# Secret identifiers are external references; no secret values are rendered.",
         "services:",
         *_render_redis_service(profile),
         *_render_api_service(profile),
-        *_render_postgres_service(profile),
+        *(
+            _render_postgres_service(profile)
+            if profile.deployment["DB_MODE"] == "local"
+            else []
+        ),
+        *_render_pgadmin_service(profile),
         *_render_footer(profile),
         "",
     ]
@@ -341,8 +508,13 @@ def validate_rendered_stack(stack: str, profile: FelixSiteProfile) -> None:
     if direct_pattern.search(stack):
         raise FelixSiteProfileError("Rendered stack contains a direct secret field.")
     image_references = re.findall(r"^\s+image:\s+\"([^\"]+)\"$", stack, re.MULTILINE)
-    if len(image_references) != 3:
-        raise FelixSiteProfileError("Rendered stack must contain exactly three images.")
+    expected_image_count = 3 if profile.deployment["DB_MODE"] == "local" else 2
+    if profile.deployment["PGADMIN_ENABLED"] == "true":
+        expected_image_count += 1
+    if len(image_references) != expected_image_count:
+        raise FelixSiteProfileError(
+            f"Rendered stack must contain exactly {expected_image_count} images."
+        )
     for reference in image_references:
         if reference == profile.image_reference:
             continue

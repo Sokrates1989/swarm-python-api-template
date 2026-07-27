@@ -328,6 +328,127 @@ show_app_selector() {
     done
 }
 
+# _root_env_value
+# Reads one root dotenv value without evaluating shell expressions.
+#
+# Arguments:
+#   $1 - Root `.env` file path.
+#   $2 - Exact variable name.
+#
+# Returns:
+#   0 after printing the first matching value; grep may print an empty value.
+_root_env_value() {
+    local env_file="$1"
+    local key="$2"
+
+    grep "^${key}=" "$env_file" 2>/dev/null |
+        head -n 1 |
+        cut -d'=' -f2- |
+        tr -d '"' |
+        tr -d '\r'
+}
+
+# _load_stack_env_fields
+# Exports stack, routing, image, resource, and generic service settings.
+#
+# Arguments:
+#   $1 - Existing root `.env` file path.
+#
+# Returns:
+#   0 after exporting every stack-level convenience variable.
+#
+# Side effects:
+#   Replaces process environment variables with parsed public values.
+_load_stack_env_fields() {
+    local env_file="$1"
+
+    export STACK_NAME="$(_root_env_value "$env_file" STACK_NAME)"
+    export STACK_FAMILY="$(_root_env_value "$env_file" STACK_FAMILY)"
+    export STACK_ROLE="$(_root_env_value "$env_file" STACK_ROLE)"
+    export PRIMARY_SERVICE="$(_root_env_value "$env_file" PRIMARY_SERVICE)"
+    export DOMAIN="$(_root_env_value "$env_file" DOMAIN)"
+    export API_URL="$DOMAIN"
+    export DB_TYPE="$(_root_env_value "$env_file" DB_TYPE)"
+    export DB_MODE="$(_root_env_value "$env_file" DB_MODE)"
+    export PROXY_TYPE="$(_root_env_value "$env_file" PROXY_TYPE)"
+    export SSL_MODE="$(_root_env_value "$env_file" SSL_MODE)"
+    export TRAEFIK_NETWORK="$(_root_env_value "$env_file" TRAEFIK_NETWORK)"
+    export IMAGE_NAME="$(_root_env_value "$env_file" IMAGE_NAME)"
+    export IMAGE_VERSION="$(_root_env_value "$env_file" IMAGE_VERSION)"
+    export API_REPLICAS="$(_root_env_value "$env_file" API_REPLICAS)"
+    export MEMORY_LIMIT="$(_root_env_value "$env_file" MEMORY_LIMIT)"
+    export DATA_ROOT="$(_root_env_value "$env_file" DATA_ROOT)"
+    export API_PUBLISHED_PORT="$(_root_env_value "$env_file" API_PUBLISHED_PORT)"
+    export SECRET_PREFIX="$(_root_env_value "$env_file" SECRETS_PREFIX)"
+}
+
+# _load_felix_env_fields
+# Exports Felix public app, database, Keycloak, WebApp, and pgAdmin settings.
+#
+# Arguments:
+#   $1 - Existing root `.env` file path.
+#
+# Returns:
+#   0 after exporting every Felix convenience variable.
+#
+# Side effects:
+#   Replaces process environment variables with parsed public values.
+_load_felix_env_fields() {
+    local env_file="$1"
+
+    export DEPLOYMENT_PROFILE_ID="$(_root_env_value "$env_file" DEPLOYMENT_PROFILE_ID)"
+    export APP_ID="$(_root_env_value "$env_file" APP_ID)"
+    export APP_ENVIRONMENT="$(_root_env_value "$env_file" APP_ENVIRONMENT)"
+    export APP_PROFILE="$(_root_env_value "$env_file" APP_PROFILE)"
+    export BACKEND_APP_ID="$(_root_env_value "$env_file" BACKEND_APP_ID)"
+    export BACKEND_DATA_PROFILE="$(_root_env_value "$env_file" BACKEND_DATA_PROFILE)"
+    export AUTH_PROVIDER="$(_root_env_value "$env_file" AUTH_PROVIDER)"
+    export API_BASE_URL="$(_root_env_value "$env_file" API_BASE_URL)"
+    export WEB_BASE_URL="$(_root_env_value "$env_file" WEB_BASE_URL)"
+    export WEB_DOMAIN="$(_root_env_value "$env_file" WEB_DOMAIN)"
+    export CORS_ORIGINS="$(_root_env_value "$env_file" CORS_ORIGINS)"
+    export KEYCLOAK_BASE_URL="$(_root_env_value "$env_file" KEYCLOAK_BASE_URL)"
+    export KEYCLOAK_ISSUER_URL="$(_root_env_value "$env_file" KEYCLOAK_ISSUER_URL)"
+    export KEYCLOAK_REALM="$(_root_env_value "$env_file" KEYCLOAK_REALM)"
+    export KEYCLOAK_AUDIENCE="$(_root_env_value "$env_file" KEYCLOAK_AUDIENCE)"
+    export KEYCLOAK_FRONTEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_FRONTEND_CLIENT_ID)"
+    export DB_HOST="$(_root_env_value "$env_file" DB_HOST)"
+    export DB_PORT="$(_root_env_value "$env_file" DB_PORT)"
+    export DB_NAME="$(_root_env_value "$env_file" DB_NAME)"
+    export DB_USER="$(_root_env_value "$env_file" DB_USER)"
+    export PGADMIN_ENABLED="$(_root_env_value "$env_file" PGADMIN_ENABLED)"
+    export PGADMIN_DOMAIN="$(_root_env_value "$env_file" PGADMIN_DOMAIN)"
+    export PGADMIN_URL="$PGADMIN_DOMAIN"
+    export PGADMIN_REPLICAS="$(_root_env_value "$env_file" PGADMIN_REPLICAS)"
+    export PGADMIN_EMAIL="$(_root_env_value "$env_file" PGADMIN_EMAIL)"
+    export WEB_ENABLED="$(_root_env_value "$env_file" WEB_ENABLED)"
+    export WEB_IMAGE_NAME="$(_root_env_value "$env_file" WEB_IMAGE_NAME)"
+    export WEB_IMAGE_VERSION="$(_root_env_value "$env_file" WEB_IMAGE_VERSION)"
+    export WEB_REPLICAS="$(_root_env_value "$env_file" WEB_REPLICAS)"
+}
+
+# _load_generic_service_env_fields
+# Exports legacy redirect, nginx, and Mongo Express convenience settings.
+#
+# Arguments:
+#   $1 - Existing root `.env` file path.
+#
+# Returns:
+#   0 after exporting generic optional-service variables.
+#
+# Side effects:
+#   Replaces process environment variables with parsed public values.
+_load_generic_service_env_fields() {
+    local env_file="$1"
+
+    export REDIRECT_TARGET_BASE_URL="$(_root_env_value "$env_file" REDIRECT_TARGET_BASE_URL)"
+    export REDIRECT_STATUS_CODE="$(_root_env_value "$env_file" REDIRECT_STATUS_CODE)"
+    export NGINX_REPLICAS="$(_root_env_value "$env_file" NGINX_REPLICAS)"
+    export MONGO_EXPRESS_URL="$(_root_env_value "$env_file" MONGO_EXPRESS_URL)"
+    export MONGO_EXPRESS_REPLICAS="$(_root_env_value "$env_file" MONGO_EXPRESS_REPLICAS)"
+    export MONGO_EXPRESS_USERNAME="$(_root_env_value "$env_file" MONGO_EXPRESS_USERNAME)"
+}
+
 # ==============================================================================
 # load_root_env
 # ==============================================================================
@@ -347,53 +468,8 @@ load_root_env() {
     if [ ! -f "$env_file" ]; then
         return 1
     fi
-
-    # Read key values from .env (simple grep-based, no eval for safety)
-    _env_val() {
-        grep "^${1}=" "$env_file" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
-    }
-
-    export STACK_NAME="$(_env_val STACK_NAME)"
-    export STACK_FAMILY="$(_env_val STACK_FAMILY)"
-    export STACK_ROLE="$(_env_val STACK_ROLE)"
-    export PRIMARY_SERVICE="$(_env_val PRIMARY_SERVICE)"
-    export DOMAIN="$(_env_val DOMAIN)"
-    export API_URL="$DOMAIN"
-    export DB_TYPE="$(_env_val DB_TYPE)"
-    export DB_MODE="$(_env_val DB_MODE)"
-    export PROXY_TYPE="$(_env_val PROXY_TYPE)"
-    export SSL_MODE="$(_env_val SSL_MODE)"
-    export TRAEFIK_NETWORK="$(_env_val TRAEFIK_NETWORK)"
-    export IMAGE_NAME="$(_env_val IMAGE_NAME)"
-    export IMAGE_VERSION="$(_env_val IMAGE_VERSION)"
-    export REDIRECT_TARGET_BASE_URL="$(_env_val REDIRECT_TARGET_BASE_URL)"
-    export REDIRECT_STATUS_CODE="$(_env_val REDIRECT_STATUS_CODE)"
-    export API_REPLICAS="$(_env_val API_REPLICAS)"
-    export NGINX_REPLICAS="$(_env_val NGINX_REPLICAS)"
-    export MEMORY_LIMIT="$(_env_val MEMORY_LIMIT)"
-    export SECRET_PREFIX="$(_env_val SECRETS_PREFIX)"
-    export DEPLOYMENT_PROFILE_ID="$(_env_val DEPLOYMENT_PROFILE_ID)"
-    export APP_ID="$(_env_val APP_ID)"
-    export APP_ENVIRONMENT="$(_env_val APP_ENVIRONMENT)"
-    export APP_PROFILE="$(_env_val APP_PROFILE)"
-    export BACKEND_APP_ID="$(_env_val BACKEND_APP_ID)"
-    export BACKEND_DATA_PROFILE="$(_env_val BACKEND_DATA_PROFILE)"
-    export AUTH_PROVIDER="$(_env_val AUTH_PROVIDER)"
-    export API_BASE_URL="$(_env_val API_BASE_URL)"
-    export CORS_ORIGINS="$(_env_val CORS_ORIGINS)"
-    export KEYCLOAK_BASE_URL="$(_env_val KEYCLOAK_BASE_URL)"
-    export KEYCLOAK_ISSUER_URL="$(_env_val KEYCLOAK_ISSUER_URL)"
-    export KEYCLOAK_REALM="$(_env_val KEYCLOAK_REALM)"
-    export KEYCLOAK_AUDIENCE="$(_env_val KEYCLOAK_AUDIENCE)"
-    export KEYCLOAK_FRONTEND_CLIENT_ID="$(_env_val KEYCLOAK_FRONTEND_CLIENT_ID)"
-    export DATA_ROOT="$(_env_val DATA_ROOT)"
-    export PGADMIN_URL="$(_env_val PGADMIN_URL)"
-    export PGADMIN_REPLICAS="$(_env_val PGADMIN_REPLICAS)"
-    export PGADMIN_EMAIL="$(_env_val PGADMIN_EMAIL)"
-    export MONGO_EXPRESS_URL="$(_env_val MONGO_EXPRESS_URL)"
-    export MONGO_EXPRESS_REPLICAS="$(_env_val MONGO_EXPRESS_REPLICAS)"
-    export MONGO_EXPRESS_USERNAME="$(_env_val MONGO_EXPRESS_USERNAME)"
-
-    unset -f _env_val
+    _load_stack_env_fields "$env_file"
+    _load_felix_env_fields "$env_file"
+    _load_generic_service_env_fields "$env_file"
     return 0
 }

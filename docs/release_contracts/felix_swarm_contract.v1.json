@@ -3,6 +3,7 @@
   "owner": "swarm",
   "appId": "felix",
   "siteProfile": "felix",
+  "siteProfileDisplayName": "Felix Backend and WebApp",
   "environment": "production",
   "productionKeycloakOwner": {
     "repository": "https://github.com/Sokrates1989/swarm-keycloak.git",
@@ -12,6 +13,7 @@
   },
   "candidate": {
     "webOrigin": "https://felix-app.fe-wi.com",
+    "apiOrigin": "https://api.felix-app.fe-wi.com",
     "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
     "realm": "felix-new",
     "frontendClientId": "felix-new-frontend",
@@ -37,8 +39,29 @@
   "requiredSecretFileFields": [
     "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
   ],
+  "configurationInput": {
+    "trackedExample": ".env.example",
+    "wizardGenerated": ".env",
+    "forbiddenRequiredInput": "prod.env"
+  },
+  "stackServices": {
+    "required": [
+      "web",
+      "api",
+      "redis"
+    ],
+    "databaseModes": [
+      "local-postgresql",
+      "external-postgresql-secret-file"
+    ],
+    "optional": [
+      "pgadmin"
+    ]
+  },
   "deploymentBoundary": {
     "candidateHost": "felix-app.fe-wi.com",
+    "candidateApiHost": "api.felix-app.fe-wi.com",
+    "candidateStackName": "felix-new",
     "legacyHost": "felix.app.fe-wi.com",
     "legacyForwardingRequiresCutoverApproval": true,
     "mutableImageTagsAllowed": false

@@ -47,21 +47,24 @@ def required_data_directories(profile: FelixSiteProfile) -> tuple[Path, ...]:
         profile: Validated Felix site profile.
 
     Returns:
-        PostgreSQL, backup, and API-log directories below the fixed data root.
+        Active PostgreSQL/pgAdmin plus backup and API-log directories below
+        the selected data root.
     """
 
-    storage = profile.data["storage"]
-    if not isinstance(storage, dict):
-        raise FelixReleaseError("Felix storage profile is not an object.")
-    root = Path(str(storage["dataRoot"]))
-    return root / "postgres", root / "backups", root / "logs" / "api"
+    root = Path(profile.deployment["DATA_ROOT"])
+    directories = [root / "backups", root / "logs" / "api"]
+    if profile.deployment["DB_MODE"] == "local":
+        directories.insert(0, root / "postgres_data")
+    if profile.deployment["PGADMIN_ENABLED"] == "true":
+        directories.append(root / "pgadmin")
+    return tuple(directories)
 
 
 def prepare_data_directories(root: Path) -> tuple[str, ...]:
     """Create only the exact candidate storage directories.
 
     Args:
-        root: Swarm repository root containing validated ``prod.env``.
+        root: Swarm repository root containing validated root ``.env``.
 
     Returns:
         Absolute created/verified directory paths.
@@ -76,12 +79,14 @@ def prepare_data_directories(root: Path) -> tuple[str, ...]:
     try:
         profile = load_felix_site_profile(root)
     except Exception as exc:
-        raise FelixReleaseError("Felix prod.env/site profile validation failed.") from exc
+        raise FelixReleaseError("Felix .env/site profile validation failed.") from exc
     try:
         directories = required_data_directories(profile)
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
             directory.chmod(0o700)
+            if directory.name == "pgadmin":
+                directory.chown(5050, 5050)
     except OSError as exc:
         raise FelixReleaseError("Unable to create candidate data directories.") from exc
     return tuple(str(directory) for directory in directories)
@@ -283,13 +288,17 @@ def _verify_docker_resources(
         FelixReleaseError: If a secret/network is absent or incompatible.
     """
 
-    secret_names = tuple(mount.name for mount in profile.secret_mounts)
+    secret_names = [mount.name for mount in profile.secret_mounts]
+    if profile.deployment["PGADMIN_ENABLED"] == "true":
+        database = profile.data["database"]
+        if not isinstance(database, dict):
+            raise FelixReleaseError("Felix database profile is not an object.")
+        secret_names.append(str(database["pgadminSecret"]))
     for name in secret_names:
         runner.run(["docker", "secret", "inspect", name])
-    routing = profile.data["routing"]
-    if not isinstance(routing, dict):
-        raise FelixReleaseError("Felix routing profile is not an object.")
-    network_name = str(routing["traefikNetwork"])
+    if profile.deployment["PROXY_TYPE"] != "traefik":
+        return tuple(secret_names)
+    network_name = profile.deployment["TRAEFIK_NETWORK"]
     network = _load_json(
         runner.run(["docker", "network", "inspect", network_name]).stdout,
         "Docker network inspect",
@@ -301,7 +310,7 @@ def _verify_docker_resources(
         or network[0].get("Driver") != "overlay"
     ):
         raise FelixReleaseError("Candidate Traefik network is not a Swarm overlay.")
-    return secret_names
+    return tuple(secret_names)
 
 
 def _verify_data_directories(profile: FelixSiteProfile) -> tuple[str, ...]:
@@ -429,7 +438,11 @@ def run_preflight(root: Path, runner: CommandRunner) -> PreflightEvidence:
     try:
         profile = load_felix_site_profile(root)
     except Exception as exc:
-        raise FelixReleaseError("Felix prod.env/site profile validation failed.") from exc
+        raise FelixReleaseError("Felix .env/site profile validation failed.") from exc
+    if profile.deployment["DB_MODE"] != "local":
+        raise FelixReleaseError(
+            "Strict release currently requires local PostgreSQL backup ownership."
+        )
     _verify_swarm(runner)
     secrets = _verify_docker_resources(runner, profile)
     directories = _verify_data_directories(profile)

@@ -110,13 +110,10 @@ def _profile_database(profile: FelixSiteProfile) -> tuple[str, str, Path]:
         FelixReleaseError: If storage is not a mapping.
     """
 
-    storage = profile.data["storage"]
-    if not isinstance(storage, dict):
-        raise FelixReleaseError("Felix storage profile is not an object.")
     return (
         profile.environment["DB_USER"],
         profile.environment["DB_NAME"],
-        Path(str(storage["dataRoot"])) / "backups" / "release",
+        Path(profile.deployment["DATA_ROOT"]) / "backups" / "release",
     )
 
 
@@ -200,7 +197,7 @@ def _empty_database_evidence(
     """
 
     _, _, backup_root = _profile_database(profile)
-    postgres_root = backup_root.parents[1] / "postgres"
+    postgres_root = Path(profile.deployment["DATA_ROOT"]) / "postgres_data"
     if any(postgres_root.iterdir()):
         raise FelixReleaseError(
             "Initial deploy found unmanaged PostgreSQL data without a running service."

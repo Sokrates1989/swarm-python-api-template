@@ -2,8 +2,10 @@
 
 ## Scope
 
-This runbook deploys only the isolated `felix-new` candidate stack at
-`api.felix-app.fe-wi.com`. It never changes the legacy host
+This runbook deploys only the isolated `felix-new` candidate stack for
+`api.felix-app.fe-wi.com` and `felix-app.fe-wi.com`. The stack owns the Felix
+backend, Redis, selected PostgreSQL mode, optional pgAdmin, and the WebApp once
+its immutable image is enabled. It never changes the legacy host
 `felix.app.fe-wi.com`, its running stack, either protected legacy Keycloak
 realm (`felix` or `felixappnew`), or forwarding/cutover state.
 
@@ -63,8 +65,17 @@ repository. No other Keycloak checkout is required.
    The matching semantic tag in `site-configs/felix.json` must exist in the
    registry, resolve to one immutable digest, target `linux/amd64`, and contain
    the exact Felix OCI identity labels.
-2. Complete the Felix setup wizard so it creates the ignored, public-only root
-   `.env`. Do not prepare a root `prod.env`.
+2. Run `./quick-start.sh`, choose **Run setup wizard**, and select
+   **Felix Backend and WebApp**. Answer the guided database, proxy/TLS,
+   resource, storage, image, and optional pgAdmin questions. The wizard creates
+   the ignored public-only root `.env` and renders the stack. Do not prepare a
+   root `prod.env`.
+   The wizard can configure and Compose-validate either local or external
+   PostgreSQL. The current strict RLS-13 deploy action intentionally accepts
+   only local PostgreSQL because its automated backup and rollback evidence
+   owns that database directory. Selecting an external database is safe for
+   configuration, but strict preflight will stop until a separate external
+   backup-ownership contract is implemented.
 3. Make `api.felix-app.fe-wi.com` resolve to the existing proxy and ensure a
    publicly trusted TLS certificate is available.
 4. Use the quick-start menu in `/swarm/administration/keycloak` for
@@ -79,7 +90,10 @@ repository. No other Keycloak checkout is required.
    The strict **Manage Docker secrets** menu offers this database-secret action
    and identifies the existing production Keycloak owner for the client
    secret.
-7. Ensure the external Swarm overlay network `traefik-public` exists.
+7. If pgAdmin was enabled, use the same secret menu to create
+   `FELIX_NEW_PGADMIN_PASSWORD`.
+8. Ensure the selected external Traefik overlay network exists when Traefik
+   routing was chosen.
 
 ## First candidate deployment
 
