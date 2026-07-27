@@ -45,7 +45,7 @@
   },
   "image": {
     "name": "sokrates1989/python-api-felix",
-    "defaultVersion": "0.1.0",
+    "defaultVersion": "0.1.1",
     "mutableTagsAllowed": false
   },
   "resources": {
@@ -82,7 +82,7 @@
     "BACKEND_APP_ID": "felix",
     "APP_PROFILE": "felix",
     "PORT": "8080",
-    "IMAGE_TAG": "0.1.0",
+    "IMAGE_TAG": "0.1.1",
     "REDIS_URL": "redis://redis:6379/0",
     "DB_TYPE": "postgresql",
     "DB_MODE": "local",
