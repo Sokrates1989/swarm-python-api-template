@@ -5,8 +5,8 @@
 #
 # Keeps generic secret creation behavior separate from the strict Felix
 # candidate boundary. Felix exposes only its exact database secret and the
-# canonical Keycloak bridge; it never derives or manually accepts a backend
-# client secret.
+# existing production Keycloak ownership handoff; it never derives or manually
+# accepts a backend client secret.
 # ==============================================================================
 
 # _secret_status_line
@@ -121,8 +121,8 @@ _require_stopped_stack_for_secret_change() {
 #   0 after returning to the main menu.
 #
 # Side effects:
-#   May create/recreate FELIX_NEW_DB_PASSWORD or invoke the canonical Keycloak
-#   bridge for FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET.
+#   May create/recreate FELIX_NEW_DB_PASSWORD. The Keycloak owner action is
+#   informational and never mutates Keycloak or Docker state.
 _manage_felix_candidate_secrets() {
     local choice=""
     local editor=""
@@ -135,7 +135,7 @@ _manage_felix_candidate_secrets() {
         _secret_status_line "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET" || true
         echo ""
         echo "  1) Create or replace the database password"
-        echo "  2) Bridge the backend client secret from canonical Keycloak"
+        echo "  2) Show production Keycloak secret owner"
         echo "  3) Refresh exact secret status"
         echo "  0) Back"
         read -r -p "Felix secret choice (0-3): " choice
@@ -149,11 +149,12 @@ _manage_felix_candidate_secrets() {
                 create_single_secret "FELIX_NEW_DB_PASSWORD" "$editor" || true
                 ;;
             2)
-                if ! declare -F _felix_keycloak_run >/dev/null; then
-                    echo "[ERROR] Canonical Felix Keycloak bridge is unavailable."
+                if ! declare -F show_felix_production_keycloak_handoff \
+                    >/dev/null; then
+                    echo "[ERROR] Production Keycloak ownership helper is unavailable."
                     continue
                 fi
-                _felix_keycloak_run bridge-secret || true
+                show_felix_production_keycloak_handoff
                 ;;
             3) ;;
             0) return 0 ;;

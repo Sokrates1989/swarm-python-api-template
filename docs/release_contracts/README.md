@@ -10,6 +10,12 @@ and the approval boundary around forwarding the old hostname.
 The Swarm repository owns these values. Cross-repository tooling may read the
 file but must not write or materialize secrets from it.
 
+Production Keycloak is owned by the already deployed
+`D:\Development\Code\swarm\swarm-keycloak` repository at
+`/swarm/administration/keycloak`. The local-development
+`D:\Development\Code\keycloak` repository and a separate `/swarm/keycloak`
+checkout are not production dependencies.
+
 ## Structure
 
 - `candidate` identifies `felix-app.fe-wi.com`, realm `felix-new`, and client
@@ -21,6 +27,8 @@ file but must not write or materialize secrets from it.
 - `requiredSecretFileFields` names mounted secret-file settings.
 - `deploymentBoundary` keeps candidate and legacy routers distinct and makes
   old-host forwarding an explicit, reversible cutover action.
+- `productionKeycloakOwner` records the non-secret production repository/path
+  boundary without embedding credentials or invoking another checkout.
 
 ## Safe editing
 

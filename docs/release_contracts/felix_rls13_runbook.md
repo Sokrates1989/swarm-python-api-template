@@ -12,22 +12,18 @@ Felix candidate profile, its normal deploy, status, and log actions route to
 the strict state machine in `scripts/felix_deploy.py`; generic image-update,
 scale, and stack-render actions are blocked.
 
-## Keycloak checkout ownership
+## Keycloak production ownership
 
-The two Keycloak repositories have different responsibilities and must remain
-separate:
+`/swarm/administration/keycloak` is the existing production Keycloak checkout
+from `https://github.com/Sokrates1989/swarm-keycloak.git`. It owns the running
+stack, realm/client maintenance, social providers, and backend-client secret
+handoff.
 
-- `/swarm/administration/keycloak` is the existing running Keycloak deployment
-  checkout from `https://github.com/Sokrates1989/swarm-keycloak.git`. Do not
-  replace, relocate, or modify this checkout for the Felix candidate.
-- `/swarm/keycloak` is a separate, clean checkout of
-  `https://github.com/Sokrates1989/keycloak.git`, pinned exactly at
-  `5096ea7820874bbb66dbc6162043c4348c8c95e5`. It is the canonical
-  reconciliation tool used by the Felix quick-start menu.
-
-The canonical tool talks to the already-running Keycloak server through its
-administration API. It updates only the approved `felix-new` realm fields; it
-does not deploy a second Keycloak stack or replace the deployment repository.
+Do not clone `https://github.com/Sokrates1989/keycloak.git` on the production
+server and do not prepare `/swarm/keycloak`. That repository is a local
+development environment only. The Felix deployment consumes the already
+existing `felix-new` realm and validates its Docker secret; it never deploys a
+second Keycloak stack.
 
 ## Image publication boundary
 
@@ -61,29 +57,28 @@ later release.
 ## One-time prerequisites
 
 Keep `/swarm/administration/keycloak` on the deployed `swarm-keycloak`
-repository. Prepare the separate `/swarm/keycloak` tooling checkout from
-`keycloak.git` with a clean worktree exactly at
-`5096ea7820874bbb66dbc6162043c4348c8c95e5` before opening the Felix Keycloak
-menu.
+repository. No other Keycloak checkout is required.
 
 1. Publish the Felix API through the API quick-start menu described above.
    The matching semantic tag in `site-configs/felix.json` must exist in the
    registry, resolve to one immutable digest, target `linux/amd64`, and contain
    the exact Felix OCI identity labels.
-2. Copy `prod.env.example` to ignored `prod.env`, then set both `.invalid`
-   values to `api.felix-app.fe-wi.com`. Keep this file public-only.
+2. Complete the Felix setup wizard so it creates the ignored, public-only root
+   `.env`. Do not prepare a root `prod.env`.
 3. Make `api.felix-app.fe-wi.com` resolve to the existing proxy and ensure a
    publicly trusted TLS certificate is available.
-4. Use **Felix candidate Keycloak** in the quick-start menu to run check,
-   plan, approved apply, verify, and protected-legacy verification.
-5. Use that menu’s secret bridge to create
-   `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` directly from canonical Keycloak.
+4. Use the quick-start menu in `/swarm/administration/keycloak` for
+   production-safe check, plan, approved apply, verify, and protected-legacy
+   verification.
+5. After the corrected RLS-12 production-owner update is installed, use its
+   secret-handoff action to create
+   `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` without printing its value.
 6. Create `FELIX_NEW_DB_PASSWORD` with the repository secret manager or an
    equivalent stdin-only Docker secret flow. Never place either secret in
-   `.env`, `prod.env`, shell arguments, logs, or a tracked file.
+   `.env`, Flutter `prod.env`, shell arguments, logs, or a tracked file.
    The strict **Manage Docker secrets** menu offers this database-secret action
-   but deliberately routes the Keycloak client secret only through the
-   canonical bridge.
+   and identifies the existing production Keycloak owner for the client
+   secret.
 7. Ensure the external Swarm overlay network `traefik-public` exists.
 
 ## First candidate deployment

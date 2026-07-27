@@ -133,14 +133,16 @@ profile
 - `manage_docker_secrets_menu()` - Selects strict Felix or generic secret
   management
 - `_manage_felix_candidate_secrets()` - Exposes the exact Felix database
-  secret and canonical Keycloak bridge
+  secret and production Keycloak owner handoff
 - `_manage_generic_docker_secrets()` - Preserves prefixed secret workflows for
   non-Felix profiles
 
 **Felix behavior**:
 - Uses the literal `FELIX_NEW_DB_PASSWORD` Docker secret name
 - Uses the literal `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` status check
-- Creates the Keycloak client secret only through the canonical bridge
+- Directs client-secret maintenance to the already deployed
+  `/swarm/administration/keycloak` production owner
+- Never requires a separate `/swarm/keycloak` checkout
 - Never accepts or prints the Keycloak client-secret value
 
 This module has no PowerShell counterpart because the Windows launcher enters
@@ -230,5 +232,5 @@ setup-wizard
 
 The setup-wizard modules above are independent. The Bash-only
 `docker-secrets-menu` is sourced by `quick-start.sh` after `secret-manager`,
-`felix-keycloak-release`, and the profile helpers because it intentionally
+`felix-production-keycloak`, and the profile helpers because it intentionally
 delegates to their public functions.

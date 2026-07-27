@@ -4,6 +4,12 @@
   "appId": "felix",
   "siteProfile": "felix",
   "environment": "production",
+  "productionKeycloakOwner": {
+    "repository": "https://github.com/Sokrates1989/swarm-keycloak.git",
+    "deploymentPath": "/swarm/administration/keycloak",
+    "localDevelopmentRepositoryIsProductionDependency": false,
+    "separateToolCheckoutRequired": false
+  },
   "candidate": {
     "webOrigin": "https://felix-app.fe-wi.com",
     "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",

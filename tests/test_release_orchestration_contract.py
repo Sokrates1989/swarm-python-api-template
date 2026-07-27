@@ -96,6 +96,29 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertIs(boundary["legacyForwardingRequiresCutoverApproval"], True)
         self.assertIs(boundary["mutableImageTagsAllowed"], False)
 
+    def test_production_keycloak_owner_is_existing_swarm_deployment(self) -> None:
+        """Reject the removed local-development checkout production boundary.
+
+        Returns:
+            None.
+        """
+
+        owner = self.contract["productionKeycloakOwner"]
+
+        self.assertEqual(
+            owner["repository"],
+            "https://github.com/Sokrates1989/swarm-keycloak.git",
+        )
+        self.assertEqual(
+            owner["deploymentPath"],
+            "/swarm/administration/keycloak",
+        )
+        self.assertIs(
+            owner["localDevelopmentRepositoryIsProductionDependency"],
+            False,
+        )
+        self.assertIs(owner["separateToolCheckoutRequired"], False)
+
     def test_strict_felix_renderer_is_wired_into_shell_adapters(self) -> None:
         """Keep setup, direct build, and validation on one strict adapter.
 
@@ -115,8 +138,8 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             self.assertIn(expected_adapter, content, source)
             self.assertIn("--compose-check", content, source)
 
-    def test_keycloak_menu_uses_pinned_candidate_adapter(self) -> None:
-        """Route Felix to canonical Keycloak while keeping Cognito advanced.
+    def test_keycloak_menu_uses_existing_production_owner(self) -> None:
+        """Route Felix to the deployed swarm-keycloak owner without an adapter.
 
         Returns:
             None.
@@ -128,21 +151,34 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         menu_handlers = (
             REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
         ).read_text(encoding="utf-8")
-        keycloak_menu = (
+        keycloak_owner = (
             REPOSITORY_ROOT
             / "setup"
             / "modules"
-            / "felix-keycloak-release.sh"
+            / "felix-production-keycloak.sh"
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            'source "${PROJECT_ROOT}/setup/modules/felix-keycloak-release.sh"',
+            'source "${PROJECT_ROOT}/setup/modules/felix-production-keycloak.sh"',
             quick_start,
         )
-        self.assertIn("felix_keycloak_release_menu", menu_handlers)
-        self.assertIn("scripts/felix_keycloak_adapter.py", keycloak_menu)
-        self.assertIn("Advanced Cognito compatibility", keycloak_menu)
-        self.assertNotIn("KEYCLOAK_CLIENT_SECRET=", keycloak_menu)
+        self.assertIn("show_felix_production_keycloak_handoff", menu_handlers)
+        self.assertIn("/swarm/administration/keycloak", keycloak_owner)
+        self.assertIn("swarm-keycloak.git", keycloak_owner)
+        self.assertNotIn("FELIX_KEYCLOAK_TOOL_DIRECTORY", keycloak_owner)
+        self.assertNotIn("scripts/felix_keycloak_adapter.py", quick_start)
+        self.assertNotIn("KEYCLOAK_CLIENT_SECRET=", keycloak_owner)
+        self.assertFalse(
+            (REPOSITORY_ROOT / "scripts" / "felix_keycloak_adapter.py").exists()
+        )
+        self.assertFalse(
+            (
+                REPOSITORY_ROOT
+                / "setup"
+                / "modules"
+                / "felix-keycloak-release.sh"
+            ).exists()
+        )
 
     def test_candidate_menu_uses_only_strict_release_state_machine(self) -> None:
         """Route candidate deploy, health, and logs through one strict CLI.
@@ -202,7 +238,7 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             )
 
     def test_candidate_secret_menu_preserves_exact_ownership(self) -> None:
-        """Expose only the database editor and canonical Keycloak bridge.
+        """Expose the database editor and production Keycloak owner handoff.
 
         Returns:
             None.
@@ -239,7 +275,10 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             'create_single_secret "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"',
             secret_menu,
         )
-        self.assertIn("_felix_keycloak_run bridge-secret", secret_menu)
+        self.assertIn(
+            "show_felix_production_keycloak_handoff",
+            secret_menu,
+        )
         self.assertIn(
             'db_password_secret="${prefix_upper}_DB_PASSWORD"',
             secret_menu,

@@ -52,6 +52,26 @@ _SITE_HELPERS_LOADED=1
 # Internal helpers
 # ==============================================================================
 
+# _is_felix_candidate_profile
+# Verifies that the loaded deployment instance is the isolated Felix stack.
+#
+# Arguments:
+#   None. Reads STACK_NAME, BACKEND_APP_ID, KEYCLOAK_REALM, and DOMAIN.
+#
+# Returns:
+#   0 for the exact Felix candidate; 1 for generic or protected legacy targets.
+#
+# Notes:
+#   This identity guard belongs to the deployment profile, not to a Keycloak
+#   adapter. Keeping it here lets strict deploy and menu routing remain safe
+#   without requiring any external production-tool checkout.
+_is_felix_candidate_profile() {
+    [ "${STACK_NAME:-}" = "felix-new" ] &&
+        [ "${BACKEND_APP_ID:-}" = "felix" ] &&
+        [ "${KEYCLOAK_REALM:-}" = "felix-new" ] &&
+        [ "${DOMAIN:-}" = "api.felix-app.fe-wi.com" ]
+}
+
 # _jq_or_default
 # Reads a jq path from a JSON file, returning a default when the field is
 # null, empty, or jq is unavailable.

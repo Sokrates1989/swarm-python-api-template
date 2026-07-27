@@ -333,10 +333,10 @@ show_main_menu() {
             MENU_NEXT=$((MENU_NEXT+1))
         fi
         local MENU_SETUP_AUTH=""
-        local MENU_FELIX_KEYCLOAK=""
-        if declare -F felix_keycloak_release_menu >/dev/null &&
+        local MENU_FELIX_KEYCLOAK_OWNER=""
+        if declare -F show_felix_production_keycloak_handoff >/dev/null &&
             _is_felix_candidate_profile; then
-            MENU_FELIX_KEYCLOAK=$MENU_NEXT
+            MENU_FELIX_KEYCLOAK_OWNER=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         elif declare -F setup_auth_provider >/dev/null; then
             MENU_SETUP_AUTH=$MENU_NEXT
@@ -393,8 +393,8 @@ show_main_menu() {
         if [ -n "$MENU_SETUP_AUTH" ]; then
             echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
         fi
-        if [ -n "$MENU_FELIX_KEYCLOAK" ]; then
-            echo "  ${MENU_FELIX_KEYCLOAK}) Felix candidate Keycloak"
+        if [ -n "$MENU_FELIX_KEYCLOAK_OWNER" ]; then
+            echo "  ${MENU_FELIX_KEYCLOAK_OWNER}) Production Keycloak ownership"
         fi
         echo ""
 
@@ -463,9 +463,10 @@ show_main_menu() {
             read -r -p "Press Enter to continue..."
             continue
         fi
-        if [ -n "$MENU_FELIX_KEYCLOAK" ] &&
-            [ "$choice" = "$MENU_FELIX_KEYCLOAK" ]; then
-            felix_keycloak_release_menu
+        if [ -n "$MENU_FELIX_KEYCLOAK_OWNER" ] &&
+            [ "$choice" = "$MENU_FELIX_KEYCLOAK_OWNER" ]; then
+            show_felix_production_keycloak_handoff
+            read -r -p "Press Enter to continue..."
             continue
         fi
 
