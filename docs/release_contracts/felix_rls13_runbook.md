@@ -84,8 +84,9 @@ repository. No other Keycloak checkout is required.
    owns that database directory. Selecting an external database is safe for
    configuration, but strict preflight will stop until a separate external
    backup-ownership contract is implemented.
-3. Make `api.felix-app.fe-wi.com` resolve to the existing proxy and ensure a
-   publicly trusted TLS certificate is available.
+3. Make both `felix-app.fe-wi.com` and `api.felix-app.fe-wi.com` resolve to
+   the existing proxy and ensure publicly trusted TLS certificates are
+   available for both hosts.
 4. Use the quick-start menu in `/swarm/administration/keycloak` for
    production-safe check, plan, approved apply, verify, and protected-legacy
    verification.
