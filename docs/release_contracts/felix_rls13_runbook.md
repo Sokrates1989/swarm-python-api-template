@@ -12,6 +12,23 @@ Felix candidate profile, its normal deploy, status, and log actions route to
 the strict state machine in `scripts/felix_deploy.py`; generic image-update,
 scale, and stack-render actions are blocked.
 
+## Keycloak checkout ownership
+
+The two Keycloak repositories have different responsibilities and must remain
+separate:
+
+- `/swarm/administration/keycloak` is the existing running Keycloak deployment
+  checkout from `https://github.com/Sokrates1989/swarm-keycloak.git`. Do not
+  replace, relocate, or modify this checkout for the Felix candidate.
+- `/swarm/keycloak` is a separate, clean checkout of
+  `https://github.com/Sokrates1989/keycloak.git`, pinned exactly at
+  `5096ea7820874bbb66dbc6162043c4348c8c95e5`. It is the canonical
+  reconciliation tool used by the Felix quick-start menu.
+
+The canonical tool talks to the already-running Keycloak server through its
+administration API. It updates only the approved `felix-new` realm fields; it
+does not deploy a second Keycloak stack or replace the deployment repository.
+
 ## Image publication boundary
 
 The API repository owns image planning, local proof, and publication. Start
@@ -43,6 +60,12 @@ later release.
 
 ## One-time prerequisites
 
+Keep `/swarm/administration/keycloak` on the deployed `swarm-keycloak`
+repository. Prepare the separate `/swarm/keycloak` tooling checkout from
+`keycloak.git` with a clean worktree exactly at
+`5096ea7820874bbb66dbc6162043c4348c8c95e5` before opening the Felix Keycloak
+menu.
+
 1. Publish the Felix API through the API quick-start menu described above.
    The matching semantic tag in `site-configs/felix.json` must exist in the
    registry, resolve to one immutable digest, target `linux/amd64`, and contain
@@ -58,6 +81,9 @@ later release.
 6. Create `FELIX_NEW_DB_PASSWORD` with the repository secret manager or an
    equivalent stdin-only Docker secret flow. Never place either secret in
    `.env`, `prod.env`, shell arguments, logs, or a tracked file.
+   The strict **Manage Docker secrets** menu offers this database-secret action
+   but deliberately routes the Keycloak client secret only through the
+   canonical bridge.
 7. Ensure the external Swarm overlay network `traefik-public` exists.
 
 ## First candidate deployment

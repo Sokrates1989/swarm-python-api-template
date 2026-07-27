@@ -38,7 +38,8 @@
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
-#   DOMAIN, API_REPLICAS, NGINX_REPLICAS, MEMORY_LIMIT, SECRET_PREFIX
+#   DOMAIN, API_REPLICAS, NGINX_REPLICAS, MEMORY_LIMIT, SECRET_PREFIX,
+#   APP_PROFILE, AUTH_PROVIDER, KEYCLOAK_REALM, and related public identity
 # ==============================================================================
 
 # Guard against multiple sourcing.
@@ -352,7 +353,19 @@ load_root_env() {
     export MEMORY_LIMIT="$(_env_val MEMORY_LIMIT)"
     export SECRET_PREFIX="$(_env_val SECRETS_PREFIX)"
     export DEPLOYMENT_PROFILE_ID="$(_env_val DEPLOYMENT_PROFILE_ID)"
+    export APP_ID="$(_env_val APP_ID)"
+    export APP_ENVIRONMENT="$(_env_val APP_ENVIRONMENT)"
+    export APP_PROFILE="$(_env_val APP_PROFILE)"
     export BACKEND_APP_ID="$(_env_val BACKEND_APP_ID)"
+    export BACKEND_DATA_PROFILE="$(_env_val BACKEND_DATA_PROFILE)"
+    export AUTH_PROVIDER="$(_env_val AUTH_PROVIDER)"
+    export API_BASE_URL="$(_env_val API_BASE_URL)"
+    export CORS_ORIGINS="$(_env_val CORS_ORIGINS)"
+    export KEYCLOAK_BASE_URL="$(_env_val KEYCLOAK_BASE_URL)"
+    export KEYCLOAK_ISSUER_URL="$(_env_val KEYCLOAK_ISSUER_URL)"
+    export KEYCLOAK_REALM="$(_env_val KEYCLOAK_REALM)"
+    export KEYCLOAK_AUDIENCE="$(_env_val KEYCLOAK_AUDIENCE)"
+    export KEYCLOAK_FRONTEND_CLIENT_ID="$(_env_val KEYCLOAK_FRONTEND_CLIENT_ID)"
     export DATA_ROOT="$(_env_val DATA_ROOT)"
     export PGADMIN_URL="$(_env_val PGADMIN_URL)"
     export PGADMIN_REPLICAS="$(_env_val PGADMIN_REPLICAS)"

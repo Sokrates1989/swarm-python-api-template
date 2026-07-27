@@ -1,6 +1,9 @@
 # Setup Modules
 
-This directory contains reusable modular components used by the setup wizards. Each module has both Bash (`.sh`) and PowerShell (`.ps1`) implementations for cross-platform support.
+This directory contains reusable modular components used by the setup wizards.
+Most setup modules have Bash (`.sh`) and PowerShell (`.ps1`) implementations.
+Menu-only modules may be Bash-only because `quick-start.ps1` deliberately
+launches the authoritative Bash quick-start workflow through WSL.
 
 ## Module Overview
 
@@ -122,13 +125,36 @@ This directory contains reusable modular components used by the setup wizards. E
 - API health endpoint test (if Traefik)
 - Deployment summary with useful commands
 
+### 7. docker-secrets-menu
+**Purpose**: Routes secret management according to the selected deployment
+profile
+
+**Functions (Bash)**:
+- `manage_docker_secrets_menu()` - Selects strict Felix or generic secret
+  management
+- `_manage_felix_candidate_secrets()` - Exposes the exact Felix database
+  secret and canonical Keycloak bridge
+- `_manage_generic_docker_secrets()` - Preserves prefixed secret workflows for
+  non-Felix profiles
+
+**Felix behavior**:
+- Uses the literal `FELIX_NEW_DB_PASSWORD` Docker secret name
+- Uses the literal `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` status check
+- Creates the Keycloak client secret only through the canonical bridge
+- Never accepts or prints the Keycloak client-secret value
+
+This module has no PowerShell counterpart because the Windows launcher enters
+the same Bash menu through WSL.
+
 ## Module Design Principles
 
 ### 1. Single Responsibility
 Each module handles one specific aspect of the setup process.
 
 ### 2. Cross-Platform Compatibility
-Every module has both Bash and PowerShell implementations with identical functionality.
+Setup modules provide matching Bash and PowerShell behavior when both launchers
+execute them directly. Bash-only menu modules are allowed when the PowerShell
+launcher delegates to the authoritative WSL/Bash workflow.
 
 ### 3. Error Handling
 Modules return appropriate exit codes and display clear error messages.
@@ -143,11 +169,15 @@ Modules provide clear progress indicators and status messages with emojis.
 
 To add a new module:
 
-1. **Create both implementations**:
+1. **Create the required implementations**:
    ```bash
    setup/modules/my-module.sh
    setup/modules/my-module.ps1
    ```
+
+   Use both files for natively invoked setup behavior. A quick-start menu
+   helper may remain Bash-only when Windows reaches it exclusively through the
+   WSL launcher.
 
 2. **Follow naming conventions**:
    - Bash: `function_name()` with snake_case
@@ -198,4 +228,7 @@ setup-wizard
 └── deploy-stack (no dependencies)
 ```
 
-All modules are independent and can be used in any order.
+The setup-wizard modules above are independent. The Bash-only
+`docker-secrets-menu` is sourced by `quick-start.sh` after `secret-manager`,
+`felix-keycloak-release`, and the profile helpers because it intentionally
+delegates to their public functions.

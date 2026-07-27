@@ -25,12 +25,20 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
     """Verifies candidate isolation, field ownership, and cutover safeguards."""
 
     def setUp(self) -> None:
-        """Load a fresh contract object for each test."""
+        """Load a fresh contract object for each test.
+
+        Returns:
+            None.
+        """
 
         self.contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     def test_candidate_and_legacy_deployments_are_distinct(self) -> None:
-        """Candidate and legacy hosts/realms cannot collapse into one target."""
+        """Ensure candidate and legacy identities cannot collapse together.
+
+        Returns:
+            None.
+        """
 
         candidate = self.contract["candidate"]
         protection = self.contract["legacyProtection"]
@@ -45,14 +53,22 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertNotIn(candidate["realm"], protection["protectedRealms"])
 
     def test_both_possible_legacy_realms_are_protected(self) -> None:
-        """Operator-reported and publicly observed realms remain denylisted."""
+        """Ensure both known legacy realm names remain denylisted.
+
+        Returns:
+            None.
+        """
 
         protected_realms = set(self.contract["legacyProtection"]["protectedRealms"])
 
         self.assertTrue({"felix", "felixappnew"}.issubset(protected_realms))
 
     def test_required_environment_and_secret_file_fields_are_declared(self) -> None:
-        """Public settings and the mounted secret-file boundary remain explicit."""
+        """Ensure public settings and secret-file ownership stay explicit.
+
+        Returns:
+            None.
+        """
 
         environment_fields = set(self.contract["requiredEnvironmentFields"])
         secret_file_fields = self.contract["requiredSecretFileFields"]
@@ -69,7 +85,11 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertEqual(secret_file_fields, ["KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"])
 
     def test_forwarding_and_image_policy_fail_closed(self) -> None:
-        """Old-host forwarding requires approval and mutable tags stay forbidden."""
+        """Ensure forwarding and mutable image deployment fail closed.
+
+        Returns:
+            None.
+        """
 
         boundary = self.contract["deploymentBoundary"]
 
@@ -151,6 +171,79 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertIn("scripts/felix_deploy.py", release_menu)
         self.assertIn("_felix_release_run drill-rollback", release_menu)
         self.assertIn("_felix_release_run rollback", release_menu)
+
+    def test_root_env_reloads_strict_candidate_identity(self) -> None:
+        """Keep the strict Felix gate populated after setup returns.
+
+        The setup wizard runs as a child process. The parent quick-start menu
+        therefore has to reload every public identity field materialized into
+        the root ``.env`` before deciding which deployment menus are safe.
+
+        Returns:
+            None.
+        """
+
+        site_helpers = (
+            REPOSITORY_ROOT / "setup" / "modules" / "site_helpers.sh"
+        ).read_text(encoding="utf-8")
+
+        for field in (
+            "APP_PROFILE",
+            "BACKEND_APP_ID",
+            "AUTH_PROVIDER",
+            "KEYCLOAK_ISSUER_URL",
+            "KEYCLOAK_REALM",
+            "KEYCLOAK_AUDIENCE",
+        ):
+            self.assertIn(
+                f'export {field}="$(_env_val {field})"',
+                site_helpers,
+                field,
+            )
+
+    def test_candidate_secret_menu_preserves_exact_ownership(self) -> None:
+        """Expose only the database editor and canonical Keycloak bridge.
+
+        Returns:
+            None.
+        """
+
+        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
+            encoding="utf-8"
+        )
+        menu_handlers = (
+            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
+        ).read_text(encoding="utf-8")
+        secret_menu = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "docker-secrets-menu.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'source "${PROJECT_ROOT}/setup/modules/docker-secrets-menu.sh"',
+            quick_start,
+        )
+        self.assertIn("manage_docker_secrets_menu", menu_handlers)
+        self.assertIn('"FELIX_NEW_DB_PASSWORD"', secret_menu)
+        self.assertIn(
+            '"FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"',
+            secret_menu,
+        )
+        self.assertIn(
+            'create_single_secret "FELIX_NEW_DB_PASSWORD"',
+            secret_menu,
+        )
+        self.assertNotIn(
+            'create_single_secret "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"',
+            secret_menu,
+        )
+        self.assertIn("_felix_keycloak_run bridge-secret", secret_menu)
+        self.assertIn(
+            'db_password_secret="${prefix_upper}_DB_PASSWORD"',
+            secret_menu,
+        )
 
 
 if __name__ == "__main__":
