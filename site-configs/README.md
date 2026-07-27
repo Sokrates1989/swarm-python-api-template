@@ -21,6 +21,6 @@ strict Python adapter and never routes them through generic placeholder
 substitution.
 
 `site-configs/felix.json` is the first strict profile. Its companion
-`felix.json.md` documents candidate/legacy isolation, immutable images, local
-PostgreSQL, Keycloak clients, and safe capability selection. The ignored
+`felix.json.md` documents candidate/legacy isolation, digest-bound images,
+local PostgreSQL, Keycloak clients, and safe capability selection. The ignored
 operator `prod.env` must pass validation before a stack can be rendered.

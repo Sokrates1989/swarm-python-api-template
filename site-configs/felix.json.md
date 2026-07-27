@@ -18,6 +18,9 @@ secret-file fields to `envKeys`.
 - The Felix API uses the prepared RLS-13 publication target `0.1.1`; `latest`
   and unversioned tags are
   rejected.
+- The upstream version tag may be republished intentionally. Strict preflight
+  resolves its current registry digest, and deployment uses that immutable
+  digest rather than following later tag changes.
 - PostgreSQL 16 and Redis 7 are pinned by registry digest.
 - Local PostgreSQL is the only accepted database mode for the first candidate
   production deployment.
@@ -43,7 +46,7 @@ direct secret environment variables remain forbidden.
 
 Keep the JSON strict and duplicate-free. Do not add `${...}`,
 `XXX_CHANGE...`, `###...`, wildcard origins, localhost endpoints, direct
-secret values, or mutable image tags.
+secret values, or deployment aliases such as `latest`.
 
 Validate and render only after creating the ignored public `prod.env`:
 

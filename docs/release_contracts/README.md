@@ -4,8 +4,8 @@
 
 `felix_swarm_contract.v1.json` is the Swarm repository's public, secret-free
 release-orchestration export. It freezes candidate versus legacy deployment
-identity, environment and secret-file field names, immutable-image policy, and
-the approval boundary around forwarding the old hostname.
+identity, environment and secret-file field names, digest-bound image policy,
+and the approval boundary around forwarding the old hostname.
 
 The Swarm repository owns these values. Cross-repository tooling may read the
 file but must not write or materialize secrets from it.

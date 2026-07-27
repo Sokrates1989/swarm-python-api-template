@@ -20,14 +20,14 @@ backend app, and use these menu actions in order:
 
 1. **Validate API Docker image release plan**.
 2. **Build API Docker image locally (no push)**.
-3. **Build & Push API Docker Image (current or bump + immutable + latest)**.
+3. **Build & Push API Docker Image (current or bump + version + latest)**.
 
 The third action is the only supported image publication path. Do not run raw
 Docker build/tag/push commands, invoke the underlying Python publisher
 directly, or use a CI/CD pipeline. The menu keeps the current version or
-increments it, pushes the proven source, pushes the immutable tag, records its
-registry digest, and updates `latest` as a convenience tag. It never deploys
-and never overwrites an existing semantic-version registry tag.
+increments it, pushes or replaces the selected version tag, records its
+registry digest, and updates `latest` as a convenience tag. It leaves Git
+source local for the operator to push separately and never deploys.
 
 This Swarm repository never builds or pushes the API image. It consumes only
 the exact semantic version selected by `site-configs/felix.json`, resolves
@@ -35,9 +35,11 @@ that tag to an immutable digest during strict preflight, and rejects `latest`.
 
 At the current RLS-13 checkpoint, the API repository and this Swarm profile
 both contain `0.1.1`. Choose **Keep current** so the menu publishes exactly
-`0.1.1` without a new version-bump commit. This is permitted only while the
-registry tag is absent. Do not run Swarm preflight until publication succeeds.
-The same exact version-alignment rule applies to every later release.
+`0.1.1` without a new version-bump commit. The menu may intentionally replace
+an existing `0.1.1` tag; strict Swarm preflight resolves the resulting digest
+and deployment remains bound to that digest. Do not run Swarm preflight until
+publication succeeds. The same exact version-alignment rule applies to every
+later release.
 
 ## One-time prerequisites
 
