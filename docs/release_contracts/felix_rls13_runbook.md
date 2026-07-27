@@ -12,12 +12,38 @@ Felix candidate profile, its normal deploy, status, and log actions route to
 the strict state machine in `scripts/felix_deploy.py`; generic image-update,
 scale, and stack-render actions are blocked.
 
+## Image publication boundary
+
+The API repository owns image planning, local proof, and publication. Start
+its `quick-start.ps1` or `quick-start.sh`, verify that `felix` is the selected
+backend app, and use these menu actions in order:
+
+1. **Validate API Docker image release plan**.
+2. **Build API Docker image locally (no push)**.
+3. **Build & Push API Docker Image (version bump + immutable + latest)**.
+
+The third action is the only supported image publication path. Do not run raw
+Docker build/tag/push commands, invoke the underlying Python publisher
+directly, or use a CI/CD pipeline. The menu increments the semantic version,
+commits and pushes the proven source, pushes the immutable tag, records its
+registry digest, and updates `latest` as a convenience tag. It never deploys.
+
+This Swarm repository never builds or pushes the API image. It consumes only
+the exact semantic version selected by `site-configs/felix.json`, resolves
+that tag to an immutable digest during strict preflight, and rejects `latest`.
+
+At the current RLS-13 checkpoint, the API repository contains `0.1.1` and this
+Swarm profile is deliberately prepared for `0.1.2`. Because the publication
+menu always increments, choose the next patch so it publishes exactly `0.1.2`.
+Do not run Swarm preflight until that publication succeeds. The same exact
+version-alignment rule applies to every later release.
+
 ## One-time prerequisites
 
-1. Publish the Felix API through its canonical builder. The semantic tag in
-   `site-configs/felix.json` must exist in the registry, resolve to one
-   immutable digest, target `linux/amd64`, and contain the exact Felix OCI
-   identity labels.
+1. Publish the Felix API through the API quick-start menu described above.
+   The matching semantic tag in `site-configs/felix.json` must exist in the
+   registry, resolve to one immutable digest, target `linux/amd64`, and contain
+   the exact Felix OCI identity labels.
 2. Copy `prod.env.example` to ignored `prod.env`, then set both `.invalid`
    values to `api.felix-app.fe-wi.com`. Keep this file public-only.
 3. Make `api.felix-app.fe-wi.com` resolve to the existing proxy and ensure a

@@ -15,7 +15,8 @@ secret-file fields to `envKeys`.
 
 ## Images and services
 
-- The Felix API uses release tag `0.1.1`; `latest` and unversioned tags are
+- The Felix API uses the prepared RLS-13 publication target `0.1.2`; `latest`
+  and unversioned tags are
   rejected.
 - PostgreSQL 16 and Redis 7 are pinned by registry digest.
 - Local PostgreSQL is the only accepted database mode for the first candidate

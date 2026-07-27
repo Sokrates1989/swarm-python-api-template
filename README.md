@@ -101,6 +101,13 @@ The wizard:
 
 From `quick-start.sh`, the main menu offers:
 
+For the exact `felix-new` candidate, this menu owns configuration, Keycloak
+delegation, secrets, deployment, health, and rollback only. Build and push the
+Felix API image from the selected-app quick-start menu in the API repository;
+never publish it with raw Docker commands, this Swarm menu, or CI/CD. The
+complete hand-off is documented in
+[`docs/release_contracts/felix_rls13_runbook.md`](docs/release_contracts/felix_rls13_runbook.md).
+
 - **Re-run setup wizard** — reconfigure this deployment.
 - **Manage Docker secrets** — create/list/validate secrets (interactively or from file).
 - **Quick restore from saved .env** — restore deployment config from a backed-up `.env` file.
