@@ -8,14 +8,18 @@ stack `felix-new`, API host `api.felix-app.fe-wi.com`, and WebApp host
 `felix-app.fe-wi.com`; it must never claim the legacy
 `felix.app.fe-wi.com` deployment.
 
-Schema `4.0` makes `environment`, `envKeys`, `secretMounts`, and capability
-declarations executable inputs to the strict Felix renderer. `envKeys` must
+Schema `5.0` makes `environment`, `envKeys`, `secretMounts`, routing, required
+services, and capability declarations executable inputs to the strict Felix
+renderer. `envKeys` must
 exactly enumerate the base environment plus active secret-file fields. Enabling
 AI or Web Push also requires adding that capability's declared environment and
 secret-file fields to `envKeys`.
 
 ## Images and services
 
+- The Felix WebApp and API are required services in the same `felix-new`
+  stack. The WebApp has its own `felix-app.fe-wi.com` router, `/health`
+  container probe, replicas, memory limit, and rollback policy.
 - The Felix API uses the prepared RLS-13 publication target `0.1.1`; `latest`
   and unversioned tags are
   rejected.
@@ -29,7 +33,9 @@ secret-file fields to `envKeys`.
   its own file-backed Docker secret and persistent directory. Its pinned
   multi-platform digest was resolved from the explicit upstream `9.15.0` tag;
   the data-directory action assigns documented container ownership `5050:5050`.
-- The Traefik router attaches only to `api.felix-app.fe-wi.com`.
+- Distinct Traefik routers attach to `felix-app.fe-wi.com` and
+  `api.felix-app.fe-wi.com`. In no-proxy mode, the wizard requires distinct
+  published WebApp and API host ports.
 - Proxy SSL mode keeps TLS termination at the existing upstream proxy and
   forwards `X-Forwarded-Proto=https` to the candidate API.
 
@@ -55,8 +61,10 @@ secret values, or deployment aliases such as `latest`.
 
 Use `./quick-start.sh` and select the setup wizard plus
 **Felix Backend and WebApp**. It writes the ignored root `.env` and renders the
-stack. The direct commands below are validation adapters, not the normal
-operator workflow:
+stack. The wizard requires a semantic-version WebApp image repository/tag; the
+strict deployment preflight later resolves both WebApp and API tags to
+immutable registry digests. The direct commands below are validation adapters,
+not the normal operator workflow:
 
 ```bash
 python3 scripts/felix_site_profile.py validate

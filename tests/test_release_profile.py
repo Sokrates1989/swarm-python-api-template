@@ -354,17 +354,17 @@ class SwarmReleaseProfileTest(unittest.TestCase):
                 with self.assertRaisesRegex(SwarmReleaseProfileError, expected):
                     self._parse(values)
 
-    def test_disabled_optional_services_require_explicit_sentinels(self) -> None:
-        """Reject stale image or management fields hidden behind disabled flags.
+    def test_required_web_and_disabled_pgadmin_are_enforced(self) -> None:
+        """Require WebApp deployment and reject stale disabled pgAdmin fields.
 
         Returns:
             None.
         """
 
         self._assert_field_rejected(
-            "WEB_IMAGE_NAME",
-            "sokrates1989/felix-webapp",
-            "Disabled WebApp",
+            "WEB_ENABLED",
+            "false",
+            "must be 'true'",
         )
         self._assert_field_rejected(
             "PGADMIN_EMAIL",
@@ -383,7 +383,7 @@ class SwarmReleaseProfileTest(unittest.TestCase):
         persisted = profile.path.read_text(encoding="utf-8")
 
         self.assertEqual(persisted, render_release_env(PRODUCTION_PROFILE))
-        self.assertIn("PROFILE_SCHEMA_VERSION=1", persisted)
+        self.assertIn("PROFILE_SCHEMA_VERSION=2", persisted)
         self.assertNotIn("PASSWORD", persisted)
         self.assertNotIn("SECRET", persisted)
         self.assertNotIn("TOKEN", persisted)

@@ -379,6 +379,7 @@ _load_stack_env_fields() {
     export MEMORY_LIMIT="$(_root_env_value "$env_file" MEMORY_LIMIT)"
     export DATA_ROOT="$(_root_env_value "$env_file" DATA_ROOT)"
     export API_PUBLISHED_PORT="$(_root_env_value "$env_file" API_PUBLISHED_PORT)"
+    export WEB_PUBLISHED_PORT="$(_root_env_value "$env_file" WEB_PUBLISHED_PORT)"
     export SECRET_PREFIX="$(_root_env_value "$env_file" SECRETS_PREFIX)"
 }
 
@@ -425,6 +426,7 @@ _load_felix_env_fields() {
     export WEB_IMAGE_NAME="$(_root_env_value "$env_file" WEB_IMAGE_NAME)"
     export WEB_IMAGE_VERSION="$(_root_env_value "$env_file" WEB_IMAGE_VERSION)"
     export WEB_REPLICAS="$(_root_env_value "$env_file" WEB_REPLICAS)"
+    export WEB_MEMORY_LIMIT="$(_root_env_value "$env_file" WEB_MEMORY_LIMIT)"
 }
 
 # _load_generic_service_env_fields

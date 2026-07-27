@@ -137,6 +137,16 @@ def _validate_proxy(values: Mapping[str, str]) -> None:
         minimum=1,
         maximum=65535,
     )
+    _parse_bounded_integer(
+        "WEB_PUBLISHED_PORT",
+        values["WEB_PUBLISHED_PORT"],
+        minimum=1,
+        maximum=65535,
+    )
+    if values["API_PUBLISHED_PORT"] == values["WEB_PUBLISHED_PORT"]:
+        raise SwarmReleaseProfileError(
+            "API_PUBLISHED_PORT and WEB_PUBLISHED_PORT must be distinct."
+        )
 
 
 def _validate_api_resources(values: Mapping[str, str]) -> None:
@@ -178,7 +188,7 @@ def _validate_api_resources(values: Mapping[str, str]) -> None:
 
 
 def _validate_web(values: Mapping[str, str]) -> None:
-    """Validate enabled or deliberately deferred WebApp image fields.
+    """Validate the required WebApp image and bounded resource fields.
 
     Args:
         values: Complete public deployment mapping.
@@ -190,20 +200,10 @@ def _validate_web(values: Mapping[str, str]) -> None:
         SwarmReleaseProfileError: If WebApp fields are incomplete or unsafe.
     """
 
-    enabled = values["WEB_ENABLED"]
-    if enabled not in {"true", "false"}:
-        raise SwarmReleaseProfileError("WEB_ENABLED must be 'true' or 'false'.")
-    if enabled == "false":
-        disabled = (
-            values["WEB_IMAGE_NAME"] == "disabled"
-            and values["WEB_IMAGE_VERSION"] == "disabled"
-            and values["WEB_REPLICAS"] == "0"
+    if values["WEB_ENABLED"] != "true":
+        raise SwarmReleaseProfileError(
+            "WEB_ENABLED must be 'true' for the Felix full stack."
         )
-        if not disabled:
-            raise SwarmReleaseProfileError(
-                "Disabled WebApp requires disabled image fields and zero replicas."
-            )
-        return
     if not _IMAGE_NAME_PATTERN.fullmatch(values["WEB_IMAGE_NAME"]):
         raise SwarmReleaseProfileError("WEB_IMAGE_NAME is invalid.")
     if not _SEMANTIC_VERSION_PATTERN.fullmatch(values["WEB_IMAGE_VERSION"]):
@@ -213,6 +213,10 @@ def _validate_web(values: Mapping[str, str]) -> None:
     _parse_bounded_integer(
         "WEB_REPLICAS", values["WEB_REPLICAS"], minimum=1, maximum=20
     )
+    if not _MEMORY_LIMIT_PATTERN.fullmatch(values["WEB_MEMORY_LIMIT"]):
+        raise SwarmReleaseProfileError(
+            "WEB_MEMORY_LIMIT must be a positive M or G value."
+        )
 
 
 def _validate_pgadmin(values: Mapping[str, str]) -> None:

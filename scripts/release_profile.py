@@ -66,6 +66,7 @@ _PROFILE_KEYS = (
     "SSL_MODE",
     "TRAEFIK_NETWORK",
     "API_PUBLISHED_PORT",
+    "WEB_PUBLISHED_PORT",
     "IMAGE_NAME",
     "IMAGE_VERSION",
     "API_REPLICAS",
@@ -79,6 +80,7 @@ _PROFILE_KEYS = (
     "WEB_IMAGE_NAME",
     "WEB_IMAGE_VERSION",
     "WEB_REPLICAS",
+    "WEB_MEMORY_LIMIT",
 )
 _PROFILE_KEY_SET = frozenset(_PROFILE_KEYS)
 _ASSIGNMENT_PATTERN = re.compile(r"([A-Z][A-Z0-9_]*)=(.*)")
@@ -255,7 +257,7 @@ def _validate_identity(values: Mapping[str, str]) -> None:
     """
 
     expected_values = {
-        "PROFILE_SCHEMA_VERSION": "1",
+        "PROFILE_SCHEMA_VERSION": "2",
         "DEPLOYMENT_PROFILE_ID": "felix",
         "APP_ID": "felix",
         "APP_ENVIRONMENT": "production",

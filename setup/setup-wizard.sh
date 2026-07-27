@@ -52,6 +52,7 @@ source "$SCRIPT_DIR/modules/health-check.sh"
 source "$SCRIPT_DIR/modules/felix-production-keycloak.sh"
 source "$SCRIPT_DIR/modules/docker-secrets-menu.sh"
 source "$SCRIPT_DIR/modules/felix-setup-wizard.sh"
+source "$SCRIPT_DIR/modules/felix-web-setup.sh"
 
 # Source Cognito setup script if available
 if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then

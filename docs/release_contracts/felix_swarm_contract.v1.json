@@ -36,6 +36,13 @@
     "KEYCLOAK_REALM",
     "KEYCLOAK_AUDIENCE"
   ],
+  "requiredWebDeploymentFields": [
+    "WEB_DOMAIN",
+    "WEB_IMAGE_NAME",
+    "WEB_IMAGE_VERSION",
+    "WEB_REPLICAS",
+    "WEB_MEMORY_LIMIT"
+  ],
   "requiredSecretFileFields": [
     "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
   ],

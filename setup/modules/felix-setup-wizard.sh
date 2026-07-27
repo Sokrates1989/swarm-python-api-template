@@ -231,6 +231,7 @@ _felix_collect_routing() {
     PROXY_TYPE="$(_felix_prompt_choice \
         "Proxy type" "$default_proxy" traefik none)"
     API_PUBLISHED_PORT="$(_felix_existing_value API_PUBLISHED_PORT 8083)"
+    WEB_PUBLISHED_PORT="$(_felix_existing_value WEB_PUBLISHED_PORT 8084)"
     if [ "$PROXY_TYPE" = "traefik" ]; then
         echo "  letsencrypt - Traefik obtains and terminates certificates"
         echo "  proxy       - an upstream proxy terminates public TLS"
@@ -245,6 +246,8 @@ _felix_collect_routing() {
         TRAEFIK_NETWORK="none"
         API_PUBLISHED_PORT="$(_felix_prompt_value \
             "Published API port" "$API_PUBLISHED_PORT")"
+        WEB_PUBLISHED_PORT="$(_felix_prompt_value \
+            "Published WebApp port" "$WEB_PUBLISHED_PORT")"
     fi
 }
 
@@ -316,28 +319,6 @@ _felix_collect_pgadmin() {
     fi
 }
 
-# _felix_collect_web
-# Records deliberate WebApp deferral until its immutable image flow is ready.
-#
-# Arguments:
-#   None.
-#
-# Returns:
-#   0 after setting the four WebApp fields to their explicit disabled state.
-#
-# Side effects:
-#   Updates guided-wizard globals.
-_felix_collect_web() {
-    echo ""
-    echo "Step 5: Felix WebApp"
-    echo "  Deferred until the production WebApp image has been built and published."
-    echo "  The same wizard will expose its image fields in the WebApp slice."
-    WEB_ENABLED="false"
-    WEB_IMAGE_NAME="disabled"
-    WEB_IMAGE_VERSION="disabled"
-    WEB_REPLICAS="0"
-}
-
 # _felix_append_fixed_env_arguments
 # Adds the non-editable Felix candidate identities to a CLI argument array.
 #
@@ -352,7 +333,7 @@ _felix_collect_web() {
 _felix_append_fixed_env_arguments() {
     local -n target_arguments="$1"
 
-    target_arguments+=(--set "PROFILE_SCHEMA_VERSION=1")
+    target_arguments+=(--set "PROFILE_SCHEMA_VERSION=2")
     target_arguments+=(--set "DEPLOYMENT_PROFILE_ID=felix")
     target_arguments+=(--set "APP_ID=felix")
     target_arguments+=(--set "APP_ENVIRONMENT=production")
@@ -401,6 +382,7 @@ _felix_append_guided_env_arguments() {
     target_arguments+=(--set "SSL_MODE=${SSL_MODE}")
     target_arguments+=(--set "TRAEFIK_NETWORK=${TRAEFIK_NETWORK}")
     target_arguments+=(--set "API_PUBLISHED_PORT=${API_PUBLISHED_PORT}")
+    target_arguments+=(--set "WEB_PUBLISHED_PORT=${WEB_PUBLISHED_PORT}")
     target_arguments+=(--set "IMAGE_VERSION=${IMAGE_VERSION}")
     target_arguments+=(--set "API_REPLICAS=${API_REPLICAS}")
     target_arguments+=(--set "MEMORY_LIMIT=${MEMORY_LIMIT}")
@@ -413,6 +395,7 @@ _felix_append_guided_env_arguments() {
     target_arguments+=(--set "WEB_IMAGE_NAME=${WEB_IMAGE_NAME}")
     target_arguments+=(--set "WEB_IMAGE_VERSION=${WEB_IMAGE_VERSION}")
     target_arguments+=(--set "WEB_REPLICAS=${WEB_REPLICAS}")
+    target_arguments+=(--set "WEB_MEMORY_LIMIT=${WEB_MEMORY_LIMIT}")
 }
 
 # _felix_write_guided_env

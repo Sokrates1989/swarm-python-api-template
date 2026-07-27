@@ -180,7 +180,7 @@ class FelixSiteProfileTests(unittest.TestCase):
         )
 
     def test_rendered_stack_contains_exact_runtime_and_no_secret_values(self) -> None:
-        """Render API, PostgreSQL, Redis, and external secret references.
+        """Render WebApp, API, PostgreSQL, Redis, and secret references.
 
         Returns:
             None.
@@ -189,6 +189,7 @@ class FelixSiteProfileTests(unittest.TestCase):
         stack = render_stack(self._load())
 
         self.assertIn('image: "sokrates1989/python-api-felix:0.1.1"', stack)
+        self.assertIn('image: "sokrates1989/felix-webapp:1.0.5"', stack)
         self.assertIn('KEYCLOAK_AUDIENCE: "felix-new-backend"', stack)
         self.assertIn(
             'KEYCLOAK_ADMIN_CLIENT_SECRET_FILE: '
@@ -196,6 +197,8 @@ class FelixSiteProfileTests(unittest.TestCase):
             stack,
         )
         self.assertIn("api.felix-app.fe-wi.com", stack)
+        self.assertIn("felix-app.fe-wi.com", stack)
+        self.assertIn("traefik.http.routers.felix-new-web", stack)
         self.assertIn("entrypoints=http", stack)
         self.assertIn("X-Forwarded-Proto=https", stack)
         self.assertIn(
@@ -230,7 +233,7 @@ class FelixSiteProfileTests(unittest.TestCase):
         self.assertIn('DB_HOST: "postgresql.fe-wi.com"', stack)
 
     def test_no_proxy_publishes_api_without_traefik_network(self) -> None:
-        """Render the selected host port when an external proxy owns routing.
+        """Render API/Web host ports when an external proxy owns routing.
 
         Returns:
             None.
@@ -247,6 +250,7 @@ class FelixSiteProfileTests(unittest.TestCase):
         stack = render_stack(self._load())
 
         self.assertIn("        published: 8083", stack)
+        self.assertIn("        published: 8084", stack)
         self.assertNotIn("traefik.enable=true", stack)
         self.assertNotIn('"traefik-public":', stack)
 
@@ -295,24 +299,19 @@ class FelixSiteProfileTests(unittest.TestCase):
         self.assertIn("pgadmin.felix-app.fe-wi.com", stack)
         self.assertNotIn("PGADMIN_DEFAULT_PASSWORD:", stack)
 
-    def test_enabled_webapp_fails_until_its_renderer_slice_exists(self) -> None:
-        """Reject silent WebApp omission before its immutable image slice.
+    def test_required_webapp_has_independent_health_and_rollout_policy(self) -> None:
+        """Render WebApp health, resources, and independent rollout policy.
 
         Returns:
             None.
         """
 
-        self._write_production_profile(
-            production_profile(
-                WEB_ENABLED="true",
-                WEB_IMAGE_NAME="sokrates1989/felix-webapp",
-                WEB_IMAGE_VERSION="1.0.5",
-                WEB_REPLICAS="1",
-            )
-        )
+        stack = render_stack(self._load())
 
-        with self.assertRaisesRegex(FelixSiteProfileError, "remains deferred"):
-            render_stack(self._load())
+        self.assertIn("\n  web:\n", stack)
+        self.assertIn('"http://localhost/health"', stack)
+        self.assertIn('memory: "128M"', stack)
+        self.assertGreaterEqual(stack.count("failure_action: rollback"), 2)
 
     def test_ai_capability_selects_only_its_environment_and_secret(self) -> None:
         """Wire file-backed AI provider input only when explicitly enabled.

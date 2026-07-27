@@ -7,6 +7,11 @@ release-orchestration export. It freezes candidate versus legacy deployment
 identity, environment and secret-file field names, digest-bound image policy,
 and the approval boundary around forwarding the old hostname.
 
+The required Web deployment fields bind the guided root `.env` to the WebApp
+domain, semantic image selection, replicas, and memory limit. Strict preflight
+resolves that selected image and the API image to registry digests before
+deployment; `latest` is never deployment evidence.
+
 The Swarm repository owns these values. Cross-repository tooling may read the
 file but must not write or materialize secrets from it.
 

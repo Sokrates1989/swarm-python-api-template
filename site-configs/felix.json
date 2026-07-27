@@ -1,6 +1,6 @@
 {
   "$schema": "site-config-schema",
-  "version": "4.0",
+  "version": "5.0",
   "appId": "felix",
   "name": "Felix Backend and WebApp",
   "description": "Candidate Felix full stack isolated from the legacy deployment",
@@ -26,6 +26,10 @@
     "apiBaseUrl": "https://api.felix-app.fe-wi.com",
     "domain": "api.felix-app.fe-wi.com",
     "healthPath": "/health",
+    "webContainerPort": 80,
+    "webBaseUrl": "https://felix-app.fe-wi.com",
+    "webDomain": "felix-app.fe-wi.com",
+    "webHealthPath": "/health",
     "traefikNetwork": "traefik-public",
     "sslMode": "proxy"
   },
@@ -41,6 +45,7 @@
     "pgadminSecret": "FELIX_NEW_PGADMIN_PASSWORD"
   },
   "services": {
+    "web": true,
     "api": true,
     "redis": true,
     "database": true,
@@ -53,7 +58,8 @@
   },
   "resources": {
     "defaultReplicas": 1,
-    "defaultMemoryLimit": "512M"
+    "defaultMemoryLimit": "512M",
+    "defaultWebMemoryLimit": "128M"
   },
   "storage": {
     "dataRoot": "/swarm/volumes/felix-new"

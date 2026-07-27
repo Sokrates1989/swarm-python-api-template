@@ -4,8 +4,8 @@
 
 This runbook deploys only the isolated `felix-new` candidate stack for
 `api.felix-app.fe-wi.com` and `felix-app.fe-wi.com`. The stack owns the Felix
-backend, Redis, selected PostgreSQL mode, optional pgAdmin, and the WebApp once
-its immutable image is enabled. It never changes the legacy host
+backend, WebApp, Redis, selected PostgreSQL mode, and optional pgAdmin. It
+never changes the legacy host
 `felix.app.fe-wi.com`, its running stack, either protected legacy Keycloak
 realm (`felix` or `felixappnew`), or forwarding/cutover state.
 
@@ -29,7 +29,7 @@ second Keycloak stack.
 
 ## Image publication boundary
 
-The API repository owns image planning, local proof, and publication. Start
+The API repository owns backend image planning, local proof, and publication. Start
 its `quick-start.ps1` or `quick-start.sh`, verify that `felix` is the selected
 backend app, and use these menu actions in order:
 
@@ -56,18 +56,26 @@ and deployment remains bound to that digest. Do not run Swarm preflight until
 publication succeeds. The same exact version-alignment rule applies to every
 later release.
 
+The Flutter repository separately owns the WebApp image. Start its root
+quick-start menu, select the Felix app, open **Build & Deploy Selected App >
+Web**, and use the local-build action before the explicit publish action.
+Enter the same repository and semantic version later selected in this
+deployment wizard. The publish action records the immutable registry digest
+and may update `latest` only as a convenience tag; it never deploys. Do not
+publish the WebApp through raw Docker commands or CI.
+
 ## One-time prerequisites
 
 Keep `/swarm/administration/keycloak` on the deployed `swarm-keycloak`
 repository. No other Keycloak checkout is required.
 
-1. Publish the Felix API through the API quick-start menu described above.
-   The matching semantic tag in `site-configs/felix.json` must exist in the
-   registry, resolve to one immutable digest, target `linux/amd64`, and contain
-   the exact Felix OCI identity labels.
+1. Publish the Felix API and WebApp through their owning quick-start menus
+   described above. Both selected semantic tags must exist in their
+   registries, resolve to unique immutable digests, target `linux/amd64`, and
+   contain their exact Felix OCI identity labels.
 2. Run `./quick-start.sh`, choose **Run setup wizard**, and select
    **Felix Backend and WebApp**. Answer the guided database, proxy/TLS,
-   resource, storage, image, and optional pgAdmin questions. The wizard creates
+   resource, storage, WebApp/backend image, and optional pgAdmin questions. The wizard creates
    the ignored public-only root `.env` and renders the stack. Do not prepare a
    root `prod.env`.
    The wizard can configure and Compose-validate either local or external

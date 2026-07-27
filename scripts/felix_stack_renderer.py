@@ -26,6 +26,7 @@ from felix_site_contract import (
     FelixSiteProfileError,
     SecretMount,
 )
+from felix_web_stack import render_web_service, web_image_reference
 
 
 def _yaml_text(value: object) -> str:
@@ -456,14 +457,11 @@ def render_stack(profile: FelixSiteProfile) -> str:
             lacks a value.
     """
 
-    if profile.deployment["WEB_ENABLED"] == "true":
-        raise FelixSiteProfileError(
-            "WebApp rendering remains deferred until its immutable image slice."
-        )
     lines = [
         "# Generated from site-configs/felix.json and validated root .env.",
         "# Secret identifiers are external references; no secret values are rendered.",
         "services:",
+        *render_web_service(profile),
         *_render_redis_service(profile),
         *_render_api_service(profile),
         *(
@@ -508,7 +506,7 @@ def validate_rendered_stack(stack: str, profile: FelixSiteProfile) -> None:
     if direct_pattern.search(stack):
         raise FelixSiteProfileError("Rendered stack contains a direct secret field.")
     image_references = re.findall(r"^\s+image:\s+\"([^\"]+)\"$", stack, re.MULTILINE)
-    expected_image_count = 3 if profile.deployment["DB_MODE"] == "local" else 2
+    expected_image_count = 4 if profile.deployment["DB_MODE"] == "local" else 3
     if profile.deployment["PGADMIN_ENABLED"] == "true":
         expected_image_count += 1
     if len(image_references) != expected_image_count:
@@ -516,7 +514,7 @@ def validate_rendered_stack(stack: str, profile: FelixSiteProfile) -> None:
             f"Rendered stack must contain exactly {expected_image_count} images."
         )
     for reference in image_references:
-        if reference == profile.image_reference:
+        if reference in {profile.image_reference, web_image_reference(profile)}:
             continue
         if not _DIGEST_IMAGE_PATTERN.fullmatch(reference):
             raise FelixSiteProfileError(f"Rendered service image is mutable: {reference}")

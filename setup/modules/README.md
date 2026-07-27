@@ -162,8 +162,9 @@ configuration.
 - `_felix_collect_routing()` - Selects Traefik/external proxy and TLS ownership
 - `_felix_collect_api_resources()` - Selects immutable backend image/resources
 - `_felix_collect_pgadmin()` - Configures optional same-stack pgAdmin
-- `_felix_collect_web()` - Records explicit deferral until the WebApp image
-  release slice is complete
+- `_felix_collect_web()` in `felix-web-setup.sh` - Collects the required
+  WebApp repository, semantic version, replicas, and memory limit for the same
+  `felix-new` stack
 
 The module never deploys a stack and never reads a password or client-secret
 value. Its final menu can create data directories, enter the profile-aware

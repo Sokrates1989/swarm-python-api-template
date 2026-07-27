@@ -12,7 +12,7 @@ from collections.abc import Mapping
 
 
 PRODUCTION_PROFILE: Mapping[str, str] = {
-    "PROFILE_SCHEMA_VERSION": "1",
+    "PROFILE_SCHEMA_VERSION": "2",
     "DEPLOYMENT_PROFILE_ID": "felix",
     "APP_ID": "felix",
     "APP_ENVIRONMENT": "production",
@@ -44,6 +44,7 @@ PRODUCTION_PROFILE: Mapping[str, str] = {
     "SSL_MODE": "proxy",
     "TRAEFIK_NETWORK": "traefik-public",
     "API_PUBLISHED_PORT": "8083",
+    "WEB_PUBLISHED_PORT": "8084",
     "IMAGE_NAME": "sokrates1989/python-api-felix",
     "IMAGE_VERSION": "0.1.1",
     "API_REPLICAS": "1",
@@ -53,10 +54,11 @@ PRODUCTION_PROFILE: Mapping[str, str] = {
     "PGADMIN_DOMAIN": "disabled",
     "PGADMIN_EMAIL": "disabled",
     "PGADMIN_REPLICAS": "0",
-    "WEB_ENABLED": "false",
-    "WEB_IMAGE_NAME": "disabled",
-    "WEB_IMAGE_VERSION": "disabled",
-    "WEB_REPLICAS": "0",
+    "WEB_ENABLED": "true",
+    "WEB_IMAGE_NAME": "sokrates1989/felix-webapp",
+    "WEB_IMAGE_VERSION": "1.0.5",
+    "WEB_REPLICAS": "1",
+    "WEB_MEMORY_LIMIT": "128M",
 }
 
 

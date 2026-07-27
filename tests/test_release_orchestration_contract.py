@@ -193,13 +193,25 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
             / "modules"
             / "felix-setup-wizard.sh"
         ).read_text(encoding="utf-8")
+        web_wizard = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "felix-web-setup.sh"
+        ).read_text(encoding="utf-8")
+        setup_wizard = (
+            REPOSITORY_ROOT / "setup" / "setup-wizard.sh"
+        ).read_text(encoding="utf-8")
 
         for key in PRODUCTION_PROFILE:
-            self.assertIn(f"{key}=", wizard, key)
+            self.assertIn(f"{key}=", wizard + web_wizard, key)
         self.assertIn("--force", wizard)
         self.assertIn("render --compose-check", wizard)
         self.assertNotIn("docker stack deploy", wizard)
         self.assertNotIn("prod.env", wizard)
+        self.assertIn('source "$SCRIPT_DIR/modules/felix-web-setup.sh"', setup_wizard)
+        self.assertIn('WEB_ENABLED="true"', web_wizard)
+        self.assertIn("sokrates1989/felix-webapp", web_wizard)
 
     def test_keycloak_menu_uses_existing_production_owner(self) -> None:
         """Route Felix to the deployed swarm-keycloak owner without an adapter.

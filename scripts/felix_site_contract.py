@@ -32,7 +32,7 @@ from felix_site_runtime import (
 )
 
 
-_SCHEMA_VERSION = "4.0"
+_SCHEMA_VERSION = "5.0"
 _SITE_PROFILE_NAME = "felix.json"
 _EXPECTED_TOP_LEVEL_KEYS = frozenset(
     {
@@ -513,46 +513,6 @@ def _validate_metadata_and_exposure(data: Mapping[str, object]) -> None:
     _require_value(secrets_config, expected_secrets_config, "secretsConfig")
 
 
-def _validate_services_and_routing(data: Mapping[str, object]) -> None:
-    """Validate required services and exact candidate API routing.
-
-    Args:
-        data: Parsed root site profile.
-
-    Returns:
-        None when services, digest, port, host, and network match.
-
-    Raises:
-        FelixSiteProfileError: If a service or route is unsafe or drifting.
-    """
-
-    services = _as_mapping(data["services"], "services")
-    _require_exact_keys(
-        services,
-        {"api", "redis", "database", "redisImage"},
-        "services",
-    )
-    for service in ("api", "redis", "database"):
-        _require_value(services[service], True, f"services.{service}")
-    redis_image = _as_text(services["redisImage"], "services.redisImage")
-    if not _DIGEST_IMAGE_PATTERN.fullmatch(redis_image):
-        raise FelixSiteProfileError("services.redisImage must be pinned by SHA-256 digest.")
-
-    routing = _as_mapping(data["routing"], "routing")
-    routing_expected = {
-        "containerPort": 8080,
-        "apiBaseUrl": _CANDIDATE_API_ORIGIN,
-        "domain": "api.felix-app.fe-wi.com",
-        "healthPath": "/health",
-        "traefikNetwork": "traefik-public",
-        "sslMode": "proxy",
-    }
-    _require_exact_keys(routing, set(routing_expected), "routing")
-    for key, expected in routing_expected.items():
-        _require_value(routing[key], expected, f"routing.{key}")
-    _validate_public_https(str(routing["apiBaseUrl"]), "routing.apiBaseUrl")
-
-
 def _validate_resources_and_health(data: Mapping[str, object]) -> None:
     """Validate bounded resources, storage ownership, and health assertions.
 
@@ -567,10 +527,15 @@ def _validate_resources_and_health(data: Mapping[str, object]) -> None:
     """
 
     resources = _as_mapping(data["resources"], "resources")
-    _require_exact_keys(resources, {"defaultReplicas", "defaultMemoryLimit"}, "resources")
+    _require_exact_keys(
+        resources,
+        {"defaultReplicas", "defaultMemoryLimit", "defaultWebMemoryLimit"},
+        "resources",
+    )
     _require_value(resources["defaultReplicas"], 1, "resources.defaultReplicas")
-    if not re.fullmatch(r"[1-9][0-9]*(?:M|G)", str(resources["defaultMemoryLimit"])):
-        raise FelixSiteProfileError("resources.defaultMemoryLimit is invalid.")
+    for key in ("defaultMemoryLimit", "defaultWebMemoryLimit"):
+        if not re.fullmatch(r"[1-9][0-9]*(?:M|G)", str(resources[key])):
+            raise FelixSiteProfileError(f"resources.{key} is invalid.")
     storage = _as_mapping(data["storage"], "storage")
     _require_exact_keys(storage, {"dataRoot"}, "storage")
     _require_value(storage["dataRoot"], "/swarm/volumes/felix-new", "storage.dataRoot")
@@ -600,6 +565,8 @@ def _validate_fixed_sections(data: Mapping[str, object]) -> None:
         FelixSiteProfileError: If schema or infrastructure identity drifts.
     """
 
+    from felix_site_routing import validate_services_and_routing
+
     _require_exact_keys(data, _EXPECTED_TOP_LEVEL_KEYS, "root")
     fixed = {
         "$schema": "site-config-schema",
@@ -612,7 +579,7 @@ def _validate_fixed_sections(data: Mapping[str, object]) -> None:
         _require_value(data[key], expected, key)
     _validate_metadata_and_exposure(data)
     _validate_stack_and_database(data)
-    _validate_services_and_routing(data)
+    validate_services_and_routing(data)
     _validate_resources_and_health(data)
 
 
