@@ -6,6 +6,7 @@ prod.env
 swarm-stack.yml
 .setup-complete
 generated/
+build/
 
 # ==============================================================================
 # Data directories (host-mounted volumes created on the server)

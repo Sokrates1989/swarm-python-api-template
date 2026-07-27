@@ -399,7 +399,12 @@ show_main_menu() {
         echo ""
 
         echo "Deployment:"
-        echo "  ${MENU_DEPLOY}) Deploy to Docker Swarm"
+        if declare -F felix_release_menu >/dev/null &&
+            _is_felix_candidate_profile; then
+            echo "  ${MENU_DEPLOY}) Felix strict deploy / health / rollback"
+        else
+            echo "  ${MENU_DEPLOY}) Deploy to Docker Swarm"
+        fi
         echo "  ${MENU_STATUS}) Check deployment status"
         echo "  ${MENU_LOGS}) View service logs"
         echo ""
@@ -466,6 +471,11 @@ show_main_menu() {
 
         case $choice in
         ${MENU_DEPLOY})
+            if declare -F felix_release_menu >/dev/null &&
+                _is_felix_candidate_profile; then
+                felix_release_menu
+                continue
+            fi
             echo "[DEPLOY] Deploying to Docker Swarm..."
             echo ""
             echo "Before deployment, make sure you have:"
@@ -486,11 +496,21 @@ show_main_menu() {
             fi
             ;;
         ${MENU_STATUS})
+            if declare -F _felix_release_run >/dev/null &&
+                _is_felix_candidate_profile; then
+                _felix_release_run status || true
+                continue
+            fi
             echo "🏥 Running deployment health check..."
             echo ""
             check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN"
             ;;
         ${MENU_LOGS})
+            if declare -F _felix_release_run >/dev/null &&
+                _is_felix_candidate_profile; then
+                _felix_release_run logs || true
+                continue
+            fi
             echo "[LOGS] Service Logs"
             echo ""
 
@@ -534,6 +554,11 @@ show_main_menu() {
             fi
             ;;
         ${MENU_UPDATE_IMAGE})
+            if declare -F _is_felix_candidate_profile >/dev/null &&
+                _is_felix_candidate_profile; then
+                echo "[BLOCKED] Felix candidate images must use the strict release flow."
+                continue
+            fi
             local service_name
             local service_label
             service_name="$(_primary_service_name)"
@@ -627,6 +652,11 @@ show_main_menu() {
             echo "Monitor progress with: docker service ps $service_name"
             ;;
         ${MENU_SCALE})
+            if declare -F _is_felix_candidate_profile >/dev/null &&
+                _is_felix_candidate_profile; then
+                echo "[BLOCKED] Felix candidate replica counts are profile-controlled."
+                continue
+            fi
             echo "[SCALE] Scale Services"
             echo ""
 
@@ -954,6 +984,11 @@ show_main_menu() {
             fi
             ;;
         ${MENU_BUILD_STACK})
+            if declare -F _is_felix_candidate_profile >/dev/null &&
+                _is_felix_candidate_profile; then
+                echo "[BLOCKED] Felix candidate stacks are rendered by strict preflight."
+                continue
+            fi
             echo "[BUILD] Rebuilding swarm-stack.yml..."
             echo ""
             local build_script="${PROJECT_ROOT:-.}/scripts/build-site-stack.sh"

@@ -124,6 +124,34 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertIn("Advanced Cognito compatibility", keycloak_menu)
         self.assertNotIn("KEYCLOAK_CLIENT_SECRET=", keycloak_menu)
 
+    def test_candidate_menu_uses_only_strict_release_state_machine(self) -> None:
+        """Route candidate deploy, health, and logs through one strict CLI.
+
+        Returns:
+            None.
+        """
+
+        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
+            encoding="utf-8"
+        )
+        menu_handlers = (
+            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
+        ).read_text(encoding="utf-8")
+        release_menu = (
+            REPOSITORY_ROOT / "setup" / "modules" / "felix-release.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'source "${PROJECT_ROOT}/setup/modules/felix-release.sh"',
+            quick_start,
+        )
+        self.assertIn("felix_release_menu", menu_handlers)
+        self.assertIn("_felix_release_run status", menu_handlers)
+        self.assertIn("_felix_release_run logs", menu_handlers)
+        self.assertIn("scripts/felix_deploy.py", release_menu)
+        self.assertIn("_felix_release_run drill-rollback", release_menu)
+        self.assertIn("_felix_release_run rollback", release_menu)
+
 
 if __name__ == "__main__":
     unittest.main()

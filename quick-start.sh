@@ -31,6 +31,7 @@ source "${PROJECT_ROOT}/setup/modules/deploy-stack.sh"
 source "${PROJECT_ROOT}/setup/modules/config-builder.sh"
 source "${PROJECT_ROOT}/setup/modules/ci-cd-github.sh"
 source "${PROJECT_ROOT}/setup/modules/felix-keycloak-release.sh"
+source "${PROJECT_ROOT}/setup/modules/felix-release.sh"
 source "${PROJECT_ROOT}/setup/modules/menu_handlers.sh"
 
 # Source Cognito setup script if available
