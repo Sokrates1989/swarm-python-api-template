@@ -13,7 +13,7 @@
     "family": "api",
     "role": "full-stack",
     "primaryService": "api",
-    "name": "felix-new"
+    "name": "felix"
   },
   "exposure": {
     "type": "public",
@@ -77,7 +77,7 @@
     "defaultWebMemoryLimit": "128M"
   },
   "storage": {
-    "dataRoot": "/swarm/volumes/felix-new"
+    "dataRoot": "/swarm/volumes/felix"
   },
   "pgadmin": {
     "enabled": false,
@@ -92,12 +92,12 @@
   "auth": {
     "provider": "keycloak",
     "serverUrl": "https://keycloak.fe-wi.com",
-    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
-    "jwksUrl": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
-    "realm": "felix-new",
-    "frontendClientId": "felix-new-frontend",
-    "audience": "felix-new-backend",
-    "adminClientId": "felix-new-backend",
+    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix",
+    "jwksUrl": "https://keycloak.fe-wi.com/realms/felix/protocol/openid-connect/certs",
+    "realm": "felix",
+    "frontendClientId": "felix-frontend",
+    "audience": "felix-backend",
+    "adminClientId": "felix-backend",
     "redirectUris": [
       "https://felix-app.fe-wi.com/auth/callback",
       "felixkc:/callback"
@@ -139,13 +139,13 @@
     "CORS_ORIGINS": "https://felix-app.fe-wi.com",
     "AUTH_PROVIDER": "keycloak",
     "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
-    "KEYCLOAK_REALM": "felix-new",
-    "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
-    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
-    "KEYCLOAK_JWKS_URL": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
+    "KEYCLOAK_REALM": "felix",
+    "KEYCLOAK_CLIENT_ID": "felix-frontend",
+    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix",
+    "KEYCLOAK_JWKS_URL": "https://keycloak.fe-wi.com/realms/felix/protocol/openid-connect/certs",
     "KEYCLOAK_ENFORCE_AUDIENCE": "true",
-    "KEYCLOAK_AUDIENCE": "felix-new-backend",
-    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
+    "KEYCLOAK_AUDIENCE": "felix-backend",
+    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-backend",
     "DEBUG": "false",
     "DEBUG_ENABLED": "false",
     "SQL_ECHO_ENABLED": "false",
