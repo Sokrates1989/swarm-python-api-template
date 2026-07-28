@@ -55,7 +55,7 @@ PRODUCTION_PROFILE: Mapping[str, str] = {
     "PGADMIN_EMAIL": "disabled",
     "PGADMIN_REPLICAS": "0",
     "WEB_ENABLED": "true",
-    "WEB_IMAGE_NAME": "sokrates1989/felix-webapp",
+    "WEB_IMAGE_NAME": "sokrates1989/flutter-felix-web",
     "WEB_IMAGE_VERSION": "1.0.5",
     "WEB_REPLICAS": "1",
     "WEB_MEMORY_LIMIT": "128M",

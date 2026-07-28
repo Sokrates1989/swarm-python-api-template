@@ -189,7 +189,7 @@ class FelixSiteProfileTests(unittest.TestCase):
         stack = render_stack(self._load())
 
         self.assertIn('image: "sokrates1989/python-api-felix:0.1.1"', stack)
-        self.assertIn('image: "sokrates1989/felix-webapp:1.0.5"', stack)
+        self.assertIn('image: "sokrates1989/flutter-felix-web:1.0.5"', stack)
         self.assertIn('KEYCLOAK_AUDIENCE: "felix-new-backend"', stack)
         self.assertIn(
             'KEYCLOAK_ADMIN_CLIENT_SECRET_FILE: '

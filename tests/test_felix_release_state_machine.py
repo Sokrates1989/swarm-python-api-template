@@ -135,8 +135,8 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             "linux",
         )
         self.web_image = ImageIdentity(
-            "sokrates1989/felix-webapp:1.0.5",
-            f"sokrates1989/felix-webapp@{WEB_DIGEST}",
+            "sokrates1989/flutter-felix-web:1.0.5",
+            f"sokrates1989/flutter-felix-web@{WEB_DIGEST}",
             WEB_DIGEST,
             "1.0.5",
             "f" * 40,
@@ -187,7 +187,7 @@ class FelixReleaseStateMachineTests(unittest.TestCase):
             "appId": "felix",
             "appPath": "apps/felix",
             "environment": "production",
-            "imageRepository": "sokrates1989/felix-webapp",
+            "imageRepository": "sokrates1989/flutter-felix-web",
             "imageTag": "1.0.5",
             "profileFingerprint": "9" * 64,
             "sourceRevision": "f" * 40,

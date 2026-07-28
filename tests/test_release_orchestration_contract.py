@@ -211,7 +211,7 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         self.assertNotIn("prod.env", wizard)
         self.assertIn('source "$SCRIPT_DIR/modules/felix-web-setup.sh"', setup_wizard)
         self.assertIn('WEB_ENABLED="true"', web_wizard)
-        self.assertIn("sokrates1989/felix-webapp", web_wizard)
+        self.assertIn("sokrates1989/flutter-felix-web", web_wizard)
 
     def test_keycloak_menu_uses_existing_production_owner(self) -> None:
         """Route Felix to the deployed swarm-keycloak owner without an adapter.

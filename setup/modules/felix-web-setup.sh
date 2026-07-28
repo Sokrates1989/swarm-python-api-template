@@ -25,7 +25,7 @@ _felix_collect_web() {
     WEB_ENABLED="true"
     WEB_IMAGE_NAME="$(_felix_prompt_value \
         "WebApp image repository" \
-        "$(_felix_existing_value WEB_IMAGE_NAME sokrates1989/felix-webapp)")"
+        "$(_felix_existing_value WEB_IMAGE_NAME sokrates1989/flutter-felix-web)")"
     WEB_IMAGE_VERSION="$(_felix_prompt_value \
         "WebApp image version" \
         "$(_felix_existing_value WEB_IMAGE_VERSION 1.0.5)")"

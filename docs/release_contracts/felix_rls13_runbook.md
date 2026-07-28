@@ -59,10 +59,11 @@ later release.
 The Flutter repository separately owns the WebApp image. Start its root
 quick-start menu, select the Felix app, open **Build & Deploy Selected App >
 Web**, and use the local-build action before the explicit publish action.
-Enter the same repository and semantic version later selected in this
-deployment wizard. The publish action records the immutable registry digest
-and may update `latest` only as a convenience tag; it never deploys. Do not
-publish the WebApp through raw Docker commands or CI.
+Keep the canonical `sokrates1989/flutter-felix-web` repository and enter the
+same semantic version later selected in this deployment wizard. The publish
+action records the immutable registry digest and may update `latest` only as a
+convenience tag; it never deploys. Do not publish the WebApp through raw Docker
+commands or CI.
 
 ## One-time prerequisites
 
