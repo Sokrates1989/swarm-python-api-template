@@ -1,263 +1,150 @@
-# Setup Modules
+# Setup modules
 
-This directory contains reusable modular components used by the setup wizards.
-Most setup modules have Bash (`.sh`) and PowerShell (`.ps1`) implementations.
-Menu-only modules may be Bash-only because `quick-start.ps1` deliberately
-launches the authoritative Bash quick-start workflow through WSL.
+These modules implement the reusable setup and operations menu. The
+PowerShell launcher enters the authoritative Bash workflow through WSL, so
+menu-only modules can be Bash-only.
 
-## Module Overview
+## Architectural invariant
 
-### 1. user-prompts
-**Purpose**: Handles all user input collection with validation
+Production modules must not branch on an application ID, profile filename,
+stack name, domain, realm, client ID, image name, or secret prefix. Every app
+uses the same menu. Differences are selected from `site-configs/<profile>.json`
+through schema and capability fields.
 
-**Functions (Bash)**:
-- `prompt_database_type()` - Select PostgreSQL or Neo4j
-- `prompt_proxy_type()` - Select Traefik or no proxy
-- `prompt_database_mode()` - Select local or external database
-- `prompt_stack_name()` - Enter stack name
-- `prompt_data_root()` - Enter data directory path
-- `prompt_api_domain()` - Enter API domain (for Traefik)
-- `prompt_published_port()` - Enter port number (for no proxy)
-- `prompt_docker_image()` - Enter and verify Docker image
-- `prompt_replicas()` - Enter replica count for services
-- `prompt_secret_names()` - Enter Docker secret names
-- `prompt_yes_no()` - Generic yes/no prompt
+In particular:
 
-**Functions (PowerShell)**:
-- `Get-DatabaseType` - Select PostgreSQL or Neo4j
-- `Get-ProxyType` - Select Traefik or no proxy
-- `Get-DatabaseMode` - Select local or external database
-- `Get-StackName` - Enter stack name
-- `Get-DataRoot` - Enter data directory path
-- `Get-ApiDomain` - Enter API domain (for Traefik)
-- `Get-PublishedPort` - Enter port number (for no proxy)
-- `Get-DockerImage` - Enter and verify Docker image
-- `Get-Replicas` - Enter replica count for services
-- `Get-SecretNames` - Enter Docker secret names
-- `Get-YesNo` - Generic yes/no prompt
+- `renderer.type` selects the rendering strategy;
+- `services` selects API, WebApp, Redis, and database services;
+- `database` selects engine, local/external mode, images, and optional admin
+  UI;
+- `routing` and `exposure` select Traefik network/resolver or direct ports;
+- `auth.provider` controls authentication actions;
+- `auth` contains Keycloak identity, protected legacy values, and exact
+  service-account client roles;
+- `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
+  secrets; and
+- `capabilities` contributes optional public environment and secret mounts.
 
-### 2. config-builder
-**Purpose**: Builds `.env` and `swarm-stack.yml` from modular templates
+Felix therefore uses no special module. Its WebApp is simply
+`services.web: true`.
 
-**Functions (Bash)**:
-- `build_env_file()` - Concatenates environment templates
-- `build_stack_file()` - Builds stack file with snippet injection
-- `update_env_values()` - Updates key-value pairs in .env
-- `update_stack_secrets()` - Replaces secret placeholders
-- `backup_existing_files()` - Creates timestamped backups
+## Core modules
 
-**Functions (PowerShell)**:
-- `New-EnvFile` - Concatenates environment templates
-- `New-StackFile` - Builds stack file with snippet injection
-- `Update-EnvValue` - Updates key-value pairs in .env
-- `Update-StackSecrets` - Replaces secret placeholders
-- `Backup-ExistingFiles` - Creates timestamped backups
+### `site_helpers.sh`
 
-**How it works**:
-1. Reads base templates from `env-templates/` and `compose-modules/`
-2. Concatenates appropriate templates based on user choices
-3. Injects configuration snippets into API template
-4. Produces final `.env` and `swarm-stack.yml` files
+Discovers profiles, loads selected JSON metadata, and reloads public root
+`.env` values for the menu.
 
-### 3. network-check
-**Purpose**: Verifies DNS resolution for Traefik domains
+### `executable-profile-wizard.sh`
 
-**Functions (Bash)**:
-- `network_verify()` - Checks DNS resolution and confirms with user
+Runs the common schema-5 setup:
 
-**Functions (PowerShell)**:
-- `Network-Verify` - Checks DNS resolution and confirms with user
+1. displays profile-owned identity;
+2. collects operator-owned database, proxy/TLS, image version, resource,
+   storage, WebApp, and optional pgAdmin values;
+3. calls `scripts/site_profile.py` to atomically write root `.env`;
+4. renders and Compose-validates `swarm-stack.yml`; and
+5. offers data-directory, Docker-secret, and Keycloak actions.
 
-**Behavior**:
-- Only runs when Traefik proxy is selected
-- Uses `nslookup`, `dig`, or `host` (Bash) / .NET DNS (PowerShell)
-- Prompts user to confirm resolved IP matches swarm manager
-- Allows continuing even if DNS not configured (for testing)
+It never deploys automatically and never reads a secret value.
 
-### 4. data-dirs
-**Purpose**: Creates required data directories with existence checks
+### `keycloak-bootstrap.sh`
 
-**Functions (Bash)**:
-- `create_data_directories()` - Creates all required directories
+Exposes realm bootstrap only when `auth.provider=keycloak`. It calls
+`scripts/keycloak_profile_bootstrap.py`, which updates the existing Keycloak
+server through its Admin API. Realm, clients, callback URIs, browser origins,
+audience, protected identity, service-account client roles, and Docker secret
+target all come from the selected profile.
 
-**Functions (PowerShell)**:
-- `New-DataDirectories` - Creates all required directories
+The administrator password is read without echo by Python. The confidential
+client secret moves directly from Keycloak process memory to `docker secret
+create` standard input. Existing Docker secrets are kept without retrieving
+the credential. Explicit rotation requires the selected stack to be stopped,
+regenerates the confidential-client secret in Keycloak, and then replaces the
+exact declared Docker secret.
 
-**Directories created**:
-- Data root directory
-- `postgres_data/` (if PostgreSQL local)
-- `neo4j_data/` and `neo4j_logs/` (if Neo4j local)
-- `redis_data/` (always)
+### `docker-secrets-menu.sh`
 
-### 5. secret-manager
-**Purpose**: Handles Docker secret creation
+For executable profiles, lists and manages exact profile-declared required,
+optional, enabled-capability, and enabled-pgAdmin secrets. Keycloak client
+secrets cannot be entered manually; that action routes to the shared Keycloak
+bootstrap.
 
-**Functions (Bash)**:
-- `create_docker_secrets()` - Guides user through secret creation
-- `list_docker_secrets()` - Lists existing secrets
-- `verify_secrets_exist()` - Checks if required secrets exist
+Older schema profiles retain the historical prefixed-secret flow while they
+are migrated. This compatibility distinction is schema-driven, not app-driven.
 
-**Functions (PowerShell)**:
-- `New-DockerSecrets` - Guides user through secret creation
-- `Get-DockerSecrets` - Lists existing secrets
-- `Test-SecretsExist` - Checks if required secrets exist
+### `deploy-stack.sh`
 
-**Behavior**:
-- Prompts user to create secrets interactively
-- Uses text editor (Bash) or secure input (PowerShell)
-- Handles existing secrets gracefully
-- Can skip creation for manual setup later
+Deploys or updates the selected stack in place with `docker stack deploy`.
+Existing stacks are not removed before a normal update, allowing Docker Swarm
+to retain prior service specifications. The rendered schema-5 services use
+`start-first` updates and `failure_action: rollback`.
 
-### 6. deploy-stack
-**Purpose**: Deploys stack and performs health checks
+`rollback_stack_services()` requests Docker to restore each service's retained
+previous specification. It is available from the common deployment menu for
+every profile.
 
-**Functions (Bash)**:
-- `deploy_stack()` - Deploys Docker stack
-- `check_deployment_health()` - Verifies service health
+### `health-check.sh`
 
-**Functions (PowerShell)**:
-- `Invoke-StackDeploy` - Deploys Docker stack
-- `Test-DeploymentHealth` - Verifies service health
+Discovers services through Docker stack labels, checks replica convergence,
+shows task and redacted status information, and tests the declared public
+health endpoint when applicable.
 
-**Health checks include**:
-- Service replica status
-- Service logs inspection
-- API health endpoint test (if Traefik)
-- Deployment summary with useful commands
+### `menu_handlers.sh`
 
-### 7. docker-secrets-menu
-**Purpose**: Routes secret management according to the selected deployment
-profile
+Builds menu choices dynamically from the active profile. Keycloak, secrets,
+database UI, render, deploy, status, logs, and rollback actions use the same
+functions for every app.
 
-**Functions (Bash)**:
-- `manage_docker_secrets_menu()` - Selects strict Felix or generic secret
-  management
-- `_manage_felix_candidate_secrets()` - Exposes the exact Felix database and
-  optional pgAdmin secrets plus the production Keycloak owner handoff
-- `_manage_generic_docker_secrets()` - Preserves prefixed secret workflows for
-  non-Felix profiles
+### Legacy-compatible modules
 
-**Felix behavior**:
-- Uses the literal `FELIX_NEW_DB_PASSWORD` Docker secret name
-- Uses `FELIX_NEW_PGADMIN_PASSWORD` only when pgAdmin is enabled
-- Uses the literal `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` status check
-- Directs client-secret maintenance to the already deployed
-  `/swarm/administration/keycloak` production owner
-- Never requires a separate `/swarm/keycloak` checkout
-- Never accepts or prints the Keycloak client-secret value
+`user-prompts`, `config-builder`, `network-check`, `data-dirs`,
+`secret-manager`, `secrets_template_sync`, and compose modules continue to
+serve schema-3 profiles. New profile-specific branches are forbidden.
 
-This module has no PowerShell counterpart because the Windows launcher enters
-the same Bash menu through WSL.
+## Dependency outline
 
-### 8. felix-setup-wizard
+```text
+quick-start
+├── site_helpers
+├── secret-manager
+├── keycloak-bootstrap
+├── docker-secrets-menu
+├── deploy-stack
+├── health-check
+└── menu_handlers
 
-**Purpose**: Owns the guided, strict Felix Backend and WebApp deployment
-configuration.
+setup-wizard
+├── site_helpers
+├── executable-profile-wizard
+│   ├── scripts/site_profile.py
+│   ├── data-dirs
+│   ├── docker-secrets-menu
+│   └── keycloak-bootstrap
+└── legacy schema modules
+```
 
-**Functions (Bash)**:
+## Adding an application capability
 
-- `run_guided_felix_setup()` - Collects public deployment values, atomically
-  writes root `.env`, validates it, and renders `swarm-stack.yml`
-- `_felix_collect_database()` - Selects local/external PostgreSQL metadata
-- `_felix_collect_routing()` - Selects Traefik/external proxy and TLS ownership
-- `_felix_collect_api_resources()` - Selects immutable backend image/resources
-- `_felix_collect_pgadmin()` - Configures optional same-stack pgAdmin
-- `_felix_collect_web()` in `felix-web-setup.sh` - Collects the required
-  WebApp repository, semantic version, replicas, and memory limit for the same
-  `felix-new` stack
+Prefer this order:
 
-The module never deploys a stack and never reads a password or client-secret
-value. Its final menu can create data directories, enter the profile-aware
-Docker secret menu, or show the existing production Keycloak owner.
+1. express the difference in the site-config schema;
+2. implement one generic renderer/menu behavior based on that field;
+3. prove it with at least two differently named test profiles; and
+4. document the new field in `site-configs/README.md`.
 
-## Module Design Principles
+Never add `_is_<app>`, `if APP_ID=...`, app-named setup files, or literal
+production identity to shared execution code.
 
-### 1. Single Responsibility
-Each module handles one specific aspect of the setup process.
+## Verification
 
-### 2. Cross-Platform Compatibility
-Setup modules provide matching Bash and PowerShell behavior when both launchers
-execute them directly. Bash-only menu modules are allowed when the PowerShell
-launcher delegates to the authoritative WSL/Bash workflow.
-
-### 3. Error Handling
-Modules return appropriate exit codes and display clear error messages.
-
-### 4. Idempotency
-Modules check for existing resources before creating them.
-
-### 5. User Feedback
-Modules provide clear progress indicators and status messages with emojis.
-
-## Adding New Modules
-
-To add a new module:
-
-1. **Create the required implementations**:
-   ```bash
-   setup/modules/my-module.sh
-   setup/modules/my-module.ps1
-   ```
-
-   Use both files for natively invoked setup behavior. A quick-start menu
-   helper may remain Bash-only when Windows reaches it exclusively through the
-   WSL launcher.
-
-2. **Follow naming conventions**:
-   - Bash: `function_name()` with snake_case
-   - PowerShell: `Verb-Noun` with PascalCase
-
-3. **Export functions**:
-   - Bash: Functions are automatically available when sourced
-   - PowerShell: Use `Export-ModuleMember -Function FunctionName`
-
-4. **Import in wizards**:
-   ```bash
-   # Bash
-   source "$SCRIPT_DIR/setup/modules/my-module.sh"
-   
-   # PowerShell
-   Import-Module "$ScriptDir\setup\modules\my-module.ps1" -Force
-   ```
-
-5. **Document in this README**
-
-## Testing Modules
-
-Modules can be tested independently:
+On Linux:
 
 ```bash
-# Bash
-source setup/modules/user-prompts.sh
-result=$(prompt_database_type)
-echo "Selected: $result"
-
-# PowerShell
-Import-Module .\setup\modules\user-prompts.ps1
-$result = Get-DatabaseType
-Write-Host "Selected: $result"
+bash -n quick-start.sh setup/setup-wizard.sh setup/modules/*.sh scripts/*.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-## Module Dependencies
-
-Current dependency graph:
-
-```
-setup-wizard
-├── user-prompts (no dependencies)
-├── config-builder (no dependencies)
-├── network-check (no dependencies)
-├── data-dirs (no dependencies)
-├── secret-manager (no dependencies)
-├── deploy-stack (no dependencies)
-├── felix-setup-wizard
-│   ├── strict Python profile/stack adapters
-│   ├── data-dirs
-│   └── docker-secrets-menu
-└── felix-production-keycloak (handoff only)
-```
-
-The setup-wizard modules above are independent. The Bash-only
-`docker-secrets-menu` is sourced by `quick-start.sh` after `secret-manager`,
-`felix-production-keycloak`, and the profile helpers because it intentionally
-delegates to their public functions.
+The tests render the tracked new-app template, the real Felix profile, and a
+renamed synthetic profile. The synthetic render is the regression proof that
+no hidden Felix dependency exists.

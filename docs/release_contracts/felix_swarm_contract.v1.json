@@ -18,13 +18,21 @@
     "realm": "felix-new",
     "frontendClientId": "felix-new-frontend",
     "backendAudience": "felix-new-backend",
-    "backendAdminClientId": "felix-new-backend"
+    "backendAdminClientId": "felix-new-backend",
+    "backendServiceAccountClientRoles": {
+      "realm-management": [
+        "manage-users"
+      ]
+    }
   },
   "legacyProtection": {
     "webOrigin": "https://felix.app.fe-wi.com",
     "protectedRealms": [
       "felix",
       "felixappnew"
+    ],
+    "protectedClientIds": [
+      "felixappnew-frontend"
     ]
   },
   "requiredEnvironmentFields": [

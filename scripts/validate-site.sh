@@ -4,8 +4,9 @@
 # ==============================================================================
 #
 # Validates that the root public profile, swarm-stack.yml, secrets, and compose
-# modules are consistent. Strict Felix profiles validate their executable JSON
-# contract and exact resolved Compose artifact before generic checks.
+# modules are consistent. Any site profile declaring renderer.type=executable
+# validates its exact JSON contract and resolved Compose artifact before older
+# schema checks.
 #
 # Usage:
 #   ./scripts/validate-site.sh
@@ -59,6 +60,33 @@ _env_val() {
     grep "^${1}=" "${PROJECT_ROOT}/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
 }
 
+# _selected_renderer_type
+# Resolves the renderer strategy from the root-selected site config.
+#
+# Arguments:
+#   None.
+#
+# Outputs:
+#   Renderer type, defaulting to generic.
+#
+# Returns:
+#   0 always.
+_selected_renderer_type() {
+    local profile_id=""
+    local profile_file=""
+
+    profile_id="$(_env_val DEPLOYMENT_PROFILE_ID)"
+    profile_id="${profile_id:-$(_env_val BACKEND_APP_ID)}"
+    profile_file="${PROJECT_ROOT}/site-configs/${profile_id}.json"
+    if [ -n "$profile_id" ] &&
+        [ -f "$profile_file" ] &&
+        command -v jq >/dev/null 2>&1; then
+        jq -r '.renderer.type // "generic"' "$profile_file"
+        return 0
+    fi
+    echo "generic"
+}
+
 # ===========================================================================
 # Main validation
 # ===========================================================================
@@ -82,18 +110,18 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 _pass "Root .env exists"
 
-# Strict Felix validation is profile-driven and must not fall through to the
-# generic key-presence checks or hard-coded legacy secret list.
-if [ "$(_env_val APP_PROFILE)" = "felix" ]; then
+# Executable validation must not fall through to older schema checks or their
+# prefixed secret assumptions.
+if [ "$(_selected_renderer_type)" = "executable" ]; then
     if command -v python3 >/dev/null 2>&1; then
         PYTHON_COMMAND="python3"
     elif command -v python >/dev/null 2>&1; then
         PYTHON_COMMAND="python"
     else
-        _fail "Python 3.10 or newer is required for Felix validation."
+        _fail "Python 3 is required for executable profile validation."
         exit 1
     fi
-    exec "$PYTHON_COMMAND" "${PROJECT_ROOT}/scripts/felix_site_profile.py" \
+    exec "$PYTHON_COMMAND" "${PROJECT_ROOT}/scripts/site_profile.py" \
         --root "$PROJECT_ROOT" validate-stack --compose-check
 fi
 

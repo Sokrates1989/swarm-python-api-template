@@ -1,167 +1,195 @@
-# Felix RLS-13 candidate deployment runbook
+# Felix candidate deployment runbook
 
 ## Scope
 
-This runbook deploys only the isolated `felix-new` candidate stack for
-`api.felix-app.fe-wi.com` and `felix-app.fe-wi.com`. The stack owns the Felix
-backend, WebApp, Redis, selected PostgreSQL mode, and optional pgAdmin. It
-never changes the legacy host
-`felix.app.fe-wi.com`, its running stack, either protected legacy Keycloak
-realm (`felix` or `felixappnew`), or forwarding/cutover state.
+This runbook creates the isolated `felix-new` stack for:
 
-The authoritative operator entry point is `./quick-start.sh`. For the exact
-Felix candidate profile, its normal deploy, status, and log actions route to
-the strict state machine in `scripts/felix_deploy.py`; generic image-update,
-scale, and stack-render actions are blocked.
+- WebApp: `https://felix-app.fe-wi.com`;
+- API: `https://api.felix-app.fe-wi.com`;
+- Redis;
+- local or external PostgreSQL; and
+- optional pgAdmin.
 
-## Keycloak production ownership
+It does not modify `https://felix.app.fe-wi.com`, a legacy stack, a legacy
+realm, or later forwarding/cutover state.
 
-`/swarm/administration/keycloak` is the existing production Keycloak checkout
-from `https://github.com/Sokrates1989/swarm-keycloak.git`. It owns the running
-stack, realm/client maintenance, social providers, and backend-client secret
-handoff.
+Felix uses the repository's default site-config flow. There are no Felix-only
+setup, Keycloak, secret, deployment, health, log, or rollback actions.
+`site-configs/felix.json` adds the WebApp by declaring
+`services.web: true`; any app can do the same.
 
-Do not clone `https://github.com/Sokrates1989/keycloak.git` on the production
-server and do not prepare `/swarm/keycloak`. That repository is a local
-development environment only. The Felix deployment consumes the already
-existing `felix-new` realm and validates its Docker secret; it never deploys a
-second Keycloak stack.
+## Publish images from their owning quick-start menus
 
-## Image publication boundary
+Do not build or push application images from this Swarm checkout, raw Docker
+commands, or a CI/CD pipeline.
 
-The API repository owns backend image planning, local proof, and publication. Start
-its `quick-start.ps1` or `quick-start.sh`, verify that `felix` is the selected
-backend app, and use these menu actions in order:
+For the backend:
 
-1. **Validate API Docker image release plan**.
-2. **Build API Docker image locally (no push)**.
-3. **Build & Push API Docker Image (current or bump + version + latest)**.
+1. open the `python-api-template` quick-start menu;
+2. select backend app `felix`;
+3. validate the Docker image release plan;
+4. build locally; and
+5. use **Build & Push API Docker Image** with version `0.1.1` or the later
+   version deliberately selected for deployment.
 
-The third action is the only supported image publication path. Do not run raw
-Docker build/tag/push commands, invoke the underlying Python publisher
-directly, or use a CI/CD pipeline. The menu keeps the current version or
-increments it, pushes or replaces the selected version tag, records its
-registry digest, and updates `latest` as a convenience tag. It leaves Git
-source local for the operator to push separately and never deploys.
+For the WebApp:
 
-This Swarm repository never builds or pushes the API image. It consumes only
-the exact semantic version selected by `site-configs/felix.json`, resolves
-that tag to an immutable digest during strict preflight, and rejects `latest`.
+1. open the `flutter_app_template` quick-start menu;
+2. select app `felix`;
+3. open **Build & Deploy Selected App > Web**;
+4. build the selected-app Web image; and
+5. publish `sokrates1989/flutter-felix-web` with version `1.0.5` or the later
+   version deliberately selected for deployment.
 
-At the current RLS-13 checkpoint, the API repository and this Swarm profile
-both contain `0.1.1`. Choose **Keep current** so the menu publishes exactly
-`0.1.1` without a new version-bump commit. The menu may intentionally replace
-an existing `0.1.1` tag; strict Swarm preflight resolves the resulting digest
-and deployment remains bound to that digest. Do not run Swarm preflight until
-publication succeeds. The same exact version-alignment rule applies to every
-later release.
+Both publication menus may update `latest` as a convenience tag. The Swarm
+profile never deploys `latest`; it requires semantic versions. Normal stack
+deployment uses `docker stack deploy --resolve-image always`, so Docker
+records the registry-resolved image identity in each service specification.
 
-The Flutter repository separately owns the WebApp image. Start its root
-quick-start menu, select the Felix app, open **Build & Deploy Selected App >
-Web**, and use the local-build action before the explicit publish action.
-Keep the canonical `sokrates1989/flutter-felix-web` repository and enter the
-same semantic version later selected in this deployment wizard. The publish
-action records the immutable registry digest and may update `latest` only as a
-convenience tag; it never deploys. Do not publish the WebApp through raw Docker
-commands or CI.
+## Existing production Keycloak
 
-## One-time prerequisites
+Production Keycloak is already running from:
 
-Keep `/swarm/administration/keycloak` on the deployed `swarm-keycloak`
-repository. No other Keycloak checkout is required.
+```text
+/swarm/administration/keycloak
+https://github.com/Sokrates1989/swarm-keycloak.git
+```
 
-1. Publish the Felix API and WebApp through their owning quick-start menus
-   described above. Both selected semantic tags must exist in their
-   registries, resolve to unique immutable digests, target `linux/amd64`, and
-   contain their exact Felix OCI identity labels.
-2. Run `./quick-start.sh`, choose **Run setup wizard**, and select
-   **Felix Backend and WebApp**. Answer the guided database, proxy/TLS,
-   resource, storage, WebApp/backend image, and optional pgAdmin questions. The wizard creates
-   the ignored public-only root `.env` and renders the stack. Do not prepare a
-   root `prod.env`.
-   The wizard can configure and Compose-validate either local or external
-   PostgreSQL. The current strict RLS-13 deploy action intentionally accepts
-   only local PostgreSQL because its automated backup and rollback evidence
-   owns that database directory. Selecting an external database is safe for
-   configuration, but strict preflight will stop until a separate external
-   backup-ownership contract is implemented.
-3. Make both `felix-app.fe-wi.com` and `api.felix-app.fe-wi.com` resolve to
-   the existing proxy and ensure publicly trusted TLS certificates are
-   available for both hosts.
-4. Use the quick-start menu in `/swarm/administration/keycloak` for
-   production-safe check, plan, approved apply, verify, and protected-legacy
-   verification.
-5. After the corrected RLS-12 production-owner update is installed, use its
-   secret-handoff action to create
-   `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` without printing its value.
-6. Create `FELIX_NEW_DB_PASSWORD` with the repository secret manager or an
-   equivalent stdin-only Docker secret flow. Never place either secret in
-   `.env`, Flutter `prod.env`, shell arguments, logs, or a tracked file.
-   The strict **Manage Docker secrets** menu offers this database-secret action
-   and identifies the existing production Keycloak owner for the client
-   secret.
-7. If pgAdmin was enabled, use the same secret menu to create
-   `FELIX_NEW_PGADMIN_PASSWORD`.
-8. Ensure the selected external Traefik overlay network exists when Traefik
-   routing was chosen.
+Do not clone `D:\Development\Code\keycloak` or its remote on a production
+server. That repository is for local development. Do not create a second
+Keycloak stack.
 
-## First candidate deployment
+The Felix deployment menu talks to the existing server's Admin API. It reads
+realm `felix-new`, clients, callbacks, origins, audience, and target Docker
+secret name from `site-configs/felix.json`. Re-running the action is
+idempotent: it preserves unrelated realm settings and social identity
+providers while reconciling the declared clients.
 
-Open **Felix strict deploy / health / rollback** and run:
+The administrator password is entered without terminal echo. The confidential
+backend secret is not printed or written to `.env`; when its Docker secret is
+missing, it is transferred directly from process memory to Docker standard
+input.
 
-1. **Prepare exact candidate data directories.**
-2. **Run strict preflight.**
-3. **Backup, deploy candidate, and require strict health.**
-4. **Run strict health and legacy continuity checks.**
+## Configure the server clone
 
-Preflight fails closed unless the public profile, both registry
-digests/platforms and component-specific OCI labels, active Swarm manager,
-Docker secrets, overlay network, candidate directories, Compose render,
-WebApp/API DNS/TLS, candidate issuer/JWKS, legacy issuer, and legacy web
-application all match.
+From the Swarm deployment clone, run:
 
-The first deployment retains a mode-0600 declaration proving the PostgreSQL
-directory was empty. Later deployments retain and structurally verify a
-custom-format `pg_dump` before changing the service.
+```bash
+./quick-start.sh
+```
 
-The WebApp and API updates use `start-first` order with Docker
-`failure_action: rollback`. The command additionally requires converged
-replicas, both exact digests, WebApp HTTPS health and release metadata,
-production/Felix/PostgreSQL/SQL API identity, successful startup and
-migrations, Keycloak configuration and audience enforcement, an anonymous
-protected-route rejection, exact versions, issuer/JWKS, and secret-safe recent
-public-service logs.
+If no root `.env` exists:
+
+1. choose **Run setup wizard**;
+2. select **Felix Backend and WebApp**;
+3. choose local or external PostgreSQL;
+4. choose Traefik or direct published ports and the correct TLS ownership;
+5. when Traefik owns certificates, confirm its configured certificate
+   resolver; direct mode also collects an optional pgAdmin port;
+6. confirm backend and WebApp semantic versions;
+7. choose replicas, memory, data root, and optional pgAdmin; and
+8. let the wizard write root `.env` and Compose-validate
+   `swarm-stack.yml`.
+
+Do not create `prod.env`. Root `.env` is the normal ignored production
+configuration for this clone. It contains public configuration only.
+
+For Traefik, ensure the declared `traefik-public` overlay network exists and
+both candidate DNS names reach the proxy. With upstream SSL termination,
+select proxy TLS mode. With Traefik certificate ownership, select the
+Let's Encrypt mode.
+
+## Bootstrap/update the realm
+
+Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
+Press Enter to accept the displayed target, enter the existing Keycloak admin
+username, and enter its password at the hidden Python prompt.
+
+The shared action ensures:
+
+- realm `felix-new` exists;
+- public PKCE client `felix-new-frontend` has the exact Web and mobile callback
+  allowlist;
+- confidential service client `felix-new-backend` exists;
+- frontend access tokens receive audience `felix-new-backend`; and
+- the backend service account receives only the declared
+  `realm-management/manage-users` client role needed for identity deletion;
+- broader undeclared role grants fail closed for manual review; and
+- missing Docker secret
+  `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` is created.
+
+If that Docker secret already exists, it is kept without retrieving client
+secret material. Use the separate explicit rotation action only when
+intentional and only after stopping the selected stack. Rotation calls
+Keycloak's client-secret regeneration endpoint first, then replaces the exact
+profile-declared Docker secret from process memory; it is not merely a
+re-synchronization of the old credential.
+
+Social providers remain managed on the existing Keycloak deployment. Their
+configuration is not replaced by app bootstrap.
+
+## Prepare secrets and storage
+
+Choose **Manage Docker secrets**. The exact list is read from the profile.
+
+For the current Felix profile:
+
+- create `FELIX_NEW_DB_PASSWORD`;
+- verify the Keycloak bootstrap created
+  `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET`; and
+- create `FELIX_NEW_PGADMIN_PASSWORD` only if pgAdmin is enabled.
+
+Optional AI chat and Web Push secrets are shown separately. They become
+required only when their corresponding site-config capability is enabled.
+
+Create the data directories offered by the setup wizard. Secret values must
+never be placed in site config, root `.env`, command arguments, logs, or
+tracked files.
+
+## First deployment
+
+From the common deployment menu:
+
+1. choose **Rebuild swarm stack** and require a successful Compose check;
+2. choose **Deploy to Docker Swarm** and press Enter to confirm;
+3. choose **Check deployment status** until all declared services converge;
+4. verify WebApp health at `https://felix-app.fe-wi.com/health`;
+5. verify API health at `https://api.felix-app.fe-wi.com/health`; and
+6. use **View service logs** to inspect WebApp, API, Redis, PostgreSQL, and
+   optional pgAdmin without relying on app-specific service lists.
+
+API and WebApp services use start-first updates, monitored health checks, and
+`failure_action: rollback`. A normal redeploy updates the existing stack in
+place; it does not remove the stack first.
 
 ## Rollback proof
 
-After the first healthy deployment, choose **Run WebApp/API automatic rollback
-and data-continuity drill** once. The drill:
+After one healthy deployment, test the generic rollback flow during a planned
+maintenance window:
 
-1. requires a healthy digest-bound candidate;
-2. inserts one isolated random marker into
-   `release_orchestration.markers`;
-3. attempts API and WebApp updates, one at a time, to the already pinned Redis
-   image;
-4. requires newer Docker service versions in state `rollback_completed` at
-   both exact prior digests;
-5. repeats strict full-stack health and legacy-continuity checks; and
-6. verifies that the database marker survived both rollbacks.
+1. publish and deploy a second known-good semantic version of at least one
+   service so Docker retains a previous specification;
+2. confirm the stack is healthy;
+3. choose **Roll back retained service specifications**;
+4. press Enter to start the rollback;
+5. watch `docker stack services felix-new` until the service converges; and
+6. rerun the common status and public health checks.
 
-The drill never publishes an intentionally bad image and never touches a
-legacy service. An explicit candidate WebApp/API rollback remains available as
-menu option 8 for a later real release incident.
+Docker reports a warning for a service that has no retained previous
+specification. The rollback action is shared by every profile and does not
+target a hard-coded service list.
 
-## Evidence and failure behavior
+For an actual failed rolling update, the service's configured
+`failure_action: rollback` is the first protection. The explicit menu action is
+the operator-controlled fallback.
 
-Sanitized mode-0600 JSON receipts are written under ignored
-`build/release-evidence/swarm/felix/`. Database evidence lives below
-`/swarm/volumes/felix-new/backups/release/`.
+This first runbook proves the shared operator path. `RLS-13` remains open until
+the shared status action fails nonzero on injected WebApp/API health faults,
+the database backup/data-continuity checks pass, and the previous immutable
+image identities are recorded after rollback.
 
-If deployment fails after it starts, the state machine restores the captured
-candidate WebApp and API service images. A failed first candidate deployment
-removes only the `felix-new` stack. If rollback itself cannot be proved, the
-command exits nonzero and retains a `rollback-failed` receipt; it never reports
-success.
+## Cutover remains later
 
-Do not configure forwarding from `felix.app.fe-wi.com` during RLS-13. That is
-an explicit later cutover decision.
+Do not forward `felix.app.fe-wi.com` during this deployment. Legacy forwarding
+requires a separate, explicit and reversible cutover decision after candidate
+Web, Android, backend, authentication, and rollback evidence is accepted.

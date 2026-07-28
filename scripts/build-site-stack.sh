@@ -3,9 +3,10 @@
 # build-site-stack.sh - Build root swarm-stack.yml from compose modules
 # ==============================================================================
 #
-# Reads the root .env to determine the selected profile. Felix production uses
-# the strict schema-4 Python renderer; generic profiles continue through the
-# compose-module templates and snippets.
+# Reads the root .env to determine the selected profile. Any profile declaring
+# renderer.type=executable uses the shared deterministic Python renderer.
+# Profiles on older schemas continue through compose-module templates while
+# they are migrated.
 #
 # Output: PROJECT_ROOT/swarm-stack.yml
 #
@@ -40,18 +41,45 @@ _env_val() {
     grep "^${1}=" "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d '\r'
 }
 
-# Strict Felix rendering owns its complete environment and Docker secret
-# declarations. Do not feed this profile through generic placeholder rewriting.
-if [ "$(_env_val APP_PROFILE)" = "felix" ]; then
+# _selected_renderer_type
+# Resolves the renderer strategy from the root-selected site profile.
+#
+# Arguments:
+#   None.
+#
+# Outputs:
+#   Renderer type, defaulting to generic.
+#
+# Returns:
+#   0 always.
+_selected_renderer_type() {
+    local profile_id=""
+    local profile_file=""
+
+    profile_id="$(_env_val DEPLOYMENT_PROFILE_ID)"
+    profile_id="${profile_id:-$(_env_val BACKEND_APP_ID)}"
+    profile_file="${PROJECT_ROOT}/site-configs/${profile_id}.json"
+    if [ -n "$profile_id" ] &&
+        [ -f "$profile_file" ] &&
+        command -v jq >/dev/null 2>&1; then
+        jq -r '.renderer.type // "generic"' "$profile_file"
+        return 0
+    fi
+    echo "generic"
+}
+
+# Executable rendering owns the complete environment and Docker secret
+# declarations. Do not feed these profiles through placeholder rewriting.
+if [ "$(_selected_renderer_type)" = "executable" ]; then
     if command -v python3 >/dev/null 2>&1; then
         PYTHON_COMMAND="python3"
     elif command -v python >/dev/null 2>&1; then
         PYTHON_COMMAND="python"
     else
-        echo "Error: Python 3.10 or newer is required for Felix rendering."
+        echo "Error: Python 3 is required for executable profile rendering."
         exit 1
     fi
-    exec "$PYTHON_COMMAND" "${PROJECT_ROOT}/scripts/felix_site_profile.py" \
+    exec "$PYTHON_COMMAND" "${PROJECT_ROOT}/scripts/site_profile.py" \
         --root "$PROJECT_ROOT" render --compose-check
 fi
 

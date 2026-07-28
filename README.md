@@ -4,16 +4,20 @@ Docker Swarm deployment management for Python API and full-stack services.
 
 ## Overview
 
-Felix production setup is menu-driven. Start `./quick-start.sh`, choose
-**Run setup wizard**, then select **Felix Backend and WebApp**. The wizard asks
-about local/external PostgreSQL, Traefik or an external SSL terminator, TLS
-ownership, resources, image version, storage, and optional pgAdmin. It
-atomically writes the ignored public root `.env` and renders
-`swarm-stack.yml`; it never stores passwords or client secrets there.
+Production setup is menu-driven and site-config-driven. Start
+`./quick-start.sh`, choose **Run setup wizard**, and select a profile. The
+wizard asks only for operator-owned values, atomically writes the ignored
+public root `.env`, and renders `swarm-stack.yml`; passwords and client
+secrets are never stored there.
 
-Tracked `.env.example` documents the complete public Felix schema. Operators
-do not copy it and do not create a second `prod.env`. Re-running the setup
-wizard can validate the existing `.env` without changing it.
+Application differences belong only in `site-configs/<profile>.json`. Setup,
+rendering, secrets, Keycloak, deployment, health, logs, and rollback must not
+branch on application identity. An optional WebApp is declared with
+`services.web: true`, just like database and Redis services.
+
+Tracked `.env.example` documents public schema fields. Operators do not copy
+it and do not create a second `prod.env`. Re-running the setup wizard can
+validate the existing `.env` without changing it.
 
 Each **clone** of this repository on a server IS one deployment instance.
 Deployment artifacts (`.env`, `swarm-stack.yml`, data directories) live at
@@ -31,11 +35,12 @@ deployment instance needs by default (backend app, database type, services,
 image name, secret keys). These are development-time defaults committed to the
 repo. The setup wizard reads them to provide sensible defaults.
 
-The Felix deployment is one `felix-new` stack. It owns the backend API, Redis,
-local PostgreSQL when selected, optional pgAdmin, and—after its immutable image
-is published—the Flutter WebApp. Production Keycloak remains a separate
-existing platform stack owned by `swarm-keycloak`; Felix only consumes its
-realm and secret-safe client handoff.
+For example, `site-configs/felix.json` declares one `felix-new` stack with
+WebApp, backend API, Redis, selected PostgreSQL mode, and optional pgAdmin.
+The same executable renderer supports a differently named app with the same
+capabilities. Production Keycloak remains a separate existing platform stack;
+profiles can reconcile their declared realm and clients through its Admin API
+without deploying another Keycloak.
 
 ## Deployment Model
 
@@ -104,11 +109,11 @@ The wizard:
 
 From `quick-start.sh`, the main menu offers:
 
-For the exact `felix-new` candidate, this menu owns configuration, Keycloak
-delegation, secrets, deployment, health, and rollback only. Build and push the
-Felix API image from the selected-app quick-start menu in the API repository;
-never publish it with raw Docker commands, this Swarm menu, or CI/CD. The
-complete hand-off is documented in
+The same menu owns configuration, profile-declared Keycloak reconciliation,
+secrets, deployment, health, logs, and rollback for every selected profile.
+Build and push application images from the selected-app quick-start menus in
+their source repositories; never publish them from this Swarm checkout or CI.
+The Felix hand-off is documented in
 [`docs/release_contracts/felix_rls13_runbook.md`](docs/release_contracts/felix_rls13_runbook.md).
 
 - **Re-run setup wizard** — reconfigure this deployment.
@@ -116,6 +121,7 @@ complete hand-off is documented in
 - **Quick restore from saved .env** — restore deployment config from a backed-up `.env` file.
 - **Quick restore from saved secrets.env** — restore Docker secrets from a backed-up `secrets.env` file.
 - **Deploy to Swarm** — deploy `swarm-stack.yml`.
+- **Rollback services** — restore Docker's retained previous service specs.
 - **Check status** — health check the running stack.
 - **View logs** — tail API, database, or Redis logs.
 - **Update image** — pull and rolling-update the API service.
@@ -151,15 +157,19 @@ setup/
   templates/
     secrets.env.template           ← Docker secrets template
 scripts/
-  build-site-stack.sh              ← merge compose modules → swarm-stack.yml
+  site_profile.py                  ← shared schema-5 config/render adapter
+  executable_profile_*.py          ← reusable config/runtime validators
+  executable_stack_renderer.py     ← reusable full-stack renderer
+  keycloak_profile_*.py            ← reconciliation, roles, and secret bridge
+  build-site-stack.sh              ← route renderer → swarm-stack.yml
 site-configs/
-  _template.json                   ← v3 schema reference
+  _template.json                   ← canonical schema-5 new-app profile
   <profileId>.json                 ← deployment profile manifests
 old/
   deprecated-windows-server-deploy-scripts/  ← archived PowerShell scripts
 ```
 
-## Deployment Profile Manifest (v3)
+## Compatibility deployment profiles (v3)
 
 Each `site-configs/<profileId>.json` describes what a deployment profile
 **needs by default**:
@@ -177,6 +187,27 @@ Each `site-configs/<profileId>.json` describes what a deployment profile
 | `resources.defaultReplicas` | Suggested replica count |
 | `secrets` | List of required Docker secret key names |
 | `envKeys` | List of required environment variable keys |
+
+## Default executable deployment profiles (v5)
+
+Schema 5 adds an exact full-stack contract:
+
+| Field | Description |
+|-------|-------------|
+| `renderer.type` | `executable` selects the shared deterministic renderer |
+| `stack` | Stack name, family, role, and primary service |
+| `routing` / `exposure` | API/WebApp hosts, health paths, direct ports, and Traefik network/resolver |
+| `services.web` | Adds the optional WebApp service when true |
+| `web` | WebApp image, version, replicas, and memory |
+| `auth` | Keycloak identity, callbacks, protected legacy values, and service-account roles |
+| `environment` / `envKeys` | Exact public runtime allowlist |
+| `secretMounts` | Exact file-backed Docker secret mappings |
+| `capabilities` | Optional environment and secret mounts |
+
+No app-specific module is permitted. A new app receives the same behavior by
+copying `_template.json` to a schema-5 profile and replacing only its data.
+Keycloak protected identity and service-account roles, the Traefik certificate
+resolver, direct service ports, and optional pgAdmin are also profile fields.
 
 Deployment-time values (domain, proxy, SSL, actual image version, secret
 prefix) are **NOT** stored here — they go into `.env`.

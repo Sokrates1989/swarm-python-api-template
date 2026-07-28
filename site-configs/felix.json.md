@@ -1,75 +1,79 @@
-# Felix candidate site profile
+# Felix site profile
 
 ## Purpose and ownership
 
-`felix.json` is the Swarm-owned, versioned and secret-free deployment profile
-for the candidate Felix Backend and WebApp stack. It deliberately targets
-stack `felix-new`, API host `api.felix-app.fe-wi.com`, and WebApp host
-`felix-app.fe-wi.com`; it must never claim the legacy
-`felix.app.fe-wi.com` deployment.
+`felix.json` is a secret-free schema-5 site profile. It supplies data to the
+same executable setup and deployment path available to every other app. There
+is no Felix setup wizard, renderer, Keycloak adapter, secret menu, deployment
+state machine, health path, log path, or rollback implementation.
 
-Schema `5.0` makes `environment`, `envKeys`, `secretMounts`, routing, required
-services, and capability declarations executable inputs to the strict Felix
-renderer. `envKeys` must
-exactly enumerate the base environment plus active secret-file fields. Enabling
-AI or Web Push also requires adding that capability's declared environment and
-secret-file fields to `envKeys`.
+Felix differs only through profile data:
 
-## Images and services
+- stack `felix-new`;
+- WebApp host `felix-app.fe-wi.com`;
+- API host `api.felix-app.fe-wi.com`;
+- optional WebApp service enabled with image
+  `sokrates1989/flutter-felix-web`;
+- backend image `sokrates1989/python-api-felix`;
+- Redis and local/external PostgreSQL;
+- optional pgAdmin;
+- Keycloak realm `felix-new`, public client `felix-new-frontend`, and
+  confidential backend client/audience `felix-new-backend`; and
+- exact Docker secret identifiers and file mounts.
 
-- The Felix WebApp and API are required services in the same `felix-new`
-  stack. The WebApp has its own `felix-app.fe-wi.com` router, `/health`
-  container probe, replicas, memory limit, and rollback policy.
-- The Felix API uses the prepared RLS-13 publication target `0.1.1`; `latest`
-  and unversioned tags are
-  rejected.
-- The upstream version tag may be republished intentionally. Strict preflight
-  resolves its current registry digest, and deployment uses that immutable
-  digest rather than following later tag changes.
-- PostgreSQL 16, Redis 7, and optional pgAdmin are pinned by registry digest.
-- PostgreSQL can run in the same stack or use operator-supplied external
-  connection metadata; passwords remain Docker secrets in both modes.
-- Optional pgAdmin is available only with local PostgreSQL and Traefik. It has
-  its own file-backed Docker secret and persistent directory. Its pinned
-  multi-platform digest was resolved from the explicit upstream `9.15.0` tag;
-  the data-directory action assigns documented container ownership `5050:5050`.
-- Distinct Traefik routers attach to `felix-app.fe-wi.com` and
-  `api.felix-app.fe-wi.com`. In no-proxy mode, the wizard requires distinct
-  published WebApp and API host ports.
-- Proxy SSL mode keeps TLS termination at the existing upstream proxy and
-  forwards `X-Forwarded-Proto=https` to the candidate API.
+The legacy host `felix.app.fe-wi.com` is deliberately absent from executable
+routing and remains outside this stack.
 
-The profile contains no passwords, tokens, private keys, or client-secret
-values. Docker secret names are identifiers only.
+## WebApp service
 
-## Keycloak and capabilities
+`services.web: true` instructs the common renderer to add the WebApp to the
+same stack. The `web` object owns its image, semantic version, replicas, and
+memory. `routing.web*` owns its public host, container health endpoint, and
+optional direct published port. Routing also declares the default Traefik
+network/certificate resolver and direct pgAdmin port; the shared wizard
+collects the actual operator choice.
 
-The public client is `felix-new-frontend`. The API audience and least-privilege
-administration client are both `felix-new-backend`. Browser and Android
-callbacks remain exact: `https://felix-app.fe-wi.com/auth/callback` and
-`felixkc:/callback`.
+Any other app can add a WebApp in exactly the same way. Disabling
+`services.web` and removing the associated WebApp fields produces an API-only
+stack without modifying production code.
 
-AI chat and durable Web Push are disabled by default. When enabled, their
-private material is mounted from the optional Docker secrets declared here;
-direct secret environment variables remain forbidden.
+## Keycloak and secrets
 
-## Safe editing and validation
+The running Keycloak platform remains the existing `swarm-keycloak`
+deployment. The app menu uses the public Admin API of that existing server; it
+never deploys another Keycloak instance and never depends on the local
+development `keycloak` repository.
 
-Keep the JSON strict and duplicate-free. Do not add `${...}`,
-`XXX_CHANGE...`, `###...`, wildcard origins, localhost endpoints, direct
-secret values, or deployment aliases such as `latest`.
+The shared bootstrap reads realm, clients, callbacks, origins, audience,
+protected legacy identity, backend service-account client roles, and the
+confidential-client Docker secret target from this JSON. It preserves
+unrelated realm settings and social identity providers. For Felix, the only
+declared backend grant is `realm-management/manage-users`; undeclared broader
+grants fail closed.
 
-Use `./quick-start.sh` and select the setup wizard plus
-**Felix Backend and WebApp**. It writes the ignored root `.env` and renders the
-stack. The wizard requires a semantic-version WebApp image repository/tag; the
-strict deployment preflight later resolves both WebApp and API tags to
-immutable registry digests. The direct commands below are validation adapters,
-not the normal operator workflow:
+Administrator password and backend client secret are never printed, written
+to `.env`, put in command arguments, or saved to a repository file. Existing
+Docker secret state is kept without retrieving client-secret material.
+Explicit rotation first regenerates the Keycloak credential and then replaces
+the profile-declared Docker secret while the app stack is stopped.
+
+Required and optional secret names are identifiers only. Runtime values are
+mounted through their declared `*_FILE` fields.
+
+## Images, safety, and validation
+
+API and WebApp release tags are semantic versions. Redis, PostgreSQL, and
+pgAdmin images are digest pinned. Direct secret fields, mutable release aliases
+such as `latest`, debug logging, wildcard origins, and unresolved placeholders
+are rejected.
+
+Use `./quick-start.sh`, select **Felix Backend and WebApp**, and follow the
+shared setup flow. It writes root `.env` and renders one
+`swarm-stack.yml`. It does not deploy until the normal deployment menu action
+is selected.
+
+Direct validation:
 
 ```bash
-python3 scripts/felix_site_profile.py validate
-python3 scripts/felix_site_profile.py render --compose-check
+python3 scripts/site_profile.py --root . validate-stack --compose-check
 ```
-
-The render writes the ignored root `swarm-stack.yml`. It does not create Docker
-secrets and does not deploy or modify either Keycloak realm.

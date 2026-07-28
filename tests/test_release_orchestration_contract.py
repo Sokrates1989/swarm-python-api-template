@@ -1,8 +1,13 @@
 """
-Tests for the Swarm-owned Felix release-orchestration contract.
+Module: test_release_orchestration_contract.py
 
-The suite is dependency-free and verifies public deployment identity without
-rendering a stack or reading an operator environment.
+Description:
+    Verifies the secret-free Felix release identity and, critically, the
+    architectural rule that production behavior is selected through site
+    profile capabilities rather than application-name branches.
+
+Dependencies:
+    - Python standard library.
 """
 
 from __future__ import annotations
@@ -11,128 +16,58 @@ import json
 import unittest
 from pathlib import Path
 
-from tests.felix_profile_fixture import PRODUCTION_PROFILE
 
-
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = (
-    Path(__file__).resolve().parents[1]
+    REPOSITORY_ROOT
     / "docs"
     / "release_contracts"
     / "felix_swarm_contract.v1.json"
 )
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-class FelixSwarmReleaseContractTests(unittest.TestCase):
-    """Verifies candidate isolation, field ownership, and cutover safeguards."""
+class ReleaseOrchestrationContractTests(unittest.TestCase):
+    """Protect candidate identity while forbidding app-specific execution."""
 
     def setUp(self) -> None:
-        """Load a fresh contract object for each test.
+        """Load the public Felix contract before each test.
 
         Returns:
-            None.
+            Nothing.
         """
 
         self.contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        self.site_profile = json.loads(
+            (REPOSITORY_ROOT / "site-configs" / "felix.json").read_text(
+                encoding="utf-8"
+            )
+        )
 
-    def test_candidate_and_legacy_deployments_are_distinct(self) -> None:
-        """Ensure candidate and legacy identities cannot collapse together.
+    def test_candidate_and_legacy_identity_remain_distinct(self) -> None:
+        """Keep candidate hosts, realm, and stack separate from legacy.
 
         Returns:
-            None.
+            Nothing.
         """
 
         candidate = self.contract["candidate"]
-        protection = self.contract["legacyProtection"]
         boundary = self.contract["deploymentBoundary"]
+        protected = self.contract["legacyProtection"]
 
         self.assertEqual(candidate["webOrigin"], "https://felix-app.fe-wi.com")
+        self.assertEqual(candidate["apiOrigin"], "https://api.felix-app.fe-wi.com")
         self.assertEqual(candidate["realm"], "felix-new")
         self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
         self.assertEqual(candidate["backendAudience"], "felix-new-backend")
-        self.assertEqual(candidate["backendAdminClientId"], "felix-new-backend")
-        self.assertNotEqual(boundary["candidateHost"], boundary["legacyHost"])
-        self.assertNotIn(candidate["realm"], protection["protectedRealms"])
-
-    def test_both_possible_legacy_realms_are_protected(self) -> None:
-        """Ensure both known legacy realm names remain denylisted.
-
-        Returns:
-            None.
-        """
-
-        protected_realms = set(self.contract["legacyProtection"]["protectedRealms"])
-
-        self.assertTrue({"felix", "felixappnew"}.issubset(protected_realms))
-
-    def test_required_environment_and_secret_file_fields_are_declared(self) -> None:
-        """Ensure public settings and secret-file ownership stay explicit.
-
-        Returns:
-            None.
-        """
-
-        environment_fields = set(self.contract["requiredEnvironmentFields"])
-        secret_file_fields = self.contract["requiredSecretFileFields"]
-
-        self.assertTrue(
-            {
-                "APP_PROFILE",
-                "BACKEND_APP_ID",
-                "AUTH_PROVIDER",
-                "KEYCLOAK_ISSUER_URL",
-                "KEYCLOAK_REALM",
-            }.issubset(environment_fields)
-        )
-        self.assertEqual(secret_file_fields, ["KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"])
-
-    def test_guided_configuration_targets_one_full_stack(self) -> None:
-        """Require normal root `.env` and the complete Felix service boundary.
-
-        Returns:
-            None.
-        """
-
-        configuration = self.contract["configurationInput"]
-        services = self.contract["stackServices"]
-        boundary = self.contract["deploymentBoundary"]
-
-        self.assertEqual(
-            self.contract["siteProfileDisplayName"],
-            "Felix Backend and WebApp",
-        )
-        self.assertEqual(configuration["trackedExample"], ".env.example")
-        self.assertEqual(configuration["wizardGenerated"], ".env")
-        self.assertEqual(configuration["forbiddenRequiredInput"], "prod.env")
-        self.assertEqual(set(services["required"]), {"web", "api", "redis"})
-        self.assertEqual(
-            set(services["databaseModes"]),
-            {"local-postgresql", "external-postgresql-secret-file"},
-        )
-        self.assertEqual(services["optional"], ["pgadmin"])
         self.assertEqual(boundary["candidateStackName"], "felix-new")
-        self.assertEqual(
-            boundary["candidateApiHost"],
-            "api.felix-app.fe-wi.com",
-        )
+        self.assertNotEqual(boundary["candidateHost"], boundary["legacyHost"])
+        self.assertNotIn(candidate["realm"], protected["protectedRealms"])
 
-    def test_forwarding_and_image_policy_fail_closed(self) -> None:
-        """Ensure forwarding and mutable image deployment fail closed.
+    def test_runtime_keycloak_is_existing_swarm_deployment(self) -> None:
+        """Keep local-development Keycloak out of production dependencies.
 
         Returns:
-            None.
-        """
-
-        boundary = self.contract["deploymentBoundary"]
-
-        self.assertIs(boundary["legacyForwardingRequiresCutoverApproval"], True)
-        self.assertIs(boundary["mutableImageTagsAllowed"], False)
-
-    def test_production_keycloak_owner_is_existing_swarm_deployment(self) -> None:
-        """Reject the removed local-development checkout production boundary.
-
-        Returns:
-            None.
+            Nothing.
         """
 
         owner = self.contract["productionKeycloakOwner"]
@@ -151,213 +86,164 @@ class FelixSwarmReleaseContractTests(unittest.TestCase):
         )
         self.assertIs(owner["separateToolCheckoutRequired"], False)
 
-    def test_strict_felix_renderer_is_wired_into_shell_adapters(self) -> None:
-        """Keep setup, direct build, and validation on one strict adapter.
+    def test_full_stack_and_cutover_boundaries_are_explicit(self) -> None:
+        """Require WebApp/API services and explicit legacy forwarding approval.
 
         Returns:
-            None.
+            Nothing.
         """
 
-        expected_adapter = "scripts/felix_site_profile.py"
-        sources = [
-            (
-                REPOSITORY_ROOT
-                / "setup"
-                / "modules"
-                / "felix-setup-wizard.sh"
-            ),
-            REPOSITORY_ROOT / "scripts" / "build-site-stack.sh",
-            REPOSITORY_ROOT / "scripts" / "validate-site.sh",
-        ]
+        services = self.contract["stackServices"]
+        boundary = self.contract["deploymentBoundary"]
+        configuration = self.contract["configurationInput"]
 
-        for source in sources:
-            content = source.read_text(encoding="utf-8")
-            self.assertIn(expected_adapter, content, source)
-            self.assertIn("--compose-check", content, source)
+        self.assertEqual(set(services["required"]), {"web", "api", "redis"})
+        self.assertEqual(services["optional"], ["pgadmin"])
+        self.assertEqual(configuration["wizardGenerated"], ".env")
+        self.assertEqual(configuration["forbiddenRequiredInput"], "prod.env")
+        self.assertIs(boundary["legacyForwardingRequiresCutoverApproval"], True)
+        self.assertIs(boundary["mutableImageTagsAllowed"], False)
 
-        setup_wizard = (
-            REPOSITORY_ROOT / "setup" / "setup-wizard.sh"
-        ).read_text(encoding="utf-8")
-        self.assertIn("run_guided_felix_setup", setup_wizard)
-
-    def test_guided_wizard_owns_complete_public_schema_without_deploying(self) -> None:
-        """Keep every public field in the menu flow and runtime effects separate.
+    def test_public_contract_cannot_drift_from_site_profile(self) -> None:
+        """Keep duplicate evidence identity bound to executable profile data.
 
         Returns:
-            None.
+            Nothing.
         """
 
-        wizard = (
-            REPOSITORY_ROOT
-            / "setup"
-            / "modules"
-            / "felix-setup-wizard.sh"
-        ).read_text(encoding="utf-8")
-        web_wizard = (
-            REPOSITORY_ROOT
-            / "setup"
-            / "modules"
-            / "felix-web-setup.sh"
-        ).read_text(encoding="utf-8")
-        setup_wizard = (
-            REPOSITORY_ROOT / "setup" / "setup-wizard.sh"
-        ).read_text(encoding="utf-8")
+        candidate = self.contract["candidate"]
+        routing = self.site_profile["routing"]
+        auth = self.site_profile["auth"]
+        boundary = self.contract["deploymentBoundary"]
 
-        for key in PRODUCTION_PROFILE:
-            self.assertIn(f"{key}=", wizard + web_wizard, key)
-        self.assertIn("--force", wizard)
-        self.assertIn("render --compose-check", wizard)
-        self.assertNotIn("docker stack deploy", wizard)
-        self.assertNotIn("prod.env", wizard)
-        self.assertIn('source "$SCRIPT_DIR/modules/felix-web-setup.sh"', setup_wizard)
-        self.assertIn('WEB_ENABLED="true"', web_wizard)
-        self.assertIn("sokrates1989/flutter-felix-web", web_wizard)
+        self.assertEqual(candidate["webOrigin"], routing["webBaseUrl"])
+        self.assertEqual(candidate["apiOrigin"], routing["apiBaseUrl"])
+        self.assertEqual(candidate["issuerUrl"], auth["issuerUrl"])
+        self.assertEqual(candidate["realm"], auth["realm"])
+        self.assertEqual(
+            candidate["frontendClientId"],
+            auth["frontendClientId"],
+        )
+        self.assertEqual(candidate["backendAudience"], auth["audience"])
+        self.assertEqual(
+            candidate["backendServiceAccountClientRoles"],
+            auth["serviceAccountClientRoles"],
+        )
+        self.assertEqual(
+            boundary["candidateStackName"],
+            self.site_profile["stack"]["name"],
+        )
+        self.assertEqual(
+            set(self.contract["legacyProtection"]["protectedRealms"]),
+            set(auth["protectedIdentity"]["realms"]),
+        )
+        self.assertEqual(
+            set(self.contract["legacyProtection"]["protectedClientIds"]),
+            set(auth["protectedIdentity"]["clientIds"]),
+        )
 
-    def test_keycloak_menu_uses_existing_production_owner(self) -> None:
-        """Route Felix to the deployed swarm-keycloak owner without an adapter.
+    def test_execution_sources_contain_no_felix_identity(self) -> None:
+        """Reject hidden Felix branches in every shared production adapter.
+
+        App-specific values belong in ``site-configs/felix.json`` and public
+        documentation, not in setup, rendering, secrets, Keycloak, deployment,
+        health, logs, or rollback code.
 
         Returns:
-            None.
+            Nothing.
         """
 
-        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
-            encoding="utf-8"
+        shared_sources = (
+            "quick-start.sh",
+            "scripts/build-site-stack.sh",
+            "scripts/validate-site.sh",
+            "scripts/site_profile.py",
+            "scripts/executable_profile.py",
+            "scripts/executable_profile_support.py",
+            "scripts/executable_profile_config_validation.py",
+            "scripts/executable_profile_deployment_validation.py",
+            "scripts/executable_profile_environment.py",
+            "scripts/executable_profile_runtime.py",
+            "scripts/executable_stack_renderer.py",
+            "scripts/keycloak_profile_bootstrap.py",
+            "scripts/keycloak_profile_client.py",
+            "scripts/keycloak_profile_reconciliation.py",
+            "scripts/keycloak_profile_roles.py",
+            "scripts/keycloak_profile_secret_bridge.py",
+            "setup/setup-wizard.sh",
+            "setup/modules/site_helpers.sh",
+            "setup/modules/executable-profile-wizard.sh",
+            "setup/modules/keycloak-bootstrap.sh",
+            "setup/modules/docker-secrets-menu.sh",
+            "setup/modules/menu_handlers.sh",
+            "setup/modules/deploy-stack.sh",
         )
-        menu_handlers = (
-            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
-        ).read_text(encoding="utf-8")
-        keycloak_owner = (
-            REPOSITORY_ROOT
-            / "setup"
-            / "modules"
-            / "felix-production-keycloak.sh"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn(
-            'source "${PROJECT_ROOT}/setup/modules/felix-production-keycloak.sh"',
-            quick_start,
-        )
-        self.assertIn("show_felix_production_keycloak_handoff", menu_handlers)
-        self.assertIn("/swarm/administration/keycloak", keycloak_owner)
-        self.assertIn("swarm-keycloak.git", keycloak_owner)
-        self.assertNotIn("FELIX_KEYCLOAK_TOOL_DIRECTORY", keycloak_owner)
-        self.assertNotIn("scripts/felix_keycloak_adapter.py", quick_start)
-        self.assertNotIn("KEYCLOAK_CLIENT_SECRET=", keycloak_owner)
-        self.assertFalse(
-            (REPOSITORY_ROOT / "scripts" / "felix_keycloak_adapter.py").exists()
-        )
-        self.assertFalse(
-            (
-                REPOSITORY_ROOT
-                / "setup"
-                / "modules"
-                / "felix-keycloak-release.sh"
-            ).exists()
-        )
-
-    def test_candidate_menu_uses_only_strict_release_state_machine(self) -> None:
-        """Route candidate deploy, health, and logs through one strict CLI.
-
-        Returns:
-            None.
-        """
-
-        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
-            encoding="utf-8"
-        )
-        menu_handlers = (
-            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
-        ).read_text(encoding="utf-8")
-        release_menu = (
-            REPOSITORY_ROOT / "setup" / "modules" / "felix-release.sh"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn(
-            'source "${PROJECT_ROOT}/setup/modules/felix-release.sh"',
-            quick_start,
-        )
-        self.assertIn("felix_release_menu", menu_handlers)
-        self.assertIn("_felix_release_run status", menu_handlers)
-        self.assertIn("_felix_release_run logs", menu_handlers)
-        self.assertIn("scripts/felix_deploy.py", release_menu)
-        self.assertIn("_felix_release_run drill-rollback", release_menu)
-        self.assertIn("_felix_release_run rollback", release_menu)
-
-    def test_root_env_reloads_strict_candidate_identity(self) -> None:
-        """Keep the strict Felix gate populated after setup returns.
-
-        The setup wizard runs as a child process. The parent quick-start menu
-        therefore has to reload every public identity field materialized into
-        the root ``.env`` before deciding which deployment menus are safe.
-
-        Returns:
-            None.
-        """
-
-        site_helpers = (
-            REPOSITORY_ROOT / "setup" / "modules" / "site_helpers.sh"
-        ).read_text(encoding="utf-8")
-
-        for field in (
-            "APP_PROFILE",
-            "BACKEND_APP_ID",
-            "AUTH_PROVIDER",
-            "KEYCLOAK_ISSUER_URL",
-            "KEYCLOAK_REALM",
-            "KEYCLOAK_AUDIENCE",
-        ):
-            self.assertIn(
-                f'export {field}="$(_root_env_value "$env_file" {field})"',
-                site_helpers,
-                field,
+        for relative_path in shared_sources:
+            content = (REPOSITORY_ROOT / relative_path).read_text(
+                encoding="utf-8"
             )
+            self.assertNotIn("felix", content.lower(), relative_path)
 
-    def test_candidate_secret_menu_preserves_exact_ownership(self) -> None:
-        """Expose the database editor and production Keycloak owner handoff.
+    def test_obsolete_app_specific_adapters_are_absent(self) -> None:
+        """Prevent reintroduction of the removed production detour.
 
         Returns:
-            None.
+            Nothing.
         """
 
-        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
+        obsolete_paths = (
+            "scripts/felix_deploy.py",
+            "scripts/felix_site_profile.py",
+            "scripts/felix_stack_renderer.py",
+            "scripts/felix_release",
+            "setup/modules/felix-production-keycloak.sh",
+            "setup/modules/felix-release.sh",
+            "setup/modules/felix-setup-wizard.sh",
+            "setup/modules/felix-web-setup.sh",
+        )
+        for relative_path in obsolete_paths:
+            path = REPOSITORY_ROOT / relative_path
+            if path.is_dir():
+                self.assertFalse(any(path.rglob("*")), relative_path)
+            else:
+                self.assertFalse(path.exists(), relative_path)
+
+    def test_shell_adapters_route_by_renderer_and_auth_capability(self) -> None:
+        """Require shared renderer and Keycloak adapters in operator menus.
+
+        Returns:
+            Nothing.
+        """
+
+        setup = (REPOSITORY_ROOT / "setup" / "setup-wizard.sh").read_text(
             encoding="utf-8"
         )
-        menu_handlers = (
+        build = (
+            REPOSITORY_ROOT / "scripts" / "build-site-stack.sh"
+        ).read_text(encoding="utf-8")
+        menu = (
             REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
         ).read_text(encoding="utf-8")
-        secret_menu = (
+        executable_setup = (
             REPOSITORY_ROOT
             / "setup"
             / "modules"
-            / "docker-secrets-menu.sh"
+            / "executable-profile-wizard.sh"
         ).read_text(encoding="utf-8")
 
+        self.assertIn('APP_RENDERER_TYPE:-generic}" = "executable"', setup)
+        self.assertIn('"$(_selected_renderer_type)" = "executable"', build)
+        self.assertIn("scripts/site_profile.py", build)
+        self.assertIn("profile_uses_keycloak", menu)
+        self.assertIn("run_profile_keycloak_bootstrap", menu)
+        self.assertIn("rollback_stack_services", menu)
         self.assertIn(
-            'source "${PROJECT_ROOT}/setup/modules/docker-secrets-menu.sh"',
-            quick_start,
-        )
-        self.assertIn("manage_docker_secrets_menu", menu_handlers)
-        self.assertIn('"FELIX_NEW_DB_PASSWORD"', secret_menu)
-        self.assertIn(
-            '"FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"',
-            secret_menu,
-        )
-        self.assertIn('"FELIX_NEW_PGADMIN_PASSWORD"', secret_menu)
-        self.assertIn(
-            '_create_felix_editor_secret "FELIX_NEW_DB_PASSWORD"',
-            secret_menu,
-        )
-        self.assertNotIn(
-            'create_single_secret "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"',
-            secret_menu,
+            '_profile_validate_existing_selection || return 1',
+            executable_setup,
         )
         self.assertIn(
-            "show_felix_production_keycloak_handoff",
-            secret_menu,
-        )
-        self.assertIn(
-            'db_password_secret="${prefix_upper}_DB_PASSWORD"',
-            secret_menu,
+            '"$existing_profile" != "$APP_CONFIG_ID"',
+            executable_setup,
         )
 
 

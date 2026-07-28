@@ -21,12 +21,13 @@
 #
 # Dependencies:
 #   - jq (for JSON parsing)
-#   - site-configs/<appId>.json files following v3 schema
+#   - site-configs/<appId>.json files following supported profile schemas
 #   - Root .env file (optional, for running context)
 #
 # Exported Globals (set by load_app_config):
 #   APP_CONFIG_FILE, APP_ID, APP_NAME, APP_DESCRIPTION,
-#   APP_KIND, APP_STACK_FAMILY, APP_STACK_ROLE, APP_PRIMARY_SERVICE,
+#   APP_KIND, APP_STACK_NAME, APP_STACK_FAMILY, APP_STACK_ROLE,
+#   APP_PRIMARY_SERVICE,
 #   APP_ROUTING_CONTAINER_PORT, APP_DB_TYPE, APP_DB_DEFAULT_MODE,
 #   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE, APP_SECRET_COUNT,
 #   APP_IMAGE_NAME, APP_IMAGE_DEFAULT_VERSION,
@@ -34,7 +35,7 @@
 #   APP_EXPOSURE_TYPE, APP_INTERNAL_URL, APP_INTERNAL_SERVICE,
 #   APP_INTERNAL_NETWORK, APP_SECRETS_TEMPLATE, APP_SECRETS_PREFIXED,
 #   APP_SECRET_NAMES, APP_OPTIONAL_SECRET_NAMES, APP_ENV_KEYS,
-#   APP_RENDERER_TYPE, APP_RENDERER_STRICT
+#   APP_RENDERER_TYPE, APP_RENDERER_STRICT, APP_REQUIRES_WEB
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
@@ -51,26 +52,6 @@ _SITE_HELPERS_LOADED=1
 # ==============================================================================
 # Internal helpers
 # ==============================================================================
-
-# _is_felix_candidate_profile
-# Verifies that the loaded deployment instance is the isolated Felix stack.
-#
-# Arguments:
-#   None. Reads STACK_NAME, BACKEND_APP_ID, KEYCLOAK_REALM, and DOMAIN.
-#
-# Returns:
-#   0 for the exact Felix candidate; 1 for generic or protected legacy targets.
-#
-# Notes:
-#   This identity guard belongs to the deployment profile, not to a Keycloak
-#   adapter. Keeping it here lets strict deploy and menu routing remain safe
-#   without requiring any external production-tool checkout.
-_is_felix_candidate_profile() {
-    [ "${STACK_NAME:-}" = "felix-new" ] &&
-        [ "${BACKEND_APP_ID:-}" = "felix" ] &&
-        [ "${KEYCLOAK_REALM:-}" = "felix-new" ] &&
-        [ "${DOMAIN:-}" = "api.felix-app.fe-wi.com" ]
-}
 
 # _jq_or_default
 # Reads a jq path from a JSON file, returning a default when the field is
@@ -183,6 +164,7 @@ load_app_config() {
     APP_NAME="$(_jq_or_default "$config_file" '.name' "$config_id")"
     APP_DESCRIPTION="$(_jq_or_default "$config_file" '.description' "")"
     APP_KIND="$(_jq_or_default "$config_file" '.kind' "api")"
+    APP_STACK_NAME="$(_jq_or_default "$config_file" '.stack.name' "")"
     APP_STACK_FAMILY="$(_jq_or_default "$config_file" '.stack.family' "$APP_KIND")"
     APP_STACK_ROLE="$(_jq_or_default "$config_file" '.stack.role' "api")"
     APP_PRIMARY_SERVICE="$(_jq_or_default "$config_file" '.stack.primaryService' "api")"
@@ -206,7 +188,7 @@ load_app_config() {
     APP_SECRET_NAMES="$(jq -r '.secrets[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
     APP_OPTIONAL_SECRET_NAMES="$(jq -r '.optionalSecrets[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
 
-    # Executable renderer metadata. Schema 4 profiles use envKeys as the exact
+    # Executable renderer metadata. Schema 5 profiles use envKeys as the exact
     # rendered environment allowlist instead of informational documentation.
     APP_RENDERER_TYPE="$(_jq_or_default "$config_file" '.renderer.type' "generic")"
     APP_RENDERER_STRICT="$(_jq_or_default "$config_file" '.renderer.strict' "false")"
@@ -219,6 +201,7 @@ load_app_config() {
     # Service requirements
     APP_REQUIRES_REDIS="$(_jq_or_default "$config_file" '.services.redis' "true")"
     APP_REQUIRES_DATABASE="$(_jq_or_default "$config_file" '.services.database' "true")"
+    APP_REQUIRES_WEB="$(_jq_or_default "$config_file" '.services.web' "false")"
     APP_SECRET_COUNT="$(_jq_or_default "$config_file" '.secrets | length' "0")"
 
     # Image defaults
@@ -383,18 +366,18 @@ _load_stack_env_fields() {
     export SECRET_PREFIX="$(_root_env_value "$env_file" SECRETS_PREFIX)"
 }
 
-# _load_felix_env_fields
-# Exports Felix public app, database, Keycloak, WebApp, and pgAdmin settings.
+# _load_executable_env_fields
+# Exports shared public app, database, Keycloak, WebApp, and pgAdmin settings.
 #
 # Arguments:
 #   $1 - Existing root `.env` file path.
 #
 # Returns:
-#   0 after exporting every Felix convenience variable.
+#   0 after exporting every executable-profile convenience variable.
 #
 # Side effects:
 #   Replaces process environment variables with parsed public values.
-_load_felix_env_fields() {
+_load_executable_env_fields() {
     local env_file="$1"
 
     export DEPLOYMENT_PROFILE_ID="$(_root_env_value "$env_file" DEPLOYMENT_PROFILE_ID)"
@@ -413,6 +396,7 @@ _load_felix_env_fields() {
     export KEYCLOAK_REALM="$(_root_env_value "$env_file" KEYCLOAK_REALM)"
     export KEYCLOAK_AUDIENCE="$(_root_env_value "$env_file" KEYCLOAK_AUDIENCE)"
     export KEYCLOAK_FRONTEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_FRONTEND_CLIENT_ID)"
+    export KEYCLOAK_BACKEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_BACKEND_CLIENT_ID)"
     export DB_HOST="$(_root_env_value "$env_file" DB_HOST)"
     export DB_PORT="$(_root_env_value "$env_file" DB_PORT)"
     export DB_NAME="$(_root_env_value "$env_file" DB_NAME)"
@@ -471,7 +455,7 @@ load_root_env() {
         return 1
     fi
     _load_stack_env_fields "$env_file"
-    _load_felix_env_fields "$env_file"
+    _load_executable_env_fields "$env_file"
     _load_generic_service_env_fields "$env_file"
     return 0
 }

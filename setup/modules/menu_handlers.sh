@@ -76,14 +76,37 @@ _service_replicas_healthy() {
 }
 
 # _profile_requires_secrets
-# Checks whether the active deployment profile needs Docker secrets.
+# Checks whether the active deployment profile declares Docker secrets.
 #
 # Arguments:
-#   None. Reads STACK_FAMILY and DB_TYPE from the loaded environment.
+#   None. Reads the selected site config or legacy stack globals.
 #
 # Returns:
 #   0 when secret actions should be shown, 1 when the profile has no secrets.
 _profile_requires_secrets() {
+    if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
+        profile_uses_executable_renderer; then
+        local profile_file=""
+        profile_file="$(_profile_config_file)" || return 1
+        jq -e '
+          (
+            [ .secrets[]?, .optionalSecrets[]? ]
+            | map(select(type == "string" and length > 0))
+            | length
+          ) > 0
+          or
+          (
+            (.capabilities // {})
+            | to_entries
+            | any(
+                .value.enabled == true and
+                ((.value.secretMounts // []) | length > 0)
+              )
+          )
+          or ((.database.pgadminSecret // "") != "")
+        ' "$profile_file" >/dev/null
+        return $?
+    fi
     if [ "${STACK_FAMILY:-api}" = "nginx" ] || [ "${DB_TYPE:-postgresql}" = "none" ]; then
         return 1
     fi
@@ -329,14 +352,17 @@ show_main_menu() {
         if _profile_requires_secrets; then
             MENU_SETUP_SECRETS=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
-            MENU_RESTORE_SECRETS=$MENU_NEXT
-            MENU_NEXT=$((MENU_NEXT+1))
+            if ! declare -F profile_uses_executable_renderer >/dev/null 2>&1 ||
+                ! profile_uses_executable_renderer; then
+                MENU_RESTORE_SECRETS=$MENU_NEXT
+                MENU_NEXT=$((MENU_NEXT+1))
+            fi
         fi
         local MENU_SETUP_AUTH=""
-        local MENU_FELIX_KEYCLOAK_OWNER=""
-        if declare -F show_felix_production_keycloak_handoff >/dev/null &&
-            _is_felix_candidate_profile; then
-            MENU_FELIX_KEYCLOAK_OWNER=$MENU_NEXT
+        local MENU_KEYCLOAK_BOOTSTRAP=""
+        if declare -F profile_uses_keycloak >/dev/null 2>&1 &&
+            profile_uses_keycloak; then
+            MENU_KEYCLOAK_BOOTSTRAP=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         elif declare -F setup_auth_provider >/dev/null; then
             MENU_SETUP_AUTH=$MENU_NEXT
@@ -344,6 +370,8 @@ show_main_menu() {
         fi
 
         local MENU_DEPLOY=$MENU_NEXT
+        MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_ROLLBACK=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
         local MENU_STATUS=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
@@ -361,7 +389,12 @@ show_main_menu() {
         MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_TOGGLE_ADMIN_UI=""
-        if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
+        if [ "$DB_MODE" = "local" ] &&
+            [ "$DB_TYPE" != "none" ] &&
+            (
+                ! declare -F profile_uses_executable_renderer >/dev/null 2>&1 ||
+                ! profile_uses_executable_renderer
+            ); then
             MENU_TOGGLE_ADMIN_UI=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         fi
@@ -387,24 +420,20 @@ show_main_menu() {
             echo "  ${MENU_SETUP_SECRETS}) Manage Docker secrets"
         fi
         echo "  ${MENU_RESTORE_ENV}) Quick restore from saved .env"
-        if _profile_requires_secrets; then
+        if [ "$MENU_RESTORE_SECRETS" != "__disabled_restore_secrets" ]; then
             echo "  ${MENU_RESTORE_SECRETS}) Quick restore from saved secrets.env"
         fi
         if [ -n "$MENU_SETUP_AUTH" ]; then
             echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
         fi
-        if [ -n "$MENU_FELIX_KEYCLOAK_OWNER" ]; then
-            echo "  ${MENU_FELIX_KEYCLOAK_OWNER}) Production Keycloak ownership"
+        if [ -n "$MENU_KEYCLOAK_BOOTSTRAP" ]; then
+            echo "  ${MENU_KEYCLOAK_BOOTSTRAP}) Bootstrap / update Keycloak realm"
         fi
         echo ""
 
         echo "Deployment:"
-        if declare -F felix_release_menu >/dev/null &&
-            _is_felix_candidate_profile; then
-            echo "  ${MENU_DEPLOY}) Felix strict deploy / health / rollback"
-        else
-            echo "  ${MENU_DEPLOY}) Deploy to Docker Swarm"
-        fi
+        echo "  ${MENU_DEPLOY}) Deploy to Docker Swarm"
+        echo "  ${MENU_ROLLBACK}) Roll back retained service specifications"
         echo "  ${MENU_STATUS}) Check deployment status"
         echo "  ${MENU_LOGS}) View service logs"
         echo ""
@@ -463,20 +492,15 @@ show_main_menu() {
             read -r -p "Press Enter to continue..."
             continue
         fi
-        if [ -n "$MENU_FELIX_KEYCLOAK_OWNER" ] &&
-            [ "$choice" = "$MENU_FELIX_KEYCLOAK_OWNER" ]; then
-            show_felix_production_keycloak_handoff
+        if [ -n "$MENU_KEYCLOAK_BOOTSTRAP" ] &&
+            [ "$choice" = "$MENU_KEYCLOAK_BOOTSTRAP" ]; then
+            run_profile_keycloak_bootstrap || true
             read -r -p "Press Enter to continue..."
             continue
         fi
 
         case $choice in
         ${MENU_DEPLOY})
-            if declare -F felix_release_menu >/dev/null &&
-                _is_felix_candidate_profile; then
-                felix_release_menu
-                continue
-            fi
             echo "[DEPLOY] Deploying to Docker Swarm..."
             echo ""
             echo "Before deployment, make sure you have:"
@@ -496,22 +520,15 @@ show_main_menu() {
                 deploy_stack "$STACK_NAME" "$stack_file"
             fi
             ;;
+        ${MENU_ROLLBACK})
+            rollback_stack_services "$STACK_NAME" || true
+            ;;
         ${MENU_STATUS})
-            if declare -F _felix_release_run >/dev/null &&
-                _is_felix_candidate_profile; then
-                _felix_release_run status || true
-                continue
-            fi
             echo "🏥 Running deployment health check..."
             echo ""
             check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN"
             ;;
         ${MENU_LOGS})
-            if declare -F _felix_release_run >/dev/null &&
-                _is_felix_candidate_profile; then
-                _felix_release_run logs || true
-                continue
-            fi
             echo "[LOGS] Service Logs"
             echo ""
 
@@ -555,9 +572,11 @@ show_main_menu() {
             fi
             ;;
         ${MENU_UPDATE_IMAGE})
-            if declare -F _is_felix_candidate_profile >/dev/null &&
-                _is_felix_candidate_profile; then
-                echo "[BLOCKED] Felix candidate images must use the strict release flow."
+            if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
+                profile_uses_executable_renderer; then
+                echo "[INFO] Executable profile image versions are configuration inputs."
+                echo "       Re-run the shared setup wizard to change them, then deploy"
+                echo "       the newly rendered stack from this same menu."
                 continue
             fi
             local service_name
@@ -653,9 +672,11 @@ show_main_menu() {
             echo "Monitor progress with: docker service ps $service_name"
             ;;
         ${MENU_SCALE})
-            if declare -F _is_felix_candidate_profile >/dev/null &&
-                _is_felix_candidate_profile; then
-                echo "[BLOCKED] Felix candidate replica counts are profile-controlled."
+            if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
+                profile_uses_executable_renderer; then
+                echo "[INFO] Executable profile replica counts are configuration inputs."
+                echo "       Re-run the shared setup wizard to change them, then deploy"
+                echo "       the newly rendered stack from this same menu."
                 continue
             fi
             echo "[SCALE] Scale Services"
@@ -838,11 +859,6 @@ show_main_menu() {
             fi
             ;;
         ${MENU_BUILD_STACK})
-            if declare -F _is_felix_candidate_profile >/dev/null &&
-                _is_felix_candidate_profile; then
-                echo "[BLOCKED] Felix candidate stacks are rendered by strict preflight."
-                continue
-            fi
             echo "[BUILD] Rebuilding swarm-stack.yml..."
             echo ""
             local build_script="${PROJECT_ROOT:-.}/scripts/build-site-stack.sh"

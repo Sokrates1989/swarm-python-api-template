@@ -1,35 +1,207 @@
 {
   "$schema": "site-config-schema",
-  "version": "3.0",
+  "version": "5.0",
   "appId": "example_app",
-  "name": "Example App",
-  "description": "Human-readable description of this backend app",
+  "name": "Example Backend and WebApp",
+  "description": "Copy this profile and replace every example identity value",
+  "kind": "api",
+  "renderer": {
+    "type": "executable",
+    "strict": true
+  },
+  "stack": {
+    "family": "api",
+    "role": "full-stack",
+    "primaryService": "api",
+    "name": "example-app"
+  },
+  "exposure": {
+    "type": "public",
+    "publicDomainRequired": true,
+    "traefik": true,
+    "publishedPorts": true
+  },
+  "routing": {
+    "containerPort": 8080,
+    "apiBaseUrl": "https://api.example.com",
+    "domain": "api.example.com",
+    "healthPath": "/health",
+    "publishedPort": 8083,
+    "webContainerPort": 80,
+    "webBaseUrl": "https://app.example.com",
+    "webDomain": "app.example.com",
+    "webHealthPath": "/health",
+    "webPublishedPort": 8084,
+    "pgadminPublishedPort": 5054,
+    "traefikNetwork": "traefik-public",
+    "traefikCertResolver": "le",
+    "sslMode": "letsencrypt"
+  },
   "database": {
     "type": "postgresql",
-    "defaultMode": "local"
+    "defaultMode": "local",
+    "allowedModes": [
+      "local",
+      "external"
+    ],
+    "image": "postgres@sha256:79c06d285ed9186efbbc45c73413b3c3510c3c94ffede2f25d1e523f74d07f28",
+    "pgadminImage": "dpage/pgadmin4@sha256:cefc4cc6b7d9d71a9e81e76fb9d7e14038ab5661b539a190eea1b63fa612589a",
+    "pgadminSecret": "EXAMPLE_APP_PGADMIN_PASSWORD"
   },
   "services": {
+    "web": true,
+    "api": true,
     "redis": true,
-    "database": true
+    "database": true,
+    "redisImage": "redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
   },
   "image": {
-    "name": "your-username/your-api-image",
-    "defaultVersion": "latest"
+    "name": "your-username/python-api-example-app",
+    "defaultVersion": "0.1.0",
+    "mutableTagsAllowed": false
+  },
+  "web": {
+    "image": {
+      "name": "your-username/flutter-example-app-web",
+      "defaultVersion": "0.1.0",
+      "mutableTagsAllowed": false
+    },
+    "resources": {
+      "defaultReplicas": 1,
+      "defaultMemoryLimit": "128M"
+    }
   },
   "resources": {
     "defaultReplicas": 1,
-    "defaultMemoryLimit": "512M"
+    "defaultMemoryLimit": "512M",
+    "defaultWebMemoryLimit": "128M"
   },
-  "secrets": [
-    "DB_PASSWORD",
-    "ADMIN_API_KEY",
-    "BACKUP_RESTORE_API_KEY",
-    "BACKUP_DELETE_API_KEY"
-  ],
+  "storage": {
+    "dataRoot": "/swarm/volumes/example-app"
+  },
+  "pgadmin": {
+    "enabled": false,
+    "domain": "pgadmin.example.com",
+    "email": "admin@example.com"
+  },
+  "cors": {
+    "origins": [
+      "https://app.example.com"
+    ]
+  },
+  "auth": {
+    "provider": "keycloak",
+    "serverUrl": "https://keycloak.example.com",
+    "issuerUrl": "https://keycloak.example.com/realms/example-app",
+    "jwksUrl": "https://keycloak.example.com/realms/example-app/protocol/openid-connect/certs",
+    "realm": "example-app",
+    "frontendClientId": "example-app-frontend",
+    "audience": "example-app-backend",
+    "adminClientId": "example-app-backend",
+    "redirectUris": [
+      "https://app.example.com/auth/callback",
+      "exampleapp:/callback"
+    ],
+    "webOrigins": [
+      "https://app.example.com"
+    ],
+    "serviceAccountClientRoles": {
+      "realm-management": [
+        "manage-users"
+      ]
+    },
+    "protectedIdentity": {
+      "realms": [],
+      "clientIds": [],
+      "origins": []
+    }
+  },
+  "environment": {
+    "APP_ENVIRONMENT": "production",
+    "BACKEND_APP_ID": "example_app",
+    "APP_PROFILE": "example_app",
+    "PORT": "8080",
+    "IMAGE_TAG": "0.1.0",
+    "REDIS_URL": "redis://redis:6379/0",
+    "DB_TYPE": "postgresql",
+    "DB_MODE": "local",
+    "DB_HOST": "postgres",
+    "DB_PORT": "5432",
+    "DB_NAME": "example_app",
+    "DB_USER": "example_app",
+    "CORS_ORIGINS": "https://app.example.com",
+    "AUTH_PROVIDER": "keycloak",
+    "KEYCLOAK_SERVER_URL": "https://keycloak.example.com",
+    "KEYCLOAK_REALM": "example-app",
+    "KEYCLOAK_CLIENT_ID": "example-app-frontend",
+    "KEYCLOAK_ISSUER_URL": "https://keycloak.example.com/realms/example-app",
+    "KEYCLOAK_JWKS_URL": "https://keycloak.example.com/realms/example-app/protocol/openid-connect/certs",
+    "KEYCLOAK_ENFORCE_AUDIENCE": "true",
+    "KEYCLOAK_AUDIENCE": "example-app-backend",
+    "KEYCLOAK_ADMIN_CLIENT_ID": "example-app-backend",
+    "DEBUG": "false",
+    "DEBUG_ENABLED": "false",
+    "SQL_ECHO_ENABLED": "false",
+    "ENABLE_HTTP_DEBUG_LOGGING": "false",
+    "LOG_LEVEL": "INFO"
+  },
   "envKeys": [
+    "APP_ENVIRONMENT",
     "BACKEND_APP_ID",
+    "APP_PROFILE",
+    "PORT",
+    "IMAGE_TAG",
+    "REDIS_URL",
     "DB_TYPE",
-    "DB_MODE"
+    "DB_MODE",
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USER",
+    "CORS_ORIGINS",
+    "AUTH_PROVIDER",
+    "KEYCLOAK_SERVER_URL",
+    "KEYCLOAK_REALM",
+    "KEYCLOAK_CLIENT_ID",
+    "KEYCLOAK_ISSUER_URL",
+    "KEYCLOAK_JWKS_URL",
+    "KEYCLOAK_ENFORCE_AUDIENCE",
+    "KEYCLOAK_AUDIENCE",
+    "KEYCLOAK_ADMIN_CLIENT_ID",
+    "DEBUG",
+    "DEBUG_ENABLED",
+    "SQL_ECHO_ENABLED",
+    "ENABLE_HTTP_DEBUG_LOGGING",
+    "LOG_LEVEL",
+    "DB_PASSWORD_FILE",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
   ],
-  "notes": "This is a template. Copy it to create a manifest for your app."
+  "secrets": [
+    "EXAMPLE_APP_DB_PASSWORD",
+    "EXAMPLE_APP_KEYCLOAK_ADMIN_CLIENT_SECRET"
+  ],
+  "optionalSecrets": [],
+  "secretMounts": [
+    {
+      "name": "EXAMPLE_APP_DB_PASSWORD",
+      "envKey": "DB_PASSWORD_FILE",
+      "target": "/run/secrets/EXAMPLE_APP_DB_PASSWORD"
+    },
+    {
+      "name": "EXAMPLE_APP_KEYCLOAK_ADMIN_CLIENT_SECRET",
+      "envKey": "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE",
+      "target": "/run/secrets/EXAMPLE_APP_KEYCLOAK_ADMIN_CLIENT_SECRET"
+    }
+  ],
+  "capabilities": {},
+  "health": {
+    "path": "/health",
+    "expected": {
+      "appId": "example_app",
+      "appProfile": "example_app",
+      "dataProfile": "postgresql",
+      "authProvider": "keycloak",
+      "startup": "ok"
+    }
+  }
 }

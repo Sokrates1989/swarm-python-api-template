@@ -22,7 +22,7 @@
 #
 # Dependencies:
 #   - jq
-#   - Python 3.10+ for strict Felix production-profile validation/rendering
+#   - Python 3 for executable site-profile validation/rendering
 #   - Docker (for secrets, deploy)
 #   - Modules: site_helpers, user-prompts, config-builder, data-dirs,
 #     secret-manager, stack-conflict-check, deploy-stack, health-check
@@ -49,10 +49,9 @@ source "$SCRIPT_DIR/modules/secrets_template_sync.sh"
 source "$SCRIPT_DIR/modules/stack-conflict-check.sh"
 source "$SCRIPT_DIR/modules/deploy-stack.sh"
 source "$SCRIPT_DIR/modules/health-check.sh"
-source "$SCRIPT_DIR/modules/felix-production-keycloak.sh"
+source "$SCRIPT_DIR/modules/keycloak-bootstrap.sh"
 source "$SCRIPT_DIR/modules/docker-secrets-menu.sh"
-source "$SCRIPT_DIR/modules/felix-setup-wizard.sh"
-source "$SCRIPT_DIR/modules/felix-web-setup.sh"
+source "$SCRIPT_DIR/modules/executable-profile-wizard.sh"
 
 # Source Cognito setup script if available
 if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
@@ -143,7 +142,7 @@ echo "Swarm Python API Template - Setup Wizard"
 echo "============================================="
 echo ""
 echo "This wizard configures this deployment instance."
-echo "Each clone of this repo IS one deployed API."
+echo "Each clone of this repo IS one deployed app stack."
 echo ""
 echo "   .env and swarm-stack.yml are generated at the project root."
 echo "site-configs/ holds deployment profiles describing what this deployment needs."
@@ -195,11 +194,10 @@ fi
 # Load app manifest for defaults
 load_app_config "$PROJECT_ROOT" "$SELECTED_CONFIG"
 
-# Schema 4 Felix profiles use the fail-closed Python adapter. They must not pass
-# through the generic prompt path, which cannot express capability-selected
-# secret mounts or the fixed candidate/legacy isolation contract.
-if [ "${APP_RENDERER_TYPE:-generic}" = "felix-production" ]; then
-    run_guided_felix_setup
+# Schema-5 executable profiles use one shared site-config-driven flow capable
+# of expressing optional WebApps, exact runtime allowlists, and secret mounts.
+if [ "${APP_RENDERER_TYPE:-generic}" = "executable" ]; then
+    run_executable_profile_setup
     exit $?
 fi
 

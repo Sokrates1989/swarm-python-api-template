@@ -6,7 +6,7 @@
   "description": "Candidate Felix full stack isolated from the legacy deployment",
   "kind": "api",
   "renderer": {
-    "type": "felix-production",
+    "type": "executable",
     "strict": true
   },
   "stack": {
@@ -26,11 +26,15 @@
     "apiBaseUrl": "https://api.felix-app.fe-wi.com",
     "domain": "api.felix-app.fe-wi.com",
     "healthPath": "/health",
+    "publishedPort": 8083,
     "webContainerPort": 80,
     "webBaseUrl": "https://felix-app.fe-wi.com",
     "webDomain": "felix-app.fe-wi.com",
     "webHealthPath": "/health",
+    "webPublishedPort": 8084,
+    "pgadminPublishedPort": 5054,
     "traefikNetwork": "traefik-public",
+    "traefikCertResolver": "le",
     "sslMode": "proxy"
   },
   "database": {
@@ -56,6 +60,17 @@
     "defaultVersion": "0.1.1",
     "mutableTagsAllowed": false
   },
+  "web": {
+    "image": {
+      "name": "sokrates1989/flutter-felix-web",
+      "defaultVersion": "1.0.5",
+      "mutableTagsAllowed": false
+    },
+    "resources": {
+      "defaultReplicas": 1,
+      "defaultMemoryLimit": "128M"
+    }
+  },
   "resources": {
     "defaultReplicas": 1,
     "defaultMemoryLimit": "512M",
@@ -63,6 +78,11 @@
   },
   "storage": {
     "dataRoot": "/swarm/volumes/felix-new"
+  },
+  "pgadmin": {
+    "enabled": false,
+    "domain": "pgadmin.felix-app.fe-wi.com",
+    "email": "admin@fe-wi.com"
   },
   "cors": {
     "origins": [
@@ -84,7 +104,24 @@
     ],
     "webOrigins": [
       "https://felix-app.fe-wi.com"
-    ]
+    ],
+    "serviceAccountClientRoles": {
+      "realm-management": [
+        "manage-users"
+      ]
+    },
+    "protectedIdentity": {
+      "realms": [
+        "felix",
+        "felixappnew"
+      ],
+      "clientIds": [
+        "felixappnew-frontend"
+      ],
+      "origins": [
+        "https://felix.app.fe-wi.com"
+      ]
+    }
   },
   "environment": {
     "APP_ENVIRONMENT": "production",
@@ -169,10 +206,6 @@
     "FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY",
     "FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY"
   ],
-  "secretsConfig": {
-    "template": "setup/templates/secrets.felix.env.template",
-    "prefixed": false
-  },
   "secretMounts": [
     {
       "name": "FELIX_NEW_DB_PASSWORD",
