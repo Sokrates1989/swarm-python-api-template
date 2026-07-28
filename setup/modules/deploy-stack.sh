@@ -61,16 +61,16 @@ deploy_stack() {
     echo ""
     echo "[DEPLOY] Deploying stack..."
 
-    # Load environment variables from .env file for variable substitution
-    if [ -f "$env_file" ]; then
-        echo "   Loading environment from: $env_file"
-        set -a  # automatically export all variables
-        # shellcheck source=/dev/null
-        source "$env_file"
-        set +a  # stop automatically exporting
+    # Compose parses dotenv as data. Never source a generated deployment file
+    # because operator-provided values must not become executable shell syntax.
+    if [ ! -f "$env_file" ]; then
+        echo "[ERROR] Deployment environment is missing: $env_file"
+        return 1
     fi
+    echo "   Loading environment as dotenv data: $env_file"
 
     local compose_cmd
+    local compose_environment=(env -i "PATH=${PATH}")
     if command -v docker-compose >/dev/null 2>&1; then
         compose_cmd=(docker-compose)
     elif docker compose version >/dev/null 2>&1; then
@@ -78,6 +78,12 @@ deploy_stack() {
     else
         echo "[ERROR] Neither docker-compose nor 'docker compose' is available"
         return 1
+    fi
+    if [ -n "${HOME:-}" ]; then
+        compose_environment+=("HOME=${HOME}")
+    fi
+    if [ -n "${DOCKER_CONFIG:-}" ]; then
+        compose_environment+=("DOCKER_CONFIG=${DOCKER_CONFIG}")
     fi
 
     local stack_file_name
@@ -88,7 +94,10 @@ deploy_stack() {
         --prune \
         -c <(
         cd "$stack_dir" \
-        && "${compose_cmd[@]}" -f "$stack_file_name" config
+        && "${compose_environment[@]}" "${compose_cmd[@]}" \
+            --env-file "$env_file" \
+            -f "$stack_file_name" \
+            config
     ) "$stack_name"
     
     if [ $? -ne 0 ]; then

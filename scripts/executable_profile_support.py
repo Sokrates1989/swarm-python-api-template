@@ -3,8 +3,11 @@ Module: executable_profile_support.py
 
 Description:
     Defines shared constants, errors, strict JSON/dotenv parsing, and fixed
-    identity derivation for schema-5 executable deployment profiles. These
-    helpers contain no application identity and perform no runtime mutation.
+    application identity derivation for schema-5 executable deployment
+    profiles. Operator-selected deployment values such as stack names,
+    domains, and image repositories are deliberately excluded from fixed
+    identity. These helpers contain no application identity and perform no
+    runtime mutation.
 
 Dependencies:
     - Python standard library only.
@@ -88,6 +91,7 @@ DEPLOYMENT_KEYS = (
     "PROXY_TYPE",
     "SSL_MODE",
     "TRAEFIK_NETWORK",
+    "TRAEFIK_CONSTRAINT_LABEL",
     "TRAEFIK_CERT_RESOLVER",
     "API_PUBLISHED_PORT",
     "WEB_PUBLISHED_PORT",
@@ -313,24 +317,22 @@ def fixed_deployment_values(
     data: Mapping[str, object],
     config_id: str,
 ) -> dict[str, str]:
-    """Derive non-editable deployment identity from a site config.
+    """Derive non-editable application identity from a site config.
 
     Args:
         data: Parsed site profile.
         config_id: Selected site-config ID.
 
     Returns:
-        Fixed public root environment fields.
+        Fixed public root environment fields. Deployment-instance choices such
+        as stack names, domains, image repositories, ports, and resources are
+        intentionally omitted so the shared wizard can offer profile defaults.
     """
 
     stack = mapping(data["stack"], "stack")
-    routing = mapping(data["routing"], "routing")
     database = mapping(data["database"], "database")
-    image = mapping(data["image"], "image")
     environment = mapping(data["environment"], "environment")
-    cors = mapping(data["cors"], "cors")
     auth = mapping(data.get("auth", {"provider": "none"}), "auth")
-    web_enabled = bool(mapping(data["services"], "services").get("web", False))
     provider = str(auth.get("provider", "none"))
     return {
         "PROFILE_SCHEMA_VERSION": str(data["version"]),
@@ -345,17 +347,6 @@ def fixed_deployment_values(
         ),
         "BACKEND_DATA_PROFILE": str(database["type"]),
         "AUTH_PROVIDER": provider,
-        "API_BASE_URL": str(routing["apiBaseUrl"]),
-        "DOMAIN": str(routing["domain"]),
-        "WEB_BASE_URL": (
-            str(routing.get("webBaseUrl", "")) if web_enabled else ""
-        ),
-        "WEB_DOMAIN": (
-            str(routing.get("webDomain", "")) if web_enabled else ""
-        ),
-        "CORS_ORIGINS": ",".join(
-            str(item) for item in sequence(cors["origins"], "cors.origins")
-        ),
         "KEYCLOAK_BASE_URL": str(auth.get("serverUrl", "")),
         "KEYCLOAK_ISSUER_URL": str(auth.get("issuerUrl", "")),
         "KEYCLOAK_REALM": str(auth.get("realm", "")),
@@ -366,12 +357,10 @@ def fixed_deployment_values(
         "KEYCLOAK_BACKEND_CLIENT_ID": str(
             auth.get("adminClientId", auth.get("audience", ""))
         ),
-        "STACK_NAME": str(stack["name"]),
         "STACK_FAMILY": str(stack["family"]),
         "STACK_ROLE": str(stack["role"]),
         "PRIMARY_SERVICE": str(stack["primaryService"]),
         "DB_TYPE": str(database["type"]),
-        "IMAGE_NAME": str(image["name"]),
     }
 
 

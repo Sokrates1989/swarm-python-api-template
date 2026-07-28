@@ -9,7 +9,7 @@ state machine, health path, log path, or rollback implementation.
 
 Felix differs only through profile data:
 
-- stack `felix-new`;
+- stack `felix`;
 - WebApp host `felix-app.fe-wi.com`;
 - API host `api.felix-app.fe-wi.com`;
 - optional WebApp service enabled with image
@@ -17,7 +17,7 @@ Felix differs only through profile data:
 - backend image `sokrates1989/python-api-felix`;
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
-- Keycloak realm `felix-new`, public client `felix-new-frontend`, and
+- isolated Keycloak realm `felix-new`, public client `felix-new-frontend`, and
   confidential backend client/audience `felix-new-backend`; and
 - exact Docker secret identifiers and file mounts.
 
@@ -30,8 +30,9 @@ routing and remains outside this stack.
 same stack. The `web` object owns its image, semantic version, replicas, and
 memory. `routing.web*` owns its public host, container health endpoint, and
 optional direct published port. Routing also declares the default Traefik
-network/certificate resolver and direct pgAdmin port; the shared wizard
-collects the actual operator choice.
+overlay network, independent provider constraint label, certificate resolver,
+and direct pgAdmin port; the shared wizard collects the actual operator
+choice.
 
 Any other app can add a WebApp in exactly the same way. Disabling
 `services.web` and removing the associated WebApp fields produces an API-only
@@ -47,9 +48,12 @@ development `keycloak` repository.
 The shared bootstrap reads realm, clients, callbacks, origins, audience,
 protected legacy identity, backend service-account client roles, and the
 confidential-client Docker secret target from this JSON. It preserves
-unrelated realm settings and social identity providers. For Felix, the only
-declared backend grant is `realm-management/manage-users`; undeclared broader
-grants fail closed.
+unrelated realm settings and social identity providers. Stack identity is
+independent from authentication identity: the stack is `felix`, while the
+candidate realm and clients retain the isolated `felix-new` names required by
+the published application images. The legacy `felix` realm remains protected.
+For Felix, the only declared backend grant is
+`realm-management/manage-users`; undeclared broader grants fail closed.
 
 Administrator password and backend client secret are never printed, written
 to `.env`, put in command arguments, or saved to a repository file. Existing

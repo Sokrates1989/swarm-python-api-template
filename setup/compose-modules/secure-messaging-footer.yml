@@ -1,5 +1,5 @@
 networks:
-  secure_messaging_internal:
+  XXX_CHANGE_ME_INTERNAL_NETWORK_XXX:
     external: true
 
 secrets:

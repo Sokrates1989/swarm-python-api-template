@@ -96,10 +96,11 @@ def _traefik_labels(
     stack = profile.stack_name
     router = f"{stack}-{service}"
     network = values["TRAEFIK_NETWORK"]
+    constraint_label = values["TRAEFIK_CONSTRAINT_LABEL"]
     lines = [
         "      labels:",
         '        - "traefik.enable=true"',
-        f'        - "traefik.constraint-label={network}"',
+        f'        - "traefik.constraint-label={constraint_label}"',
         f'        - "traefik.docker.network={network}"',
         f'        - "traefik.http.routers.{router}.service={router}"',
         f'        - "traefik.http.routers.{router}.rule=Host(`{domain}`)"',

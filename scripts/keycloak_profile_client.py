@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from executable_profile import ExecutableProfile
+from executable_profile_support import mapping
 
 
 class KeycloakProfileError(RuntimeError):
@@ -294,14 +295,34 @@ def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
         raise KeycloakProfileError(
             "Keycloak service-account roles must be a client-role mapping."
         )
+    routing = mapping(profile.data.get("routing", {}), "routing")
+    configured_web_root = str(routing.get("webBaseUrl", "")).rstrip("/")
+    deployment_web_root = frontend_root.rstrip("/")
+    redirect_uris = tuple(
+        (
+            f"{deployment_web_root}{str(value)[len(configured_web_root):]}"
+            if configured_web_root
+            and str(value).startswith(f"{configured_web_root}/")
+            else str(value)
+        )
+        for value in raw["redirectUris"]
+    )
+    web_origins = tuple(
+        (
+            deployment_web_root
+            if str(value).rstrip("/") == configured_web_root
+            else str(value)
+        )
+        for value in raw["webOrigins"]
+    )
     return KeycloakIdentity(
         server_url=str(raw["serverUrl"]).rstrip("/"),
         realm=str(raw["realm"]),
         frontend_client_id=str(raw["frontendClientId"]),
         backend_client_id=str(raw["adminClientId"]),
         audience=str(raw["audience"]),
-        redirect_uris=tuple(str(value) for value in raw["redirectUris"]),
-        web_origins=tuple(str(value) for value in raw["webOrigins"]),
+        redirect_uris=redirect_uris,
+        web_origins=web_origins,
         frontend_root_url=frontend_root.rstrip("/"),
         api_root_url=profile.deployment["API_BASE_URL"].rstrip("/"),
         docker_secret=_backend_secret_name(profile),

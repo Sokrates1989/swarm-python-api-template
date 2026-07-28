@@ -42,54 +42,23 @@ Select the `secure_messaging` deployment profile. The wizard will:
 
 ### 3. Create Docker Secrets
 
-Create the secrets template:
+Open `./quick-start.sh`, choose **Manage Docker secrets**, then choose **Create
+secrets from the profile template**. The shared menu copies the profile’s
+template to ignored `secrets.env`, opens it for editing, and creates the five
+literal `secure_messaging_*` Docker secrets without adding a stack prefix.
+
+Accept the recommended deletion of `secrets.env` after creation. Never commit
+that file or create these profile secrets through app-specific scripts.
+
+### 4. Build and deploy
 
 ```bash
-cp setup/templates/secrets.secure-messaging.env.template secrets.env
-# Edit secrets.env with your values
+./quick-start.sh
 ```
 
-Create secrets (run on Swarm manager):
-
-```bash
-# Auth token (single shared secret)
-printf '%s' 'replace-with-long-random-token' | \
-  docker secret create secure_messaging_auth_token -
-
-# Telegram metadata (JSON - recipient keys to chat_ids)
-printf '%s' '{"backup":{"info":"-5109048777","warning":"-5139430766","error":"-4994923325"}}' | \
-  docker secret create secure_messaging_telegram_metadata -
-
-# Telegram tokens (JSON - bot tokens)
-printf '%s' '{"bot-main":"bot-token-1","bot-alerts":"bot-token-2"}' | \
-  docker secret create secure_messaging_telegram_tokens -
-
-# Email metadata (JSON - host, port, username, and nested receivers)
-printf '%s' '{"gmail-primary":{"host":"smtp.gmail.com","port":"587","username":"primary@gmail.com","use_tls":"true","from":"primary@gmail.com","receivers":{"info":"info@example.com","warning":"alerts@example.com","error":"oncall@example.com"}}}' | \
-  docker secret create secure_messaging_email_metadata -
-
-# Email passwords (JSON - SMTP passwords)
-printf '%s' '{"gmail-primary":"app-password-1","strato-backup":"app-password-2"}' | \
-  docker secret create secure_messaging_email_passwords -
-```
-
-**Security Note:** Never commit secrets to git. The template file should be deleted after use.
-
-### 4. Build and Deploy
-
-```bash
-# Build stack
-./scripts/build-site-stack.sh
-
-# Validate
-./scripts/validate-site.sh
-
-# Deploy
-set -a
-source .env
-set +a
-docker stack deploy -c <(docker compose -f swarm-stack.yml config) "$STACK_NAME"
-```
+Select the shared build/deploy action. The quick-start workflow validates the
+profile, treats `.env` strictly as dotenv data, verifies exact Docker secrets,
+and deploys the rendered stack. Never `source .env`.
 
 ## Verification
 
@@ -402,7 +371,7 @@ docker service update \
 ### Configuration Rollback
 
 1. Restore previous `.env`
-2. Re-run `docker stack deploy`
+2. Re-run the quick-start deploy action.
 
 ### Secret Update
 
@@ -424,8 +393,8 @@ docker service update --secret-rm secure_messaging_telegram_tokens ${STACK_NAME}
 printf '%s' '{"bot-main":"new-token-1","bot-alerts":"new-token-2"}' | docker secret create secure_messaging_telegram_tokens_v2 -
 docker service update --secret-add src=secure_messaging_telegram_tokens_v2,target=secure_messaging_telegram_tokens ${STACK_NAME}_secure_messaging_api
 
-# Redeploy
-docker stack deploy -c swarm-stack.yml ${STACK_NAME}
+# Redeploy through the shared menu
+./quick-start.sh
 ```
 
 ## Validation

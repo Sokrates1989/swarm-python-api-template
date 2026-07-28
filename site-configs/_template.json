@@ -34,6 +34,7 @@
     "webPublishedPort": 8084,
     "pgadminPublishedPort": 5054,
     "traefikNetwork": "traefik-public",
+    "traefikConstraintLabel": "traefik-public",
     "traefikCertResolver": "le",
     "sslMode": "letsencrypt"
   },
@@ -78,6 +79,9 @@
   },
   "storage": {
     "dataRoot": "/swarm/volumes/example-app"
+  },
+  "secretsConfig": {
+    "prefixed": false
   },
   "pgadmin": {
     "enabled": false,

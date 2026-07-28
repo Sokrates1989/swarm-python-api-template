@@ -5,6 +5,12 @@
   "name": "Secure Messaging",
   "description": "Internal-only notification API for Swarm services",
   "kind": "api",
+  "renderer": {
+    "type": "compose-modules",
+    "strict": false,
+    "apiTemplate": "setup/compose-modules/secure-messaging-api.template.yml",
+    "footerTemplate": "setup/compose-modules/secure-messaging-footer.yml"
+  },
   "stack": {
     "family": "api",
     "role": "internal-api",

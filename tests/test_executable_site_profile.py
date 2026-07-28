@@ -161,7 +161,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         profile = self._configure("felix", self.felix_config)
         stack = render_stack(profile)
 
-        self.assertEqual(profile.stack_name, "felix-new")
+        self.assertEqual(profile.stack_name, "felix")
         self.assertEqual(
             profile.image_reference,
             "sokrates1989/python-api-felix:0.1.1",
@@ -193,7 +193,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         identity = load_keycloak_identity(profile)
 
         self.assertEqual(profile.config_id, "aurora")
-        self.assertEqual(profile.stack_name, "aurora-new")
+        self.assertEqual(profile.stack_name, "aurora")
         self.assertEqual(profile.deployment["APP_ID"], "aurora")
         self.assertEqual(
             profile.image_reference,
@@ -206,9 +206,9 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(identity.realm, "aurora-new")
         self.assertEqual(identity.frontend_client_id, "aurora-new-frontend")
         self.assertEqual(identity.backend_client_id, "aurora-new-backend")
-        self.assertEqual(identity.docker_secret, "AURORA_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET")
+        self.assertEqual(identity.docker_secret, "AURORA_KEYCLOAK_ADMIN_CLIENT_SECRET")
         self.assertIn("aurora-app.fe-wi.com", stack)
-        self.assertIn("AURORA_NEW_DB_PASSWORD", stack)
+        self.assertIn("AURORA_DB_PASSWORD", stack)
         self.assertNotIn("felix", stack.lower())
 
     def test_web_service_is_optional_profile_data(self) -> None:
@@ -280,7 +280,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         stack = render_stack(profile)
 
         self.assertIn("\n  pgadmin:\n", stack)
-        self.assertIn("FELIX_NEW_PGADMIN_PASSWORD", stack)
+        self.assertIn("FELIX_PGADMIN_PASSWORD", stack)
         self.assertIn("pgadmin.felix-app.fe-wi.com", stack)
 
     def test_direct_ports_include_optional_pgadmin(self) -> None:
@@ -297,6 +297,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
                 "PROXY_TYPE": "none",
                 "SSL_MODE": "",
                 "TRAEFIK_NETWORK": "",
+                "TRAEFIK_CONSTRAINT_LABEL": "",
                 "PGADMIN_ENABLED": "true",
                 "PGADMIN_REPLICAS": "1",
                 "PGADMIN_PUBLISHED_PORT": "5054",
@@ -327,6 +328,73 @@ class ExecutableSiteProfileTests(unittest.TestCase):
 
         self.assertIn("tls.certresolver=production-acme", stack)
         self.assertNotIn("tls.certresolver=le\"", stack)
+
+    def test_traefik_provider_label_is_independent_from_overlay(self) -> None:
+        """Render distinct provider-selection and network-membership values.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "TRAEFIK_NETWORK": "shared-edge-overlay",
+                "TRAEFIK_CONSTRAINT_LABEL": "traefik-public-provider",
+            },
+        )
+        stack = render_stack(profile)
+
+        self.assertIn(
+            "traefik.constraint-label=traefik-public-provider",
+            stack,
+        )
+        self.assertIn(
+            "traefik.docker.network=shared-edge-overlay",
+            stack,
+        )
+        self.assertIn('"shared-edge-overlay":', stack)
+        self.assertNotIn(
+            "traefik.constraint-label=shared-edge-overlay",
+            stack,
+        )
+
+    def test_traefik_provider_label_rejects_unsafe_values(self) -> None:
+        """Reject provider labels that cannot safely enter Compose metadata.
+
+        Returns:
+            Nothing.
+        """
+
+        self._write_config("felix", self.felix_config)
+        with self.assertRaisesRegex(
+            ExecutableProfileError,
+            "TRAEFIK_CONSTRAINT_LABEL",
+        ):
+            write_deployment_env(
+                self.root,
+                "felix",
+                {"TRAEFIK_CONSTRAINT_LABEL": "not safe"},
+                force=True,
+            )
+
+    def test_executable_secret_names_require_explicit_exact_policy(self) -> None:
+        """Reject renderer-inferred secret naming behavior.
+
+        Returns:
+            Nothing.
+        """
+
+        invalid = copy.deepcopy(self.felix_config)
+        invalid["secretsConfig"]["prefixed"] = True
+        self._write_config("felix", invalid)
+
+        with self.assertRaisesRegex(
+            ExecutableProfileError,
+            "secretsConfig.prefixed=false",
+        ):
+            load_config_defaults(self.root, "felix")
 
     def test_keycloak_clients_use_exact_profile_callbacks_and_origins(self) -> None:
         """Build mobile/Web callback and audience clients from profile data.
@@ -359,8 +427,51 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertIs(backend["publicClient"], False)
         self.assertIs(backend["serviceAccountsEnabled"], True)
 
-    def test_fixed_identity_cannot_be_overridden(self) -> None:
-        """Reject attempts to bypass tracked profile identity through .env.
+    def test_operator_deployment_defaults_can_be_overridden(self) -> None:
+        """Allow validated stack, routing, image, and resource choices.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "STACK_NAME": "felix-test",
+                "API_BASE_URL": "https://api.test-felix.example.com",
+                "DOMAIN": "api.test-felix.example.com",
+                "WEB_BASE_URL": "https://test-felix.example.com",
+                "WEB_DOMAIN": "test-felix.example.com",
+                "CORS_ORIGINS": "https://test-felix.example.com",
+                "IMAGE_NAME": "sokrates1989/python-api-felix-test",
+                "WEB_IMAGE_NAME": "sokrates1989/flutter-felix-test-web",
+                "API_REPLICAS": "2",
+                "WEB_REPLICAS": "2",
+            },
+        )
+
+        self.assertEqual(profile.stack_name, "felix-test")
+        self.assertEqual(
+            profile.image_reference,
+            "sokrates1989/python-api-felix-test:0.1.1",
+        )
+        self.assertEqual(
+            profile.web_image_reference,
+            "sokrates1989/flutter-felix-test-web:1.0.5",
+        )
+        identity = load_keycloak_identity(profile)
+        self.assertIn(
+            "https://test-felix.example.com/auth/callback",
+            identity.redirect_uris,
+        )
+        self.assertEqual(
+            identity.web_origins,
+            ("https://test-felix.example.com",),
+        )
+
+    def test_application_identity_cannot_be_overridden(self) -> None:
+        """Reject attempts to override profile and authentication identity.
 
         Returns:
             Nothing.
@@ -374,7 +485,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             write_deployment_env(
                 self.root,
                 "felix",
-                {"STACK_NAME": "other"},
+                {"KEYCLOAK_REALM": "other"},
                 force=True,
             )
 

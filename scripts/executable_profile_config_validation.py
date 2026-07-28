@@ -17,6 +17,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Mapping
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from executable_profile_support import (
@@ -54,6 +55,13 @@ def validate_https(value: str, field: str) -> None:
             f"{field} must not contain query or fragment."
         )
     hostname = parsed.hostname.lower()
+    if (
+        not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", hostname)
+        or ".." in hostname
+    ):
+        raise ExecutableProfileError(
+            f"{field} contains an unsafe hostname."
+        )
     if hostname == "localhost" or hostname.endswith(".localhost"):
         raise ExecutableProfileError(f"{field} must not use a local host.")
     try:
@@ -315,6 +323,37 @@ def _validate_secret_declarations(data: Mapping[str, object]) -> None:
         )
 
 
+def _validate_secret_naming_policy(data: Mapping[str, object]) -> None:
+    """Require an explicit exact-name policy for executable profiles.
+
+    Args:
+        data: Site profile containing ``secretsConfig``.
+
+    Raises:
+        ExecutableProfileError: If names would be implicitly prefixed or an
+            optional template path could escape the repository.
+    """
+
+    config = mapping(data["secretsConfig"], "secretsConfig")
+    require_keys(config, {"prefixed"}, "secretsConfig")
+    if config["prefixed"] is not False:
+        raise ExecutableProfileError(
+            "Executable profiles require secretsConfig.prefixed=false."
+        )
+    if "template" not in config:
+        return
+    template = text(config["template"], "secretsConfig.template")
+    path = PurePosixPath(template)
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or not re.fullmatch(r"[A-Za-z0-9._/-]+", template)
+    ):
+        raise ExecutableProfileError(
+            "secretsConfig.template must be a safe repository-relative path."
+        )
+
+
 def _validate_protected_identity(
     auth: Mapping[str, object],
     realm: str,
@@ -512,6 +551,13 @@ def _validate_routing(
     validate_https(api_url, "routing.apiBaseUrl")
     validate_domain(routing["domain"], "routing.domain", api_url)
     validate_port(routing["containerPort"], "routing.containerPort")
+    constraint_label = str(
+        routing.get("traefikConstraintLabel", "traefik-public")
+    )
+    if not NAME_PATTERN.fullmatch(constraint_label):
+        raise ExecutableProfileError(
+            "routing.traefikConstraintLabel must be a safe label value."
+        )
     health_path = text(routing["healthPath"], "routing.healthPath")
     if not health_path.startswith("/") or health_path.startswith("/api/"):
         raise ExecutableProfileError(
@@ -575,6 +621,7 @@ def validate_config(data: Mapping[str, object]) -> None:
             "environment",
             "envKeys",
             "secrets",
+            "secretsConfig",
             "secretMounts",
             "health",
         },
@@ -614,6 +661,7 @@ def validate_config(data: Mapping[str, object]) -> None:
             f"cors.origins[{index}]",
         )
     _validate_secret_declarations(data)
+    _validate_secret_naming_policy(data)
     auth = mapping(data.get("auth", {"provider": "none"}), "auth")
     if auth.get("provider") == "keycloak":
         _validate_keycloak_auth(auth)

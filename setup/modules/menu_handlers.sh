@@ -15,8 +15,9 @@
 #   - secret-manager.sh (create_docker_secrets, list_docker_secrets)
 #   - deploy-stack.sh (deploy_stack)
 #   - health-check.sh (check_deployment_health)
+#   - deployment-setup-actions.sh (_deploy_configured_stack,
+#     _check_configured_stack_health)
 #   - stack-conflict-check.sh (check_stack_conflict)
-#   - config-builder.sh (update_env_values)
 # ==============================================================================
 
 # Source formatting helpers
@@ -36,6 +37,18 @@ fi
 if [ -f "${MENU_HANDLERS_DIR}/git_helpers.sh" ]; then
     # shellcheck source=/dev/null
     source "${MENU_HANDLERS_DIR}/git_helpers.sh"
+fi
+
+# Source safe environment/secret restore actions.
+if [ -f "${MENU_HANDLERS_DIR}/menu-restore-actions.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-restore-actions.sh"
+fi
+
+# Source the single shared configuration action.
+if [ -f "${MENU_HANDLERS_DIR}/menu-configuration-actions.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-configuration-actions.sh"
 fi
 
 # _stack_running
@@ -84,27 +97,14 @@ _service_replicas_healthy() {
 # Returns:
 #   0 when secret actions should be shown, 1 when the profile has no secrets.
 _profile_requires_secrets() {
-    if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
-        profile_uses_executable_renderer; then
-        local profile_file=""
-        profile_file="$(_profile_config_file)" || return 1
-        jq -e '
-          (
-            [ .secrets[]?, .optionalSecrets[]? ]
-            | map(select(type == "string" and length > 0))
-            | length
-          ) > 0
-          or
-          (
-            (.capabilities // {})
-            | to_entries
-            | any(
-                .value.enabled == true and
-                ((.value.secretMounts // []) | length > 0)
-              )
-          )
-          or ((.database.pgadminSecret // "") != "")
-        ' "$profile_file" >/dev/null
+    local profile_file=""
+
+    if declare -F _profile_config_file >/dev/null 2>&1; then
+        profile_file="$(_profile_config_file)" || profile_file=""
+    fi
+    if [ -n "$profile_file" ] && [ -f "$profile_file" ] &&
+        declare -F site_profile_declares_secrets >/dev/null 2>&1; then
+        site_profile_declares_secrets "$profile_file"
         return $?
     fi
     if [ "${STACK_FAMILY:-api}" = "nginx" ] || [ "${DB_TYPE:-postgresql}" = "none" ]; then
@@ -137,40 +137,6 @@ _primary_service_suffix() {
     fi
 
     echo "api"
-}
-
-# _primary_service_name
-# Builds the Docker service name for the active profile's primary service.
-#
-# Arguments:
-#   None. Reads STACK_NAME and primary service environment values.
-#
-# Outputs:
-#   Full Docker service name, such as stack_api or stack_nginx.
-#
-# Returns:
-#   0 always.
-_primary_service_name() {
-    echo "${STACK_NAME}_$(_primary_service_suffix)"
-}
-
-# _primary_service_label
-# Builds a human-readable label for primary-service menu text.
-#
-# Arguments:
-#   None. Reads the active primary service suffix.
-#
-# Outputs:
-#   Display label such as API, Nginx, or Service.
-#
-# Returns:
-#   0 always.
-_primary_service_label() {
-    case "$(_primary_service_suffix)" in
-        api) echo "API" ;;
-        nginx) echo "Nginx" ;;
-        *) echo "Service" ;;
-    esac
 }
 
 # _stack_service_names
@@ -220,53 +186,6 @@ _stack_services_healthy() {
     done <<< "$services"
 
     [ "$saw_service" = true ]
-}
-
-# _bump_semver
-# Bumps a semantic version string by level (patch/minor/major).
-# Supports optional "v" prefix (e.g. v1.2.3).
-# Returns empty string when input is not semver-like.
-#
-# Arguments:
-#   $1 - version: current version string
-#   $2 - level: bump level (patch, minor, or major)
-#
-# Returns:
-#   Bumped version string (or empty if invalid)
-_bump_semver() {
-    local version="$1"
-    local level="$2"
-
-    if [ -z "$version" ]; then
-        version="0.0.0"
-    fi
-
-    local prefix=""
-    if [[ "$version" =~ ^[vV] ]]; then
-        prefix="${version:0:1}"
-        version="${version:1}"
-    fi
-
-    if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
-        echo ""
-        return 0
-    fi
-
-    local IFS='.'
-    local major minor patch
-    read -r major minor patch <<< "$version"
-    major="${major:-0}"
-    minor="${minor:-0}"
-    patch="${patch:-0}"
-
-    case "$level" in
-        patch) patch=$((patch + 1)) ;;
-        minor) minor=$((minor + 1)); patch=0 ;;
-        major) major=$((major + 1)); minor=0; patch=0 ;;
-        *) echo ""; return 0 ;;
-    esac
-
-    echo "${prefix}${major}.${minor}.${patch}"
 }
 
 # show_deployment_overview
@@ -352,16 +271,16 @@ show_main_menu() {
         if _profile_requires_secrets; then
             MENU_SETUP_SECRETS=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
-            if ! declare -F profile_uses_executable_renderer >/dev/null 2>&1 ||
-                ! profile_uses_executable_renderer; then
+            if declare -F profile_supports_secret_file_workflow >/dev/null 2>&1 &&
+                profile_supports_secret_file_workflow; then
                 MENU_RESTORE_SECRETS=$MENU_NEXT
                 MENU_NEXT=$((MENU_NEXT+1))
             fi
         fi
         local MENU_SETUP_AUTH=""
         local MENU_KEYCLOAK_BOOTSTRAP=""
-        if declare -F profile_uses_keycloak >/dev/null 2>&1 &&
-            profile_uses_keycloak; then
+        if declare -F profile_supports_keycloak_bootstrap >/dev/null 2>&1 &&
+            profile_supports_keycloak_bootstrap; then
             MENU_KEYCLOAK_BOOTSTRAP=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         elif declare -F setup_auth_provider >/dev/null; then
@@ -388,14 +307,11 @@ show_main_menu() {
         local MENU_BUILD_STACK=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
 
-        local MENU_TOGGLE_ADMIN_UI=""
+        local MENU_CONFIGURE_ADMIN_UI=""
         if [ "$DB_MODE" = "local" ] &&
             [ "$DB_TYPE" != "none" ] &&
-            (
-                ! declare -F profile_uses_executable_renderer >/dev/null 2>&1 ||
-                ! profile_uses_executable_renderer
-            ); then
-            MENU_TOGGLE_ADMIN_UI=$MENU_NEXT
+            [ -n "${APP_ADMIN_UI_TYPE:-}" ]; then
+            MENU_CONFIGURE_ADMIN_UI=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         fi
 
@@ -439,22 +355,12 @@ show_main_menu() {
         echo ""
 
         echo "Management:"
-        echo "  ${MENU_UPDATE_IMAGE}) Update service image"
-        echo "  ${MENU_SCALE}) Scale services"
+        echo "  ${MENU_UPDATE_IMAGE}) Change service image configuration"
+        echo "  ${MENU_SCALE}) Change replica configuration"
         echo "  ${MENU_REMOVE}) Remove deployment"
         echo "  ${MENU_BUILD_STACK}) Rebuild swarm stack"
-        if [ -n "$MENU_TOGGLE_ADMIN_UI" ]; then
-            local admin_ui_label="Enable"
-            local admin_ui_replicas="0"
-            if [ "$DB_TYPE" = "postgresql" ]; then
-                admin_ui_replicas="${PGADMIN_REPLICAS:-0}"
-            elif [ "$DB_TYPE" = "mongodb" ]; then
-                admin_ui_replicas="${MONGO_EXPRESS_REPLICAS:-0}"
-            fi
-            if [ "$admin_ui_replicas" != "0" ]; then
-                admin_ui_label="Disable"
-            fi
-            echo "  ${MENU_TOGGLE_ADMIN_UI}) ${admin_ui_label} Admin UI (${DB_TYPE})"
+        if [ -n "$MENU_CONFIGURE_ADMIN_UI" ]; then
+            echo "  ${MENU_CONFIGURE_ADMIN_UI}) Change database-management configuration"
         fi
         echo "  ${MENU_INSPECT}) Inspect deployment artifacts"
         echo ""
@@ -517,7 +423,7 @@ show_main_menu() {
                 echo "⚠️  swarm-stack.yml not found at project root."
                 echo "   Run 'Rebuild swarm stack' or the setup wizard first."
             else
-                deploy_stack "$STACK_NAME" "$stack_file"
+                _deploy_configured_stack
             fi
             ;;
         ${MENU_ROLLBACK})
@@ -526,7 +432,7 @@ show_main_menu() {
         ${MENU_STATUS})
             echo "🏥 Running deployment health check..."
             echo ""
-            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN"
+            _check_configured_stack_health
             ;;
         ${MENU_LOGS})
             echo "[LOGS] Service Logs"
@@ -572,170 +478,14 @@ show_main_menu() {
             fi
             ;;
         ${MENU_UPDATE_IMAGE})
-            if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
-                profile_uses_executable_renderer; then
-                echo "[INFO] Executable profile image versions are configuration inputs."
-                echo "       Re-run the shared setup wizard to change them, then deploy"
-                echo "       the newly rendered stack from this same menu."
-                continue
-            fi
-            local service_name
-            local service_label
-            service_name="$(_primary_service_name)"
-            service_label="$(_primary_service_label)"
-
-            echo "[IMAGE] Update ${service_label} Image"
-            echo "=============================="
-            echo ""
-            echo "  Current image: $IMAGE_NAME:$IMAGE_VERSION"
-            echo "  Target service: $service_name"
-            echo ""
-
-            local patch_version minor_version major_version
-            patch_version="$(_bump_semver "$IMAGE_VERSION" "patch")"
-            minor_version="$(_bump_semver "$IMAGE_VERSION" "minor")"
-            major_version="$(_bump_semver "$IMAGE_VERSION" "major")"
-
-            echo "Version options:"
-            if [ -n "$patch_version" ] && [ -n "$minor_version" ] && [ -n "$major_version" ]; then
-                echo "  [1] Patch  ($IMAGE_VERSION -> $patch_version)"
-                echo "  [2] Minor  ($IMAGE_VERSION -> $minor_version)"
-                echo "  [3] Major  ($IMAGE_VERSION -> $major_version)"
-                echo "  [4] Enter manually"
-            else
-                echo "  [1] Patch  (unavailable for '$IMAGE_VERSION')"
-                echo "  [2] Minor  (unavailable for '$IMAGE_VERSION')"
-                echo "  [3] Major  (unavailable for '$IMAGE_VERSION')"
-                echo "  [4] Enter manually"
-            fi
-            echo ""
-
-            local default_choice="1"
-            if [ -z "$patch_version" ] || [ -z "$minor_version" ] || [ -z "$major_version" ]; then
-                default_choice="4"
-            fi
-
-            local version_choice
-            if [[ -r /dev/tty ]]; then
-                read -r -p "Choose version option [$default_choice]: " version_choice < /dev/tty
-            else
-                read -r -p "Choose version option [$default_choice]: " version_choice
-            fi
-            version_choice="${version_choice:-$default_choice}"
-
-            local new_version=""
-            case "$version_choice" in
-                1) [ -n "$patch_version" ] && new_version="$patch_version" ;;
-                2) [ -n "$minor_version" ] && new_version="$minor_version" ;;
-                3) [ -n "$major_version" ] && new_version="$major_version" ;;
-                4)
-                    local manual_version
-                    if [[ -r /dev/tty ]]; then
-                        read -r -p "Enter version tag: " manual_version < /dev/tty
-                    else
-                        read -r -p "Enter version tag: " manual_version
-                    fi
-                    new_version="$manual_version"
-                    ;;
-                *) [ -n "$patch_version" ] && new_version="$patch_version" ;;
-            esac
-
-            if [ -z "$new_version" ] || [ "$new_version" = "$IMAGE_VERSION" ]; then
-                echo "Version unchanged."
-                break
-            fi
-
-            echo ""
-            echo "Pulling image: $IMAGE_NAME:$new_version"
-            if docker pull "$IMAGE_NAME:$new_version"; then
-                echo "[OK] Image pulled successfully"
-            else
-                echo "[ERROR] Image pull failed"
-                read -r -p "Continue anyway? (y/N): " continue_anyway
-                if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-                    break
-                fi
-            fi
-
-            echo ""
-            echo "Updating service: $service_name"
-            docker service update --image "$IMAGE_NAME:$new_version" "$service_name"
-
-            if [ -f "$env_file" ]; then
-                update_env_values "$env_file" "IMAGE_VERSION" "$new_version"
-                echo "[OK] Saved IMAGE_VERSION=$new_version to .env"
-            fi
-            IMAGE_VERSION="$new_version"
-
-            echo ""
-            echo "[OK] Service update initiated."
-            echo "Monitor progress with: docker service ps $service_name"
+            _run_shared_reconfiguration \
+                "Change image repositories or versions through the shared wizard." ||
+                true
             ;;
         ${MENU_SCALE})
-            if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
-                profile_uses_executable_renderer; then
-                echo "[INFO] Executable profile replica counts are configuration inputs."
-                echo "       Re-run the shared setup wizard to change them, then deploy"
-                echo "       the newly rendered stack from this same menu."
-                continue
-            fi
-            echo "[SCALE] Scale Services"
-            echo ""
-
-            local services
-            services="$(_stack_service_names "$STACK_NAME")"
-            if [ -z "$services" ]; then
-                echo "No services found for stack: $STACK_NAME"
-                break
-            fi
-
-            echo "Which service do you want to scale?"
-            local index=1
-            while IFS= read -r svc; do
-                [ -z "$svc" ] && continue
-                echo "${index}) ${svc}"
-                index=$((index + 1))
-            done <<< "$services"
-            echo ""
-
-            local scale_choice
-            if [[ -r /dev/tty ]]; then
-                read -r -p "Your choice (1-$((index - 1))): " scale_choice < /dev/tty
-            else
-                read -r -p "Your choice (1-$((index - 1))): " scale_choice
-            fi
-
-            if ! [[ "$scale_choice" =~ ^[0-9]+$ ]] || [ "$scale_choice" -lt 1 ] || [ "$scale_choice" -ge "$index" ]; then
-                echo "Invalid choice"
-                break
-            fi
-
-            local selected_service
-            selected_service=$(printf '%s\n' "$services" | sed -n "${scale_choice}p")
-
-            local replicas
-            if [[ -r /dev/tty ]]; then
-                read -r -p "Number of replicas: " replicas < /dev/tty
-            else
-                read -r -p "Number of replicas: " replicas
-            fi
-
-            if ! [[ "$replicas" =~ ^[0-9]+$ ]]; then
-                echo "Invalid replica count"
-                break
-            fi
-
-            docker service scale "${selected_service}=$replicas"
-
-            if [ "$selected_service" = "$(_primary_service_name)" ] && [ -f "$env_file" ]; then
-                if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
-                    update_env_values "$env_file" "NGINX_REPLICAS" "$replicas"
-                    echo "Saved NGINX_REPLICAS=$replicas to .env"
-                else
-                    update_env_values "$env_file" "API_REPLICAS" "$replicas"
-                    echo "Saved API_REPLICAS=$replicas to .env"
-                fi
-            fi
+            _run_shared_reconfiguration \
+                "Change service replica counts through the shared wizard." ||
+                true
             ;;
         ${MENU_REMOVE})
             echo "🗑️  Remove Deployment"
@@ -760,103 +510,16 @@ show_main_menu() {
             fi
             ;;
         ${MENU_SETUP_WIZARD})
-            echo "🔄 Re-running setup wizard..."
-            echo ""
-            "${PROJECT_ROOT:-.}/setup/setup-wizard.sh"
-            # Reload .env after wizard
-            load_root_env "${PROJECT_ROOT:-.}"
+            _run_shared_reconfiguration "Re-run deployment setup." || true
             ;;
         ${MENU_SETUP_SECRETS})
             manage_docker_secrets_menu
             ;;
         ${MENU_RESTORE_ENV})
-            echo "📁 Quick Restore from Saved .env"
-            echo "==================================="
-            echo ""
-            echo "This restores your deployment configuration from a saved .env file."
-            echo "The saved .env file will be copied to the project root."
-            echo ""
-
-            local saved_env_path=""
-            read -p "Path to saved .env file: " saved_env_path
-
-            if [ -z "$saved_env_path" ]; then
-                echo "❌ No path provided. Skipping."
-            elif [ ! -f "$saved_env_path" ]; then
-                echo "❌ File not found: $saved_env_path"
-            else
-                # Backup existing .env if present
-                if [ -f "$env_file" ]; then
-                    local backup_name="${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
-                    cp "$env_file" "$backup_name"
-                    echo "📦 Backed up existing .env to: $backup_name"
-                fi
-
-                cp "$saved_env_path" "$env_file"
-                echo "✅ Restored .env from: $saved_env_path"
-                echo ""
-                echo "Next steps:"
-                echo "  1) Rebuild swarm-stack.yml:  ${MENU_BUILD_STACK}) Rebuild swarm-stack.yml"
-                if _profile_requires_secrets; then
-                    echo "  2) Restore secrets (if saved): ${MENU_RESTORE_SECRETS}) Restore from secrets.env"
-                    echo "  3) Deploy:                   ${MENU_DEPLOY}) Deploy to Docker Swarm"
-                else
-                    echo "  2) Deploy:                   ${MENU_DEPLOY}) Deploy to Docker Swarm"
-                fi
-                echo ""
-
-                # Reload the environment
-                load_root_env "${PROJECT_ROOT:-.}"
-            fi
+            restore_deployment_environment "${PROJECT_ROOT:-.}" || true
             ;;
         ${MENU_RESTORE_SECRETS})
-            echo "🔐 Quick Restore from Saved secrets.env"
-            echo "========================================"
-            echo ""
-            echo "This creates Docker secrets from a saved secrets.env file."
-            echo "WARNING: The stack must be stopped before updating secrets."
-            echo ""
-
-            local saved_secrets_path=""
-            read -p "Path to saved secrets.env file: " saved_secrets_path
-
-            if [ -z "$saved_secrets_path" ]; then
-                echo "❌ No path provided. Skipping."
-            elif [ ! -f "$saved_secrets_path" ]; then
-                echo "❌ File not found: $saved_secrets_path"
-            else
-                # Derive prefix
-                local prefix_upper
-                prefix_upper=$(echo "${SECRET_PREFIX:-$STACK_NAME}" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
-
-                # Check for running stack
-                if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
-                    echo "⚠️  WARNING: Stack '$STACK_NAME' is currently running!"
-                    echo ""
-                    read -r -p "Remove stack before creating secrets? (y/N): " REMOVE_STACK
-
-                    if [[ "$REMOVE_STACK" =~ ^[Yy]$ ]]; then
-                        echo ""
-                        echo "Removing stack: $STACK_NAME"
-                        docker stack rm "$STACK_NAME"
-
-                        echo "Waiting for stack to be fully removed..."
-                        while docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; do
-                            echo -n "."
-                            sleep 2
-                        done
-                        echo ""
-                        echo "✅ Stack removed"
-                        echo ""
-
-                        create_secrets_from_env_file "$saved_secrets_path" "${SCRIPT_DIR}/templates/secrets.env.template" "$prefix_upper"
-                    else
-                        echo "⚠️  Secret creation cancelled. Stop the stack first."
-                    fi
-                else
-                    create_secrets_from_env_file "$saved_secrets_path" "${SCRIPT_DIR}/templates/secrets.env.template" "$prefix_upper"
-                fi
-            fi
+            restore_profile_secrets "$STACK_NAME" || true
             ;;
         ${MENU_BUILD_STACK})
             echo "[BUILD] Rebuilding swarm-stack.yml..."
@@ -869,38 +532,10 @@ show_main_menu() {
                 echo "   Expected at: $build_script"
             fi
             ;;
-        ${MENU_TOGGLE_ADMIN_UI})
-            if [ "$DB_TYPE" = "postgresql" ]; then
-                local current_replicas="${PGADMIN_REPLICAS:-0}"
-                local target_replicas=1
-                if [ "$current_replicas" != "0" ]; then
-                    target_replicas=0
-                fi
-                docker service scale "${STACK_NAME}_pgadmin=$target_replicas"
-                update_env_values "$env_file" "PGADMIN_REPLICAS" "$target_replicas"
-                if [ "$target_replicas" -eq 1 ]; then
-                    local pgadmin_login="${PGADMIN_EMAIL:-admin@example.com}"
-                    echo "✅ pgAdmin enabled. Access at: ${PGADMIN_URL}"
-                    echo "   Login: ${pgadmin_login} / (from secret ${SECRET_PREFIX}_db_ui_admin_password)"
-                else
-                    echo "✅ pgAdmin disabled (replicas=0)"
-                fi
-            elif [ "$DB_TYPE" = "mongodb" ]; then
-                local current_replicas="${MONGO_EXPRESS_REPLICAS:-0}"
-                local target_replicas=1
-                if [ "$current_replicas" != "0" ]; then
-                    target_replicas=0
-                fi
-                docker service scale "${STACK_NAME}_mongo-express=$target_replicas"
-                update_env_values "$env_file" "MONGO_EXPRESS_REPLICAS" "$target_replicas"
-                if [ "$target_replicas" -eq 1 ]; then
-                    local mongo_user="${MONGO_EXPRESS_USERNAME:-dbadmin}"
-                    echo "✅ Mongo Express enabled. Access at: ${MONGO_EXPRESS_URL}"
-                    echo "   Login: ${mongo_user} / (from secret ${SECRET_PREFIX}_db_ui_admin_password)"
-                else
-                    echo "✅ Mongo Express disabled (replicas=0)"
-                fi
-            fi
+        ${MENU_CONFIGURE_ADMIN_UI})
+            _run_shared_reconfiguration \
+                "Change database-management settings through the shared wizard." ||
+                true
             ;;
         ${MENU_INSPECT})
             echo ""

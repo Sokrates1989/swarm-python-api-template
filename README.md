@@ -6,14 +6,17 @@ Docker Swarm deployment management for Python API and full-stack services.
 
 Production setup is menu-driven and site-config-driven. Start
 `./quick-start.sh`, choose **Run setup wizard**, and select a profile. The
-wizard asks only for operator-owned values, atomically writes the ignored
-public root `.env`, and renders `swarm-stack.yml`; passwords and client
-secrets are never stored there.
+wizard uses one numbered dialogue for every profile, writes the ignored public
+root `.env`, and renders `swarm-stack.yml`; passwords and client secrets are
+never stored there.
 
-Application differences belong only in `site-configs/<profile>.json`. Setup,
-rendering, secrets, Keycloak, deployment, health, logs, and rollback must not
-branch on application identity. An optional WebApp is declared with
-`services.web: true`, just like database and Redis services.
+`site-configs/<profile>.json` is the only application-specific dispatch and
+capability boundary. Setup, rendering, secrets, Keycloak, deployment, health,
+logs, and rollback must not branch on application identity. A profile can
+reference safe repository-relative Compose assets when a specialized topology
+needs them, but shared orchestration code still routes only through profile
+data. An optional WebApp is declared with `services.web: true`, just like
+database and Redis services.
 
 Tracked `.env.example` documents public schema fields. Operators do not copy
 it and do not create a second `prod.env`. Re-running the setup wizard can
@@ -35,7 +38,7 @@ deployment instance needs by default (backend app, database type, services,
 image name, secret keys). These are development-time defaults committed to the
 repo. The setup wizard reads them to provide sensible defaults.
 
-For example, `site-configs/felix.json` declares one `felix-new` stack with
+For example, `site-configs/felix.json` declares one `felix` stack with
 WebApp, backend API, Redis, selected PostgreSQL mode, and optional pgAdmin.
 The same executable renderer supports a differently named app with the same
 capabilities. Production Keycloak remains a separate existing platform stack;
@@ -99,11 +102,18 @@ This allows quick restoration of a deployment from a backed-up `.env` file.
 The wizard:
 
 1. Lets you select which **deployment profile** to use (from `site-configs/`).
-2. Asks for deployment-time values: domain, stack name, proxy, SSL, image
-   version, secret prefix, data root path.
-3. Generates the root `.env`.
-4. Builds root `swarm-stack.yml` from compose modules.
-5. Offers final actions: create data dirs, create secrets, deploy.
+2. Uses the same numbered sections for every applicable stack name, database,
+   proxy, TLS, Traefik network, service image, tag, replica, memory, port, and
+   storage choice.
+3. Adds or skips questions only from profile capabilities such as an internal
+   service, WebApp, database management, redirector, or Keycloak.
+4. Generates the root `.env`, then selects the legacy compatibility or
+   executable renderer adapter.
+5. Builds root `swarm-stack.yml` and offers one shared final-action menu.
+
+Renderer type never selects a second wizard. Site configs provide defaults and
+allowed capabilities; the operator can change deployment-instance values such
+as stack name, domains, image repositories, versions, replicas, and ports.
 
 ## Operations Menu
 
@@ -118,14 +128,15 @@ The Felix hand-off is documented in
 
 - **Re-run setup wizard** — reconfigure this deployment.
 - **Manage Docker secrets** — create/list/validate secrets (interactively or from file).
-- **Quick restore from saved .env** — restore deployment config from a backed-up `.env` file.
+- **Quick restore from saved .env** — validate the saved profile and immediately
+  rebuild its matching stack artifact.
 - **Quick restore from saved secrets.env** — restore Docker secrets from a backed-up `secrets.env` file.
 - **Deploy to Swarm** — deploy `swarm-stack.yml`.
 - **Rollback services** — restore Docker's retained previous service specs.
 - **Check status** — health check the running stack.
 - **View logs** — tail API, database, or Redis logs.
-- **Update image** — pull and rolling-update the API service.
-- **Scale services** — adjust replica counts.
+- **Change service images** — reopen the same setup dialogue for image versions.
+- **Change replicas** — reopen the same setup dialogue for replica counts.
 - **Remove deployment** — tear down the stack.
 - **Rebuild swarm stack** — regenerate `swarm-stack.yml` from compose modules.
 - **Inspect artifacts** — display `.env` and stack file status.
@@ -138,15 +149,24 @@ quick-start.sh                     ← main entry point
 setup/
   setup-wizard.sh                  ← deployment configuration wizard
   modules/
-    site_helpers.sh                ← deployment profile loading, root .env parsing
+    site_helpers.sh                ← profile loading and root .env parsing
+    deployment-profile-prompts.sh  ← numbered choice/value primitives
+    deployment-profile-inputs.sh   ← single capability-driven dialogue
+    deployment-profile-routing.sh  ← proxy, TLS, network, and port section
+    deployment-profile-services.sh ← service, resource, and storage section
+    legacy-profile-environment.sh  ← version-3 environment adapter
+    executable-profile-wizard.sh   ← prompt-free version-5 adapter
+    deployment-setup-actions.sh    ← shared final-action menu
     menu_handlers.sh               ← operations menu
-    user-prompts.sh                ← interactive input functions
-    config-builder.sh              ← env update utilities
-    secret-manager.sh              ← Docker secret management (including secrets.env workflow)
-    secrets_template_sync.sh       ← secrets.env template synchronization
-    data-dirs.sh                   ← data directory creation
-    deploy-stack.sh                ← stack deployment
-    health-check.sh                ← deployment health checks
+    menu-configuration-actions.sh  ← shared reconfiguration and reload
+    menu-restore-actions.sh        ← validated restore and immediate render
+    config-builder.sh              ← compose-module rendering utilities
+    admin-ui-compose.sh            ← profile-selected DB admin adapter
+    docker-secrets-menu.sh         ← profile-driven Docker secret actions
+    profile-secret-file-workflow.sh ← allowlisted batch secret import
+    keycloak-bootstrap.sh          ← existing-server reconciliation adapter
+    deploy-stack.sh                ← deployment and rollback
+    health-check.sh                ← profile-driven deployment checks
   compose-modules/
     api.yml                        ← API service compose fragment
     redis.yml                      ← Redis compose fragment
@@ -169,7 +189,7 @@ old/
   deprecated-windows-server-deploy-scripts/  ← archived PowerShell scripts
 ```
 
-## Compatibility deployment profiles (v3)
+## Compatibility deployment profiles (versions 3.0 and 3.1)
 
 Each `site-configs/<profileId>.json` describes what a deployment profile
 **needs by default**:
@@ -188,15 +208,20 @@ Each `site-configs/<profileId>.json` describes what a deployment profile
 | `secrets` | List of required Docker secret key names |
 | `envKeys` | List of required environment variable keys |
 
-## Default executable deployment profiles (v5)
+Version 3.1 is an additive compatibility revision used by profiles that need
+exposure/routing metadata or profile-selected complete Compose assets. Version
+3.0 and 3.1 both use the shared dialogue and the compatibility environment and
+compose-module adapters.
 
-Schema 5 adds an exact full-stack contract:
+## Default executable deployment profiles (version 5.0)
+
+Version 5.0 adds a strict full-stack contract:
 
 | Field | Description |
 |-------|-------------|
 | `renderer.type` | `executable` selects the shared deterministic renderer |
 | `stack` | Stack name, family, role, and primary service |
-| `routing` / `exposure` | API/WebApp hosts, health paths, direct ports, and Traefik network/resolver |
+| `routing` / `exposure` | API/WebApp hosts, health paths, direct ports, and distinct Traefik network/provider-label/resolver defaults |
 | `services.web` | Adds the optional WebApp service when true |
 | `web` | WebApp image, version, replicas, and memory |
 | `auth` | Keycloak identity, callbacks, protected legacy values, and service-account roles |
@@ -209,8 +234,17 @@ copying `_template.json` to a schema-5 profile and replacing only its data.
 Keycloak protected identity and service-account roles, the Traefik certificate
 resolver, direct service ports, and optional pgAdmin are also profile fields.
 
-Deployment-time values (domain, proxy, SSL, actual image version, secret
-prefix) are **NOT** stored here — they go into `.env`.
+Site configs store safe defaults and allowed capabilities. Final
+deployment-instance selections such as domain, proxy, SSL ownership, image
+repository/version, replicas, ports, storage, and any compatibility secret
+prefix are written to the ignored root `.env`; changing `.env` never changes
+the tracked profile defaults.
+
+There is no schema version 4 in this repository. Version 5.0 was introduced as
+the strict executable full-stack contract and deliberately uses a new major
+number to distinguish it from the compatibility profile family. The schema
+families and their current fields are documented in
+[`site-configs/README.md`](site-configs/README.md).
 
 ## Secrets Convention
 
@@ -293,15 +327,16 @@ Or use the setup wizard's fast mode which auto-detects existing `.env`:
 # → Select option 1: "Use existing .env values and skip prompts"
 ```
 
-## Deploy Manually
+## Build and deploy
 
 ```bash
-# Build the stack
-./scripts/build-site-stack.sh
-
-# Deploy
-docker stack deploy -c swarm-stack.yml <STACK_NAME>
+./quick-start.sh
 ```
+
+Use the numbered build/deploy action. It parses `.env` as dotenv data, verifies
+required secrets, updates an existing stack in place, and runs acceptance
+health checks. The raw console deployment path is intentionally not the normal
+operator workflow.
 
 ## Troubleshooting
 

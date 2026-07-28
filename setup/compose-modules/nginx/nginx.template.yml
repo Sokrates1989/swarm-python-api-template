@@ -9,6 +9,9 @@
     deploy:
       mode: replicated
       replicas: ${NGINX_REPLICAS:-1}
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT}
       update_config:
         parallelism: 1
         delay: 10s

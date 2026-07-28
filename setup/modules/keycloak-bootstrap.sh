@@ -87,6 +87,19 @@ profile_uses_executable_renderer() {
     [ "$(_profile_json_value '.renderer.type' 'generic')" = "executable" ]
 }
 
+# profile_supports_keycloak_bootstrap
+# Checks whether the selected profile declares both Keycloak identity and the
+# strict profile contract consumed by the reconciliation adapter.
+#
+# Arguments:
+#   None.
+#
+# Returns:
+#   0 only when the shared bootstrap can execute for the selected profile.
+profile_supports_keycloak_bootstrap() {
+    profile_uses_keycloak && profile_uses_executable_renderer
+}
+
 # _profile_keycloak_python
 # Resolves the Python 3 command required by the reconciliation adapter.
 #
@@ -220,12 +233,8 @@ run_profile_keycloak_bootstrap() {
     local admin_user="admin"
     local proceed=""
 
-    if ! profile_uses_executable_renderer; then
-        echo "[ERROR] Keycloak bootstrap requires an executable site profile."
-        return 1
-    fi
-    if ! profile_uses_keycloak; then
-        echo "[INFO] The selected site profile does not use Keycloak."
+    if ! profile_supports_keycloak_bootstrap; then
+        echo "[INFO] The selected profile does not declare supported Keycloak bootstrap."
         return 1
     fi
     python_command="$(_profile_keycloak_python)" || {
@@ -261,7 +270,7 @@ run_profile_keycloak_secret_rotation() {
     local admin_user="admin"
     local confirmation=""
 
-    if ! profile_uses_keycloak || ! profile_uses_executable_renderer; then
+    if ! profile_supports_keycloak_bootstrap; then
         echo "[ERROR] The selected profile has no executable Keycloak contract."
         return 1
     fi

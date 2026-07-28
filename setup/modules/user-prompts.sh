@@ -159,7 +159,37 @@ prompt_data_root() {
     echo "${DATA_ROOT:-$default_path}"
 }
 
+# ------------------------------------------------------------------------------
+# _swarm_overlay_network_is_usable
+# ------------------------------------------------------------------------------
+# Verifies that a Docker network is a non-ingress Swarm overlay suitable for
+# attaching both Traefik and an application stack.
+#
+# Arguments:
+#   $1 - Existing Docker network name.
+#
+# Returns:
+#   0 only for a Swarm-scoped overlay network that is not Docker's ingress
+#   network; otherwise 1.
+_swarm_overlay_network_is_usable() {
+    local network_name="$1"
+    local network_metadata=""
+
+    network_metadata=$(docker network inspect \
+        --format '{{.Driver}}|{{.Scope}}|{{.Ingress}}' \
+        "$network_name" 2>/dev/null) || return 1
+    [ "$network_metadata" = "overlay|swarm|false" ]
+}
+
+# Lists real Swarm overlay networks and returns the operator-selected network.
+#
+# Arguments:
+#   $1 - Optional preferred network from the selected profile or existing .env.
+#
+# Returns:
+#   Prints the selected network and returns 0, or returns 1 when cancelled.
 prompt_traefik_network() {
+    local configured_default="${1:-}"
     local network_name=""
     local network_selected=false
     
@@ -172,8 +202,18 @@ prompt_traefik_network() {
         echo "Do NOT create a new network here unless you will also reconfigure Traefik to use it." >&2
         echo "" >&2
         
-        # Get overlay networks
-        local networks=($(docker network ls --filter driver=overlay --format "{{.Name}}" 2>/dev/null))
+        # Get usable application-facing Swarm overlay networks. Docker's
+        # built-in ingress network is intentionally excluded.
+        local networks=()
+        local candidate_network=""
+        while IFS= read -r candidate_network; do
+            [ -n "$candidate_network" ] || continue
+            if _swarm_overlay_network_is_usable "$candidate_network"; then
+                networks+=("$candidate_network")
+            fi
+        done < <(docker network ls \
+            --filter driver=overlay \
+            --format "{{.Name}}" 2>/dev/null)
         
         if [ ${#networks[@]} -eq 0 ]; then
             echo "❌ No overlay networks found" >&2
@@ -188,7 +228,10 @@ prompt_traefik_network() {
             
             case $CHOICE in
                 1)
-                    docker network create --driver=overlay traefik
+                    docker network create \
+                        --driver=overlay \
+                        --attachable \
+                        traefik
                     if [ $? -eq 0 ]; then
                         echo "✅ Created network 'traefik'" >&2
                         network_name="traefik"
@@ -199,8 +242,10 @@ prompt_traefik_network() {
                     ;;
                 2)
                     read -p "Network name: " network_name
-                    if [ -n "$network_name" ]; then
+                    if _swarm_overlay_network_is_usable "$network_name"; then
                         network_selected=true
+                    else
+                        echo "The network must already exist as a non-ingress Swarm overlay." >&2
                     fi
                     ;;
                 3) return 1 ;;
@@ -209,8 +254,9 @@ prompt_traefik_network() {
             # Auto-detect common Traefik network names and set a better default selection.
             local default_selection="1"
             local detected_network=""
-            local preferred_networks=("traefik-public" "traefik_public" "traefik")
+            local preferred_networks=("$configured_default" "traefik-public" "traefik_public" "traefik")
             for preferred in "${preferred_networks[@]}"; do
+                [ -n "$preferred" ] || continue
                 local idx=0
                 for net in "${networks[@]}"; do
                     if [ "$net" = "$preferred" ]; then
@@ -250,7 +296,10 @@ prompt_traefik_network() {
                 if [ "$SELECTION" -eq 0 ]; then
                     read -p "New network name: " network_name
                     if [ -n "$network_name" ]; then
-                        docker network create --driver=overlay "$network_name"
+                        docker network create \
+                            --driver=overlay \
+                            --attachable \
+                            "$network_name"
                         if [ $? -eq 0 ]; then
                             echo "✅ Created network '$network_name'" >&2
                             network_selected=true
@@ -267,7 +316,7 @@ prompt_traefik_network() {
                 fi
             else
                 # Treat as network name
-                if docker network inspect "$SELECTION" &>/dev/null; then
+                if _swarm_overlay_network_is_usable "$SELECTION"; then
                     network_name="$SELECTION"
                     echo "✅ Selected: $network_name" >&2
                     network_selected=true

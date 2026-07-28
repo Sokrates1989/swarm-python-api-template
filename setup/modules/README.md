@@ -1,8 +1,9 @@
 # Setup modules
 
 These modules implement the reusable setup and operations menu. The
-PowerShell launcher enters the authoritative Bash workflow through WSL, so
-menu-only modules can be Bash-only.
+authoritative production workflow is Bash on the Linux Swarm host. Use WSL
+when this flow needs to be inspected from Windows; archived native PowerShell
+deployment scripts are not maintained.
 
 ## Architectural invariant
 
@@ -13,11 +14,13 @@ through schema and capability fields.
 
 In particular:
 
-- `renderer.type` selects the rendering strategy;
+- `renderer.type` selects the persistence/rendering strategy only after the
+  shared dialogue;
 - `services` selects API, WebApp, Redis, and database services;
 - `database` selects engine, local/external mode, images, and optional admin
   UI;
-- `routing` and `exposure` select Traefik network/resolver or direct ports;
+- `routing` and `exposure` select the Traefik overlay network, provider
+  constraint label, resolver, or direct ports;
 - `auth.provider` controls authentication actions;
 - `auth` contains Keycloak identity, protected legacy values, and exact
   service-account client roles;
@@ -35,22 +38,37 @@ Felix therefore uses no special module. Its WebApp is simply
 Discovers profiles, loads selected JSON metadata, and reloads public root
 `.env` values for the menu.
 
-### `executable-profile-wizard.sh`
+### `deployment-profile-prompts.sh`
 
-Runs the common schema-5 setup:
+Owns the numbered choice and validated free-text primitives. Enum and boolean
+profile values never fall back to renderer-specific raw text prompts.
 
-1. displays profile-owned identity;
-2. collects operator-owned database, proxy/TLS, image version, resource,
-   storage, WebApp, and optional pgAdmin values;
-3. calls `scripts/site_profile.py` to atomically write root `.env`;
-4. renders and Compose-validates `swarm-stack.yml`; and
-5. offers data-directory, Docker-secret, and Keycloak actions.
+### `deployment-profile-inputs.sh`
 
-It never deploys automatically and never reads a secret value.
+Runs the only deployment dialogue. It normalizes profile defaults and existing
+`.env` values, then collects applicable stack, domain, database, proxy/TLS,
+Traefik network, service image/tag/replica/memory/port, storage, admin-service,
+internal-network, and redirector values.
+
+`deployment-profile-routing.sh` and `deployment-profile-services.sh` contain
+the larger capability sections while remaining part of this one dialogue.
+
+### Persistence and renderer adapters
+
+`legacy-profile-environment.sh` writes the schema-3 compatibility environment.
+`executable-profile-wizard.sh` is now a prompt-free schema-5 persistence and
+render adapter. Both consume the same normalized answers. The latter calls
+`scripts/site_profile.py` for strict validation and deterministic rendering.
+
+### `deployment-setup-actions.sh`
+
+Owns one dynamically numbered final-action menu. Docker secrets and Keycloak
+actions appear only when the profile declares those capabilities.
 
 ### `keycloak-bootstrap.sh`
 
-Exposes realm bootstrap only when `auth.provider=keycloak`. It calls
+Exposes realm bootstrap only when a strict executable profile declares
+`auth.provider=keycloak`. It calls
 `scripts/keycloak_profile_bootstrap.py`, which updates the existing Keycloak
 server through its Admin API. Realm, clients, callback URIs, browser origins,
 audience, protected identity, service-account client roles, and Docker secret
@@ -65,13 +83,22 @@ exact declared Docker secret.
 
 ### `docker-secrets-menu.sh`
 
-For executable profiles, lists and manages exact profile-declared required,
-optional, enabled-capability, and enabled-pgAdmin secrets. Keycloak client
-secrets cannot be entered manually; that action routes to the shared Keycloak
-bootstrap.
+Profiles with `secretsConfig.prefixed=false` use exact declared required,
+optional, enabled-capability, and enabled-pgAdmin names. A declared
+`secretsConfig.template` also enables batch creation through `secrets.env`.
+Keycloak client secrets cannot be entered manually; that action routes to the
+shared Keycloak bootstrap.
 
-Older schema profiles retain the historical prefixed-secret flow while they
-are migrated. This compatibility distinction is schema-driven, not app-driven.
+Profiles that keep `secretsConfig.prefixed=true` use the historical prefix
+adapter. Secret routing is profile-policy-driven, never schema-, renderer-, or
+application-driven.
+
+### `profile-secret-file-workflow.sh`
+
+Resolves the profile-owned batch template and passes an active secret-name
+allowlist to the shared importer. Edited exact-name files cannot create Docker
+secrets that are absent from the selected profile. Keycloak client credentials
+are excluded and remain bootstrap/rotation-only.
 
 ### `deploy-stack.sh`
 
@@ -96,11 +123,24 @@ Builds menu choices dynamically from the active profile. Keycloak, secrets,
 database UI, render, deploy, status, logs, and rollback actions use the same
 functions for every app.
 
+### `menu-configuration-actions.sh`
+
+Routes image, replica, database-management, and general configuration changes
+through the one shared wizard. It reloads generated public values even when a
+later post-configuration action reports failure.
+
+### `menu-restore-actions.sh`
+
+Restores public `.env` data transactionally and immediately rebuilds the
+matching stack artifact. Saved secret files remain constrained by the selected
+profile's exact/prefixed naming policy.
+
 ### Legacy-compatible modules
 
-`user-prompts`, `config-builder`, `network-check`, `data-dirs`,
-`secret-manager`, `secrets_template_sync`, and compose modules continue to
-serve schema-3 profiles. New profile-specific branches are forbidden.
+`user-prompts` retains real Traefik overlay discovery, while
+`config-builder`, `admin-ui-compose`, `network-check`, `data-dirs`, `secret-manager`,
+`secrets_template_sync`, and compose modules continue to serve schema-3
+profiles. New profile-specific branches are forbidden.
 
 ## Dependency outline
 
@@ -116,12 +156,16 @@ quick-start
 
 setup-wizard
 ├── site_helpers
+├── deployment-profile-prompts
+├── deployment-profile-routing
+├── deployment-profile-services
+├── deployment-profile-inputs
+├── legacy-profile-environment
 ├── executable-profile-wizard
-│   ├── scripts/site_profile.py
-│   ├── data-dirs
-│   ├── docker-secrets-menu
-│   └── keycloak-bootstrap
-└── legacy schema modules
+│   └── scripts/site_profile.py
+├── deployment-setup-actions
+├── docker-secrets-menu
+└── keycloak-bootstrap
 ```
 
 ## Adding an application capability

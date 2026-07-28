@@ -14,6 +14,7 @@
   },
   "adminUI": {
     "type": "pgadmin",
+    "secret": "DB_UI_ADMIN_PASSWORD",
     "defaultDomainPrefix": "admin",
     "defaultReplicas": 0,
     "configurableReplicas": false

@@ -34,6 +34,7 @@
     "webPublishedPort": 8084,
     "pgadminPublishedPort": 5054,
     "traefikNetwork": "traefik-public",
+    "traefikConstraintLabel": "traefik-public",
     "traefikCertResolver": "le",
     "sslMode": "proxy"
   },
@@ -46,7 +47,7 @@
     ],
     "image": "postgres@sha256:79c06d285ed9186efbbc45c73413b3c3510c3c94ffede2f25d1e523f74d07f28",
     "pgadminImage": "dpage/pgadmin4@sha256:cefc4cc6b7d9d71a9e81e76fb9d7e14038ab5661b539a190eea1b63fa612589a",
-    "pgadminSecret": "FELIX_NEW_PGADMIN_PASSWORD"
+    "pgadminSecret": "FELIX_PGADMIN_PASSWORD"
   },
   "services": {
     "web": true,
@@ -79,6 +80,9 @@
   "storage": {
     "dataRoot": "/swarm/volumes/felix"
   },
+  "secretsConfig": {
+    "prefixed": false
+  },
   "pgadmin": {
     "enabled": false,
     "domain": "pgadmin.felix-app.fe-wi.com",
@@ -92,12 +96,12 @@
   "auth": {
     "provider": "keycloak",
     "serverUrl": "https://keycloak.fe-wi.com",
-    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix",
-    "jwksUrl": "https://keycloak.fe-wi.com/realms/felix/protocol/openid-connect/certs",
-    "realm": "felix",
-    "frontendClientId": "felix-frontend",
-    "audience": "felix-backend",
-    "adminClientId": "felix-backend",
+    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
+    "jwksUrl": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
+    "realm": "felix-new",
+    "frontendClientId": "felix-new-frontend",
+    "audience": "felix-new-backend",
+    "adminClientId": "felix-new-backend",
     "redirectUris": [
       "https://felix-app.fe-wi.com/auth/callback",
       "felixkc:/callback"
@@ -139,13 +143,13 @@
     "CORS_ORIGINS": "https://felix-app.fe-wi.com",
     "AUTH_PROVIDER": "keycloak",
     "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
-    "KEYCLOAK_REALM": "felix",
-    "KEYCLOAK_CLIENT_ID": "felix-frontend",
-    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix",
-    "KEYCLOAK_JWKS_URL": "https://keycloak.fe-wi.com/realms/felix/protocol/openid-connect/certs",
+    "KEYCLOAK_REALM": "felix-new",
+    "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
+    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
+    "KEYCLOAK_JWKS_URL": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
     "KEYCLOAK_ENFORCE_AUDIENCE": "true",
-    "KEYCLOAK_AUDIENCE": "felix-backend",
-    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-backend",
+    "KEYCLOAK_AUDIENCE": "felix-new-backend",
+    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
     "DEBUG": "false",
     "DEBUG_ENABLED": "false",
     "SQL_ECHO_ENABLED": "false",
@@ -198,24 +202,24 @@
     "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
   ],
   "secrets": [
-    "FELIX_NEW_DB_PASSWORD",
-    "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"
+    "FELIX_DB_PASSWORD",
+    "FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET"
   ],
   "optionalSecrets": [
-    "FELIX_NEW_AI_CHAT_API_KEY",
-    "FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY",
-    "FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY"
+    "FELIX_AI_CHAT_API_KEY",
+    "FELIX_WEB_PUSH_VAPID_PUBLIC_KEY",
+    "FELIX_WEB_PUSH_VAPID_PRIVATE_KEY"
   ],
   "secretMounts": [
     {
-      "name": "FELIX_NEW_DB_PASSWORD",
+      "name": "FELIX_DB_PASSWORD",
       "envKey": "DB_PASSWORD_FILE",
-      "target": "/run/secrets/FELIX_NEW_DB_PASSWORD"
+      "target": "/run/secrets/FELIX_DB_PASSWORD"
     },
     {
-      "name": "FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET",
+      "name": "FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET",
       "envKey": "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE",
-      "target": "/run/secrets/FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET"
+      "target": "/run/secrets/FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET"
     }
   ],
   "capabilities": {
@@ -227,9 +231,9 @@
       },
       "secretMounts": [
         {
-          "name": "FELIX_NEW_AI_CHAT_API_KEY",
+          "name": "FELIX_AI_CHAT_API_KEY",
           "envKey": "AI_CHAT_API_KEY_FILE",
-          "target": "/run/secrets/FELIX_NEW_AI_CHAT_API_KEY"
+          "target": "/run/secrets/FELIX_AI_CHAT_API_KEY"
         }
       ]
     },
@@ -241,14 +245,14 @@
       },
       "secretMounts": [
         {
-          "name": "FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY",
+          "name": "FELIX_WEB_PUSH_VAPID_PUBLIC_KEY",
           "envKey": "WEB_PUSH_VAPID_PUBLIC_KEY_FILE",
-          "target": "/run/secrets/FELIX_NEW_WEB_PUSH_VAPID_PUBLIC_KEY"
+          "target": "/run/secrets/FELIX_WEB_PUSH_VAPID_PUBLIC_KEY"
         },
         {
-          "name": "FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY",
+          "name": "FELIX_WEB_PUSH_VAPID_PRIVATE_KEY",
           "envKey": "WEB_PUSH_VAPID_PRIVATE_KEY_FILE",
-          "target": "/run/secrets/FELIX_NEW_WEB_PUSH_VAPID_PRIVATE_KEY"
+          "target": "/run/secrets/FELIX_WEB_PUSH_VAPID_PRIVATE_KEY"
         }
       ]
     }

@@ -1,0 +1,12 @@
+# Database-management labels when Traefik owns the public TLS certificate.
+# Service routing tokens are resolved by the shared service-type adapter.
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL}
+        - traefik.docker.network=${TRAEFIK_NETWORK}
+        - traefik.http.routers.${STACK_NAME}_XXX_ADMIN_SUFFIX.service=${STACK_NAME}_XXX_ADMIN_SUFFIX
+        - traefik.http.services.${STACK_NAME}_XXX_ADMIN_SUFFIX.loadbalancer.server.port=XXX_ADMIN_PORT
+        - traefik.http.routers.${STACK_NAME}_XXX_ADMIN_SUFFIX.rule=Host(`XXX_ADMIN_DOMAIN_EXPRESSION`)
+        - traefik.http.routers.${STACK_NAME}_XXX_ADMIN_SUFFIX.entrypoints=https,http,web
+        - traefik.http.routers.${STACK_NAME}_XXX_ADMIN_SUFFIX.tls=true
+        - traefik.http.routers.${STACK_NAME}_XXX_ADMIN_SUFFIX.tls.certresolver=${TRAEFIK_CERT_RESOLVER}

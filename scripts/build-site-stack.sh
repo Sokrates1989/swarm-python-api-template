@@ -68,6 +68,36 @@ _selected_renderer_type() {
     echo "generic"
 }
 
+# _selected_profile_value
+# Reads one selected site-profile value without evaluating shell input.
+#
+# Arguments:
+#   $1 - jq expression.
+#   $2 - Fallback value.
+#
+# Outputs:
+#   Selected string or fallback.
+#
+# Returns:
+#   0 always.
+_selected_profile_value() {
+    local expression="$1"
+    local fallback="$2"
+    local profile_id=""
+    local profile_file=""
+
+    profile_id="$(_env_val DEPLOYMENT_PROFILE_ID)"
+    profile_id="${profile_id:-$(_env_val BACKEND_APP_ID)}"
+    profile_file="${PROJECT_ROOT}/site-configs/${profile_id}.json"
+    if [ -n "$profile_id" ] &&
+        [ -f "$profile_file" ] &&
+        command -v jq >/dev/null 2>&1; then
+        jq -r "${expression} // \"${fallback}\"" "$profile_file"
+        return 0
+    fi
+    echo "$fallback"
+}
+
 # Executable rendering owns the complete environment and Docker secret
 # declarations. Do not feed these profiles through placeholder rewriting.
 if [ "$(_selected_renderer_type)" = "executable" ]; then
@@ -92,6 +122,16 @@ PROXY_TYPE="$(_env_val PROXY_TYPE)"
 STACK_NAME="$(_env_val STACK_NAME)"
 STACK_ROLE="$(_env_val STACK_ROLE)"
 export STACK_ROLE
+PROFILE_API_TEMPLATE="$(_selected_profile_value '.renderer.apiTemplate' '')"
+PROFILE_FOOTER_TEMPLATE="$(_selected_profile_value '.renderer.footerTemplate' '')"
+PROFILE_ADMIN_UI_TYPE="$(_selected_profile_value \
+    '.adminUI.type // (if .pgadmin then "pgadmin" else empty end)' \
+    '')"
+PROFILE_ADMIN_UI_SECRET="$(_selected_profile_value '.adminUI.secret' '')"
+PROFILE_ADMIN_UI_ENABLED="$(_env_val PGADMIN_ENABLED)"
+export PROFILE_API_TEMPLATE PROFILE_FOOTER_TEMPLATE
+export PROFILE_ADMIN_UI_TYPE PROFILE_ADMIN_UI_SECRET
+export PROFILE_ADMIN_UI_ENABLED
 REDIRECT_TARGET_BASE_URL="$(_env_val REDIRECT_TARGET_BASE_URL)"
 export REDIRECT_TARGET_BASE_URL
 REDIRECT_STATUS_CODE="$(_env_val REDIRECT_STATUS_CODE)"
@@ -121,18 +161,25 @@ build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
 # Post-process the generated stack to replace placeholders
 STACK_FILE="${PROJECT_ROOT}/swarm-stack.yml"
 
-# Derive secret names using the same pattern as the wizard
-PREFIX_UPPER=$(echo "$(_env_val SECRETS_PREFIX)" | tr -d '_' | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+# Derive secret names using exactly the same normalization as the shared menu.
+PREFIX_UPPER=$(echo "$(_env_val SECRETS_PREFIX)" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
 if [ -z "$PREFIX_UPPER" ]; then
-    PREFIX_UPPER=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
+    PREFIX_UPPER=$(echo "$STACK_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
 fi
 
 DB_PASSWORD_SECRET="${PREFIX_UPPER}_DB_PASSWORD"
 ADMIN_API_KEY_SECRET="${PREFIX_UPPER}_ADMIN_API_KEY"
 BACKUP_RESTORE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY"
 BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
-# Unified admin UI password secret (used for pgAdmin or Mongo Express)
-DB_UI_ADMIN_PASSWORD_SECRET="${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
+# The optional database UI secret must be associated explicitly by the profile.
+DB_UI_ADMIN_PASSWORD_SECRET=""
+if [ "${PROFILE_ADMIN_UI_ENABLED:-false}" = "true" ]; then
+    if [ -z "$PROFILE_ADMIN_UI_SECRET" ]; then
+        echo "[ERROR] Enabled admin UI has no profile-declared adminUI.secret."
+        exit 1
+    fi
+    DB_UI_ADMIN_PASSWORD_SECRET="${PREFIX_UPPER}_${PROFILE_ADMIN_UI_SECRET}"
+fi
 
 if [ "$STACK_FAMILY" = "nginx" ] || [ "$STACK_ROLE" = "internal-api" ]; then
     echo "[SECRETS] Skipping API secret placeholders for nginx-only / internal-api stack."
@@ -144,7 +191,14 @@ echo "  - Admin API: $ADMIN_API_KEY_SECRET"
 echo "  - Backup Restore: $BACKUP_RESTORE_API_KEY_SECRET"
 echo "  - Backup Delete: $BACKUP_DELETE_API_KEY_SECRET"
 echo "  - Admin UI (pgAdmin/Mongo Express): $DB_UI_ADMIN_PASSWORD_SECRET"
-update_stack_secrets "$STACK_FILE" "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET" "$DB_UI_ADMIN_PASSWORD_SECRET"
+update_stack_secrets \
+    "$STACK_FILE" \
+    "$DB_PASSWORD_SECRET" \
+    "$ADMIN_API_KEY_SECRET" \
+    "$BACKUP_RESTORE_API_KEY_SECRET" \
+    "$BACKUP_DELETE_API_KEY_SECRET" \
+    "$DB_UI_ADMIN_PASSWORD_SECRET" \
+    "${PROFILE_ADMIN_UI_ENABLED:-false}"
 fi
 
 # Handle Traefik network placeholder
@@ -161,10 +215,10 @@ elif [ "$PROXY_TYPE" = "none" ]; then
     echo "[NETWORK] Removing Traefik network placeholder (PROXY_TYPE=none)"
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' '/XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX:/d' "$STACK_FILE"
+        sed -i '' '/XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX/d' "$STACK_FILE"
     else
         # Linux
-        sed -i '/XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX:/d' "$STACK_FILE"
+        sed -i '/XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX/d' "$STACK_FILE"
     fi
 fi
 
@@ -176,12 +230,24 @@ else
     sed -i "s|XXX_CHANGE_ME_STACK_NAME_XXX|$STACK_NAME|g" "$STACK_FILE"
 fi
 
+# Replace an optional internal-network placeholder declared by complete profile
+# compose modules. Ordinary compose-module stacks simply contain no placeholder.
+INTERNAL_NETWORK="$(_env_val INTERNAL_NETWORK)"
+if [ -n "$INTERNAL_NETWORK" ]; then
+    echo "[NETWORK] Updating internal network placeholder: $INTERNAL_NETWORK"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' \
+            "s|XXX_CHANGE_ME_INTERNAL_NETWORK_XXX|$INTERNAL_NETWORK|g" \
+            "$STACK_FILE"
+    else
+        sed -i \
+            "s|XXX_CHANGE_ME_INTERNAL_NETWORK_XXX|$INTERNAL_NETWORK|g" \
+            "$STACK_FILE"
+    fi
+fi
+
 echo ""
 echo "[OK] Stack build complete. All placeholders resolved."
 echo ""
 echo "To deploy with .env interpolation, use the quick-start deploy option:"
 echo "  ./quick-start.sh"
-echo ""
-echo "Manual Bash equivalent:"
-echo "  set -a; source .env; set +a"
-echo "  docker stack deploy -c <(docker compose -f swarm-stack.yml config) ${STACK_NAME}"

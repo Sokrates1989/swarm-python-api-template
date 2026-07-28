@@ -1,277 +1,145 @@
 # Proxy Configuration Guide
 
-This guide explains the proxy options available in the Swarm Python API Template and how to choose the right one for your deployment.
+Proxy configuration is collected by the same site-config-driven setup dialogue
+used for every deployment profile. A public profile can allow Traefik,
+directly published ports, or both. Internal-only profiles skip this section.
 
-## Available Proxy Options
+## Configure through quick-start
 
-### 1. Traefik (Recommended for Production)
+On the Linux Swarm host:
 
-**Best for:**
-- Production deployments
-- Automatic HTTPS with Let's Encrypt
-- Multiple services on the same server
-- Domain-based routing
-
-**Features:**
-- Automatic SSL certificate generation and renewal
-- Domain-based routing (e.g., `api.example.com`)
-- Load balancing across replicas
-- Automatic service discovery
-- HTTP to HTTPS redirection
-
-**Requirements:**
-- A domain or subdomain pointing to your swarm manager
-- Traefik already deployed on your swarm (external network `traefik`)
-- DNS properly configured
-
-**Configuration Files:**
-- `.env.postgres.traefik.template` or `.env.neo4j.traefik.template`
-- `swarm-stack.postgres.traefik.yml.template` or `swarm-stack.neo4j.traefik.yml.template`
-
-**Access:**
-- API accessible at: `https://your-domain.com`
-
----
-
-### 2. No Proxy (Direct Port Exposure)
-
-**Best for:**
-- Development environments
-- Custom proxy setups (nginx, HAProxy, Caddy, etc.)
-- Single-service deployments
-- Testing and staging environments
-
-**Features:**
-- Direct port mapping to host
-- No external dependencies
-- Full control over your own proxy configuration
-- Simpler setup for development
-
-**Requirements:**
-- Port must be available on the host
-- Firewall rules to allow traffic on the chosen port
-- You manage your own SSL/TLS if needed
-
-**Configuration Files:**
-- `.env.postgres.no-proxy.template` or `.env.neo4j.no-proxy.template`
-- `swarm-stack.postgres.no-proxy.yml.template` or `swarm-stack.neo4j.no-proxy.yml.template`
-
-**Access:**
-- API accessible at: `http://<server-ip>:<port>`
-
----
-
-## Choosing the Right Option
-
-### Use Traefik if:
-- ✅ You want automatic HTTPS with Let's Encrypt
-- ✅ You have a domain pointing to your server
-- ✅ You're deploying to production
-- ✅ You want automatic service discovery
-- ✅ You're running multiple services on the same server
-
-### Use No Proxy if:
-- ✅ You're developing or testing locally
-- ✅ You already have a reverse proxy (nginx, HAProxy, etc.)
-- ✅ You want full control over SSL/TLS configuration
-- ✅ You're deploying a single service
-- ✅ You don't have a domain or don't need HTTPS
-
----
-
-## Setup Instructions
-
-### Using the Interactive Setup Wizard (Recommended)
-
-Run the quick-start script and follow the prompts:
-
-**Linux/Mac:**
 ```bash
 ./quick-start.sh
 ```
 
-**Windows:**
-```powershell
-.\quick-start.ps1
+Choose **Run setup wizard**, select the deployment profile, and use the
+numbered **Proxy and TLS** section. Press Enter to accept each displayed
+profile or existing-`.env` default.
+
+The active production workflow is Bash. There is no maintained
+`quick-start.ps1` or `setup-wizard.ps1`; use WSL only when the Bash flow needs
+to be inspected from Windows.
+
+Do not copy old environment or stack templates manually. The wizard writes
+root `.env` and renders `swarm-stack.yml` from the selected profile and
+operator answers.
+
+## Traefik
+
+Choose Traefik when an existing Swarm Traefik service owns domain routing.
+
+The wizard then collects:
+
+1. TLS ownership;
+2. the existing Traefik public overlay network; and
+3. the Traefik provider constraint label; and
+4. the certificate resolver when Traefik owns certificates.
+
+The network picker enumerates real overlay networks and highlights a declared
+or commonly named Traefik network. Select the network to which the existing
+Traefik service is attached. Do not select an app-specific backend network and
+do not create a new overlay unless Traefik will also be reconfigured to use it.
+The provider constraint label is independent: it must match the label value
+configured on the Traefik Swarm provider, even when the selected overlay has a
+different name.
+
+The resulting public values are stored in `.env`:
+
+```text
+PROXY_TYPE=traefik
+SSL_MODE=letsencrypt|proxy
+TRAEFIK_NETWORK=<existing-overlay>
+TRAEFIK_CONSTRAINT_LABEL=<provider-label>
+TRAEFIK_CERT_RESOLVER=<resolver-name>
 ```
 
-The wizard will ask you to choose:
-1. Database type (PostgreSQL or Neo4j)
-2. **Proxy type (Traefik or no-proxy)**
-3. Database mode (local or external)
-4. Other configuration options
+### Let's Encrypt mode
 
-### Manual Setup
+Select `letsencrypt` when Traefik directly owns TLS certificates. The declared
+API, WebApp, and optional management-service routers use TLS and the selected
+certificate resolver.
 
-#### For Traefik Setup:
+Before deployment:
 
-1. **Copy templates:**
-   ```bash
-   # PostgreSQL with Traefik
-   cp setup/.env.postgres.traefik.template .env
-   cp setup/swarm-stack.postgres.traefik.yml.template swarm-stack.yml
-   
-   # OR Neo4j with Traefik
-   cp setup/.env.neo4j.traefik.template .env
-   cp setup/swarm-stack.neo4j.traefik.yml.template swarm-stack.yml
-   ```
+- point all declared public DNS names to the proxy;
+- ensure ports required by Traefik are reachable;
+- ensure the selected certificate resolver exists in the Traefik
+  configuration; and
+- verify that the selected overlay network is attached to Traefik.
 
-2. **Edit .env:**
-   - Set `API_URL` to your domain (e.g., `api.example.com`)
-   - Configure other variables as needed
+### Upstream proxy mode
 
-3. **Ensure Traefik is running:**
-   ```bash
-   docker network ls | grep traefik
-   ```
+Select `proxy` when TLS terminates before this Traefik instance, for example at
+an edge proxy, load balancer, or CDN. The generated routers use the profile's
+upstream-termination behavior and do not ask this stack to obtain certificates.
 
-4. **Deploy:**
-   ```bash
-   docker stack deploy -c swarm-stack.yml <STACK_NAME>
-   ```
+Ensure the upstream proxy forwards the original host and HTTPS scheme
+correctly and that traffic can reach this Traefik instance.
 
-#### For No-Proxy Setup:
+## Direct published ports
 
-1. **Copy templates:**
-   ```bash
-   # PostgreSQL without proxy
-   cp setup/.env.postgres.no-proxy.template .env
-   cp setup/swarm-stack.postgres.no-proxy.yml.template swarm-stack.yml
-   
-   # OR Neo4j without proxy
-   cp setup/.env.neo4j.no-proxy.template .env
-   cp setup/swarm-stack.neo4j.no-proxy.yml.template swarm-stack.yml
-   ```
+Choose **None (direct port)** when Traefik is not used for this deployment.
+The wizard asks for the applicable API, WebApp, and optional management-service
+published ports.
 
-2. **Edit .env:**
-   - Set `PUBLISHED_PORT` to the port you want to expose (default: 8000)
-   - Configure other variables as needed
+The generated `.env` contains:
 
-3. **Ensure port is available:**
-   ```bash
-   # Check if port is in use
-   netstat -tuln | grep 8000
-   ```
-
-4. **Deploy:**
-   ```bash
-   docker stack deploy -c swarm-stack.yml <STACK_NAME>
-   ```
-
----
-
-## Using Your Own Proxy with No-Proxy Setup
-
-If you choose the no-proxy option, you can configure your own reverse proxy to handle SSL/TLS and routing.
-
-### Example: nginx Configuration
-
-```nginx
-server {
-    listen 80;
-    server_name api.example.com;
-    
-    # Redirect HTTP to HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name api.example.com;
-    
-    # SSL configuration
-    ssl_certificate /etc/ssl/certs/api.example.com.crt;
-    ssl_certificate_key /etc/ssl/private/api.example.com.key;
-    
-    # Proxy to your API
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+```text
+PROXY_TYPE=none
+API_PUBLISHED_PORT=<port>
+WEB_PUBLISHED_PORT=<port>          # when a WebApp is enabled
+PGADMIN_PUBLISHED_PORT=<port>      # when pgAdmin is enabled
 ```
 
-### Example: HAProxy Configuration
+Check host/firewall availability before deploying. If another reverse proxy is
+used, configure it separately to forward to these published ports.
 
-```haproxy
-frontend http_front
-    bind *:80
-    bind *:443 ssl crt /etc/ssl/certs/api.example.com.pem
-    default_backend api_backend
+## Changing routing later
 
-backend api_backend
-    balance roundrobin
-    server api1 localhost:8000 check
-```
+Re-run the same setup wizard and choose the interactive path. Existing `.env`
+values are offered as defaults.
 
----
+After reviewing the regenerated stack:
 
-## Switching Between Proxy Types
+1. choose **Rebuild swarm stack** if needed;
+2. require the Compose check to pass;
+3. deploy through the common **Deploy to Docker Swarm** action; and
+4. verify common status and public health checks.
 
-To switch from one proxy type to another:
-
-1. **Remove current deployment:**
-   ```bash
-   docker stack rm <STACK_NAME>
-   ```
-
-2. **Copy new templates:**
-   ```bash
-   # Switch to Traefik
-   cp setup/.env.postgres.traefik.template .env
-   cp setup/swarm-stack.postgres.traefik.yml.template swarm-stack.yml
-   
-   # OR switch to no-proxy
-   cp setup/.env.postgres.no-proxy.template .env
-   cp setup/swarm-stack.postgres.no-proxy.yml.template swarm-stack.yml
-   ```
-
-3. **Update configuration:**
-   - Edit `.env` with appropriate settings
-   - Update secret names in `swarm-stack.yml`
-
-4. **Redeploy:**
-   ```bash
-   docker stack deploy -c swarm-stack.yml <STACK_NAME>
-   ```
-
----
+Do not remove the stack merely to change proxy mode. An in-place
+`docker stack deploy` preserves Swarm's previous service specifications for
+rollback.
 
 ## Troubleshooting
 
-### Traefik Setup Issues
+### Domain does not route
 
-**Problem:** API not accessible via domain
-- Check DNS: `nslookup api.example.com`
-- Verify Traefik network exists: `docker network ls | grep traefik`
-- Check Traefik logs: `docker service logs traefik_traefik`
-- Verify labels in swarm-stack.yml
+- Confirm the selected public domain in `.env`.
+- Confirm DNS reaches the proxy.
+- Inspect the rendered router labels in `swarm-stack.yml`.
+- Confirm Traefik is attached to `TRAEFIK_NETWORK`.
+- Confirm `TRAEFIK_CONSTRAINT_LABEL` matches the Traefik provider constraint;
+  do not assume it equals the overlay-network name.
+- Inspect Traefik and selected-stack service logs through their normal
+  operations menus.
 
-**Problem:** SSL certificate not generated
-- Check Traefik configuration for Let's Encrypt
-- Verify domain points to correct IP
-- Check Traefik logs for certificate errors
+### Certificate is not issued
 
-### No-Proxy Setup Issues
+- Confirm `SSL_MODE=letsencrypt`.
+- Confirm `TRAEFIK_CERT_RESOLVER` exactly matches a resolver configured in
+  Traefik.
+- Confirm DNS and external port reachability.
+- Check Traefik certificate resolver logs.
 
-**Problem:** Port already in use
-- Check what's using the port: `netstat -tuln | grep <PORT>`
-- Choose a different port in `.env`
-- Redeploy the stack
+### Redirect loop behind an upstream proxy
 
-**Problem:** Cannot access API from external network
-- Check firewall rules: `sudo ufw status`
-- Verify port is published: `docker service inspect <STACK_NAME>_api`
-- Check if service is running: `docker service ps <STACK_NAME>_api`
+- Confirm `SSL_MODE=proxy`.
+- Confirm the upstream forwards the original scheme and host.
+- Avoid configuring both layers to force incompatible HTTP/HTTPS redirects.
 
----
+### Direct port is unreachable
 
-## Additional Resources
-
-- [Traefik Documentation](https://doc.traefik.io/traefik/)
-- [Docker Swarm Networking](https://docs.docker.com/engine/swarm/networking/)
-- [Let's Encrypt](https://letsencrypt.org/)
-- [nginx Reverse Proxy Guide](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)
+- Confirm `PROXY_TYPE=none`.
+- Confirm the rendered service publishes the selected port.
+- Check the host firewall and whether another service already owns that port.
+- Check service convergence and health from the common menu.

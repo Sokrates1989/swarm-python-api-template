@@ -1,46 +1,44 @@
 #!/bin/bash
 # ==============================================================================
-# setup-wizard.sh - Interactive deployment setup wizard
+# setup-wizard.sh - Shared site-config-driven deployment setup
 # ==============================================================================
 #
-# Configures this deployment instance by collecting user input and generating
-# the root .env and root swarm-stack.yml.
-#
-# The wizard reads an app deployment manifest from site-configs/ to know what
-# the backend app needs (database type, services, image). It then asks for
-# deployment-time values (domain, proxy, optional secrets, image version) that are
-# only known on the actual server.
+# Selects one deployment profile, collects normalized operator choices through
+# one numbered dialogue, then delegates only persistence and rendering to the
+# profile-declared adapter. Schema and renderer type never select a different
+# user experience.
 #
 # Flow:
-#   1. Select which app config to use (from site-configs/).
-#   2. Collect deployment-time values (domain, stack name, proxy, SSL, image
-#      version, optional secret prefix, data root).
-#   3. Generate root .env.
-#   4. Build root swarm-stack.yml (from compose modules).
-#   5. Offer final actions: save only / create data dirs / create secrets when
-#      required / deploy.
+#   1. Select a site-config deployment profile.
+#   2. Collect stack, routing, database, service, and resource choices once.
+#   3. Persist through the legacy compatibility or executable adapter.
+#   4. Render the stack through the selected adapter.
+#   5. Offer one capability-driven final-action menu.
 #
 # Dependencies:
-#   - jq
-#   - Python 3 for executable site-profile validation/rendering
-#   - Docker (for secrets, deploy)
-#   - Modules: site_helpers, user-prompts, config-builder, data-dirs,
-#     secret-manager, stack-conflict-check, deploy-stack, health-check
+#   - jq and Docker
+#   - Python 3 for executable schema-5 profiles
+#   - setup/modules sourced below
 # ==============================================================================
 
 set -e
 
-# Get the directory where this script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
-# ===========================================================================
-# Source modules
-# ===========================================================================
-
+#
+# Shared discovery, dialogue, persistence, rendering, and action modules.
+# Capability-specific modules remain adapters and never own the setup dialogue.
+#
 source "$SCRIPT_DIR/modules/site_helpers.sh"
 source "$SCRIPT_DIR/modules/user-prompts.sh"
+source "$SCRIPT_DIR/modules/deployment-profile-prompts.sh"
+source "$SCRIPT_DIR/modules/deployment-profile-routing.sh"
+source "$SCRIPT_DIR/modules/deployment-profile-services.sh"
+source "$SCRIPT_DIR/modules/deployment-profile-inputs.sh"
+source "$SCRIPT_DIR/modules/legacy-profile-environment.sh"
+source "$SCRIPT_DIR/modules/executable-profile-wizard.sh"
 source "$SCRIPT_DIR/modules/config-builder.sh"
 source "$SCRIPT_DIR/modules/network-check.sh"
 source "$SCRIPT_DIR/modules/data-dirs.sh"
@@ -51,930 +49,141 @@ source "$SCRIPT_DIR/modules/deploy-stack.sh"
 source "$SCRIPT_DIR/modules/health-check.sh"
 source "$SCRIPT_DIR/modules/keycloak-bootstrap.sh"
 source "$SCRIPT_DIR/modules/docker-secrets-menu.sh"
-source "$SCRIPT_DIR/modules/executable-profile-wizard.sh"
+source "$SCRIPT_DIR/modules/deployment-setup-actions.sh"
 
-# Source Cognito setup script if available
+# Cognito remains an optional provider adapter for profiles that declare it.
 if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
     # shellcheck disable=SC1091
     source "${SCRIPT_DIR}/modules/cognito_setup.sh"
 fi
 
-# ===========================================================================
-# Validation helpers for required inputs
-# ===========================================================================
-
-# Validates that a value is non-empty
-_validate_non_empty() {
-    [ -n "$1" ]
-}
-
-# Validates domain format (basic check for dot and no spaces)
-_validate_domain() {
-    local domain="$1"
-    [ -n "$domain" ] && [[ "$domain" =~ \. ]] && [[ ! "$domain" =~ [[:space:]] ]]
-}
-
 # ------------------------------------------------------------------------------
-# build_current_stack_file
+# select_setup_mode
 # ------------------------------------------------------------------------------
-# Builds swarm-stack.yml for the selected profile. Prefers the root build script
-# because it reloads .env, exports STACK_FAMILY/STACK_ROLE, and applies the same
-# placeholder cleanup used by quick-start deployments. The fallback keeps direct
-# setup-wizard builds working when the script is unavailable.
+# Chooses interactive reconfiguration or validation/rendering from existing
+# values. The numbered presentation is shared across all profile renderers.
 #
 # Returns:
-#   0 when the stack file was built, 1 when generation failed.
+#   0 after setting SETUP_MODE.
 # ------------------------------------------------------------------------------
-build_current_stack_file() {
-    local builder="${PROJECT_ROOT}/scripts/build-site-stack.sh"
-
-    export STACK_FAMILY="${APP_STACK_FAMILY:-${STACK_FAMILY:-api}}"
-    export STACK_ROLE="${APP_STACK_ROLE:-${STACK_ROLE:-api}}"
-    export PRIMARY_SERVICE="${APP_PRIMARY_SERVICE:-${PRIMARY_SERVICE:-api}}"
-    export REDIRECT_TARGET_BASE_URL="${REDIRECT_TARGET_BASE_URL:-${APP_REDIRECT_TARGET_BASE_URL:-}}"
-    export REDIRECT_STATUS_CODE="${REDIRECT_STATUS_CODE:-${APP_REDIRECT_STATUS_CODE:-302}}"
-    export TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-traefik-public}"
-
-    if [ -f "$builder" ]; then
-        bash "$builder"
-        return $?
+select_setup_mode() {
+    SETUP_MODE="interactive"
+    if [ ! -f "${PROJECT_ROOT}/.env" ]; then
+        return 0
     fi
 
-    if ! command -v build_stack_file >/dev/null 2>&1; then
-        echo "Stack builder not available. Run scripts/build-site-stack.sh manually."
+    echo ""
+    echo "Existing .env file detected."
+    prompt_deployment_choice \
+        SETUP_MODE \
+        "Configuration source" \
+        "interactive" \
+        "from_env|Use existing .env values and skip prompts (fast re-setup)" \
+        "interactive|Answer questions interactively"
+    if [ "$SETUP_MODE" = "from_env" ]; then
+        echo "Using existing .env values."
+    else
+        echo "Interactive mode selected. Existing values are offered as defaults."
+    fi
+    echo ""
+}
+
+# ------------------------------------------------------------------------------
+# write_selected_profile_environment
+# ------------------------------------------------------------------------------
+# Persists normalized answers through the selected renderer's writer adapter.
+#
+# Returns:
+#   Adapter status.
+#
+# Side effects:
+#   Replaces root .env during interactive setup.
+# ------------------------------------------------------------------------------
+write_selected_profile_environment() {
+    if [ "${SETUP_MODE:-interactive}" = "from_env" ]; then
+        echo "Existing public deployment environment retained."
+        return 0
+    fi
+
+    echo ""
+    echo "Validating and writing public deployment configuration..."
+    if [ "${APP_RENDERER_TYPE:-generic}" = "executable" ]; then
+        write_executable_profile_environment
+    else
+        write_legacy_profile_environment
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# render_selected_profile_stack
+# ------------------------------------------------------------------------------
+# Renders the selected profile after input collection and environment writing.
+#
+# Returns:
+#   Renderer status.
+#
+# Side effects:
+#   Replaces root swarm-stack.yml after successful validation.
+# ------------------------------------------------------------------------------
+render_selected_profile_stack() {
+    echo ""
+    echo "Building swarm-stack.yml..."
+    if [ "${APP_RENDERER_TYPE:-generic}" = "executable" ]; then
+        render_executable_profile_stack
+        return $?
+    fi
+    bash "${PROJECT_ROOT}/scripts/build-site-stack.sh"
+}
+
+# ------------------------------------------------------------------------------
+# run_setup_wizard
+# ------------------------------------------------------------------------------
+# Coordinates one complete profile-independent setup session.
+#
+# Returns:
+#   0 after configuration and the selected final action; otherwise nonzero.
+# ------------------------------------------------------------------------------
+run_setup_wizard() {
+    local selected_config=""
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required but not installed."
+        echo "Install it with: sudo apt-get install jq"
         return 1
     fi
 
-    build_stack_file "$DB_TYPE" "$DB_MODE" "$PROXY_TYPE" "$PROJECT_ROOT" "$SSL_MODE"
-    update_stack_name "$STACK_FILE" "$STACK_NAME"
-    if [ "$PROXY_TYPE" = "traefik" ]; then
-        update_stack_network "$STACK_FILE" "${TRAEFIK_NETWORK:-traefik-public}"
+    echo ""
+    echo "Swarm Python API Template - Setup Wizard"
+    echo "============================================="
+    echo ""
+    echo "This wizard configures this deployment instance."
+    echo "Each clone of this repo IS one deployed app stack."
+    echo ""
+    echo "   .env and swarm-stack.yml are generated at the project root."
+    echo "site-configs/ holds deployment profiles describing what this deployment needs."
+    echo ""
+
+    select_setup_mode
+    echo "Step 1: Select the deployment profile for this instance."
+    echo ""
+    selected_config="$(show_app_selector "$PROJECT_ROOT")"
+    if [ "$selected_config" = "EXIT" ] || [ -z "$selected_config" ]; then
+        echo "No deployment profile selected. Exiting."
+        return 0
     fi
 
-    if [ "${SECRETS_REQUIRED:-false}" = "true" ] && [ "${STACK_FAMILY:-api}" != "nginx" ]; then
-        update_stack_secrets "$STACK_FILE" \
-            "${PREFIX_UPPER}_DB_PASSWORD" \
-            "${PREFIX_UPPER}_ADMIN_API_KEY" \
-            "${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY" \
-            "${PREFIX_UPPER}_BACKUP_DELETE_API_KEY" \
-            "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
-    else
-        echo "No Docker secrets required for this profile; skipping secret placeholders."
-    fi
+    load_app_config "$PROJECT_ROOT" "$selected_config"
+    initialize_deployment_profile_context
+    show_selected_deployment_profile
+    collect_deployment_configuration
+    write_selected_profile_environment
+    render_selected_profile_stack
+    load_root_env "$PROJECT_ROOT"
+    run_deployment_setup_actions
+
+    echo ""
+    echo "Setup wizard complete!"
+    echo ""
 }
 
-# ===========================================================================
-# jq check
-# ===========================================================================
-
-if ! command -v jq &>/dev/null; then
-    echo "jq is required but not installed."
-    echo "Install it with: sudo apt-get install jq"
-    exit 1
-fi
-
-# =============================================================================
-# WELCOME
-# =============================================================================
-
-echo ""
-echo "Swarm Python API Template - Setup Wizard"
-echo "============================================="
-echo ""
-echo "This wizard configures this deployment instance."
-echo "Each clone of this repo IS one deployed app stack."
-echo ""
-echo "   .env and swarm-stack.yml are generated at the project root."
-echo "site-configs/ holds deployment profiles describing what this deployment needs."
-echo ""
-
-# =============================================================================
-# SETUP MODE: Interactive vs .env-driven
-# =============================================================================
-
-SETUP_MODE="interactive"
-if [ -f "${PROJECT_ROOT}/.env" ]; then
-    echo ""
-    echo "Existing .env file detected."
-    echo ""
-    echo "How would you like to configure deployment settings?"
-    echo "  1) Use existing .env values and skip prompts (fast re-setup)"
-    echo "  2) Answer questions interactively (recommended for first setup)"
-    echo ""
-    read -p "Your choice (1-2) [2]: " SETUP_MODE_CHOICE
-    SETUP_MODE_CHOICE="${SETUP_MODE_CHOICE:-2}"
-
-    case "$SETUP_MODE_CHOICE" in
-        1)
-            SETUP_MODE="from_env"
-            echo "Using existing .env values"
-            ;;
-        *)
-            SETUP_MODE="interactive"
-            echo "Interactive mode selected"
-            ;;
-    esac
-    echo ""
-fi
-
-# =============================================================================
-# STEP 1: Select Deployment Profile
-# =============================================================================
-
-echo "Step 1: Select the deployment profile for this instance."
-echo ""
-
-SELECTED_CONFIG=$(show_app_selector "$PROJECT_ROOT")
-
-if [ "$SELECTED_CONFIG" = "EXIT" ] || [ -z "$SELECTED_CONFIG" ]; then
-    echo "No deployment profile selected. Exiting."
-    exit 0
-fi
-
-# Load app manifest for defaults
-load_app_config "$PROJECT_ROOT" "$SELECTED_CONFIG"
-
-# Schema-5 executable profiles use one shared site-config-driven flow capable
-# of expressing optional WebApps, exact runtime allowlists, and secret mounts.
-if [ "${APP_RENDERER_TYPE:-generic}" = "executable" ]; then
-    run_executable_profile_setup
-    exit $?
-fi
-
-APP_SECRET_COUNT="${APP_SECRET_COUNT:-0}"
-SECRETS_REQUIRED="false"
-if [ "$APP_SECRET_COUNT" -gt 0 ] 2>/dev/null; then
-    SECRETS_REQUIRED="true"
-fi
-
-# Internal-only profiles (exposure.type == "internal" or stack role
-# "internal-api", e.g. secure_messaging) are never publicly addressable. The
-# wizard skips the domain, proxy, and SSL prompts for them and records the
-# internal service URL instead.
-APP_IS_INTERNAL="false"
-if [ "${APP_EXPOSURE_TYPE:-public}" = "internal" ] || [ "${APP_STACK_ROLE:-}" = "internal-api" ]; then
-    APP_IS_INTERNAL="true"
-fi
-
-# Profile-specific secrets template. Defaults to the generic API template;
-# profiles that use literal/unprefixed secret names (e.g. secure_messaging)
-# declare their own template path in the site config.
-SECRETS_TEMPLATE_PATH="${SCRIPT_DIR}/templates/secrets.env.template"
-if [ -n "${APP_SECRETS_TEMPLATE}" ]; then
-    SECRETS_TEMPLATE_PATH="${PROJECT_ROOT}/${APP_SECRETS_TEMPLATE}"
-fi
-
-echo ""
-echo "Selected deployment profile: ${APP_NAME} (${SELECTED_CONFIG})"
-echo "Stack: ${APP_STACK_FAMILY}/${APP_STACK_ROLE}, Database: ${APP_DB_TYPE}, Image: ${APP_IMAGE_NAME}:${APP_IMAGE_DEFAULT_VERSION}"
-echo ""
-
-# Load existing .env values as defaults (if re-running wizard)
-EXISTING_STACK_NAME=""
-EXISTING_DOMAIN=""
-EXISTING_PROXY_TYPE=""
-EXISTING_SSL_MODE=""
-EXISTING_TRAEFIK_NETWORK=""
-EXISTING_IMAGE_VERSION=""
-EXISTING_DATA_ROOT=""
-EXISTING_DB_MODE=""
-EXISTING_PGADMIN_URL=""
-EXISTING_MONGO_EXPRESS_URL=""
-EXISTING_PGADMIN_EMAIL=""
-EXISTING_MONGO_EXPRESS_USERNAME=""
-EXISTING_REDIRECT_TARGET_BASE_URL=""
-EXISTING_REDIRECT_STATUS_CODE=""
-EXISTING_NGINX_REPLICAS=""
-
-if [ -f "${PROJECT_ROOT}/.env" ]; then
-    load_root_env "$PROJECT_ROOT"
-    EXISTING_STACK_NAME="$STACK_NAME"
-    EXISTING_DOMAIN="$DOMAIN"
-    EXISTING_PROXY_TYPE="$PROXY_TYPE"
-    EXISTING_SSL_MODE="$SSL_MODE"
-    EXISTING_TRAEFIK_NETWORK="$TRAEFIK_NETWORK"
-    EXISTING_IMAGE_VERSION="$IMAGE_VERSION"
-    EXISTING_DB_MODE="$DB_MODE"
-    EXISTING_DATA_ROOT="$DATA_ROOT"
-    EXISTING_PGADMIN_URL="$PGADMIN_URL"
-    EXISTING_MONGO_EXPRESS_URL="$MONGO_EXPRESS_URL"
-    EXISTING_PGADMIN_EMAIL="$PGADMIN_EMAIL"
-    EXISTING_MONGO_EXPRESS_USERNAME="$MONGO_EXPRESS_USERNAME"
-    EXISTING_REDIRECT_TARGET_BASE_URL="$REDIRECT_TARGET_BASE_URL"
-    EXISTING_REDIRECT_STATUS_CODE="$REDIRECT_STATUS_CODE"
-    EXISTING_NGINX_REPLICAS="$NGINX_REPLICAS"
-    echo "Existing .env found. Press Enter to keep current values."
-    echo ""
-fi
-
-# =============================================================================
-# STEP 2: Deployment-Time Configuration
-# =============================================================================
-#
-# These are values only known at deployment time  the wizard asks for them
-# and uses app manifest defaults where applicable.
-
-if [ "$SETUP_MODE" = "from_env" ]; then
-    # Fast path: load all values from existing .env
-    echo ""
-    echo "Fast setup mode: loading all values from existing .env"
-    echo ""
-
-    # Values are already loaded into environment variables via load_root_env
-    # Just ensure critical variables are set with fallbacks
-    STACK_NAME="${STACK_NAME:-$EXISTING_STACK_NAME}"
-    DOMAIN="${DOMAIN:-$EXISTING_DOMAIN}"
-    PROXY_TYPE="${PROXY_TYPE:-$EXISTING_PROXY_TYPE}"
-    SSL_MODE="${SSL_MODE:-$EXISTING_SSL_MODE}"
-    TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-$EXISTING_TRAEFIK_NETWORK}"
-    IMAGE_VERSION="${IMAGE_VERSION:-$EXISTING_IMAGE_VERSION}"
-    DB_MODE="${DB_MODE:-$EXISTING_DB_MODE}"
-    DATA_ROOT="${DATA_ROOT:-$EXISTING_DATA_ROOT}"
-    PGADMIN_URL="${PGADMIN_URL:-$EXISTING_PGADMIN_URL}"
-    PGADMIN_EMAIL="${PGADMIN_EMAIL:-$EXISTING_PGADMIN_EMAIL}"
-    MONGO_EXPRESS_URL="${MONGO_EXPRESS_URL:-$EXISTING_MONGO_EXPRESS_URL}"
-    MONGO_EXPRESS_USERNAME="${MONGO_EXPRESS_USERNAME:-$EXISTING_MONGO_EXPRESS_USERNAME}"
-    REDIRECT_TARGET_BASE_URL="${REDIRECT_TARGET_BASE_URL:-$EXISTING_REDIRECT_TARGET_BASE_URL}"
-    REDIRECT_STATUS_CODE="${REDIRECT_STATUS_CODE:-$EXISTING_REDIRECT_STATUS_CODE}"
-
-    # Derive secret prefix from stack name if not already set
-    if [ -z "$SECRET_PREFIX" ] && [ -n "$STACK_NAME" ]; then
-        SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
-    fi
-
-    # Use app manifest values for image and database type
-    DB_TYPE="${DB_TYPE:-$APP_DB_TYPE}"
-    IMAGE_NAME="${IMAGE_NAME:-$APP_IMAGE_NAME}"
-
-    # Use defaults for replicas; memory defaults to unlimited if not set.
-    if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
-        NGINX_REPLICAS="${NGINX_REPLICAS:-${EXISTING_NGINX_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}}"
-        API_REPLICAS="${API_REPLICAS:-$NGINX_REPLICAS}"
-    else
-        API_REPLICAS="${API_REPLICAS:-${APP_DEFAULT_REPLICAS:-1}}"
-    fi
-    # MEMORY_LIMIT intentionally left unset if no existing value (unlimited by default)
-
-    echo "Loaded configuration:"
-    echo "Stack: ${STACK_NAME}"
-    echo "Domain: ${DOMAIN}"
-    echo "DB Type: ${DB_TYPE}, Mode: ${DB_MODE}"
-    if [ "$PROXY_TYPE" = "traefik" ]; then
-        echo "Traefik network: ${TRAEFIK_NETWORK:-traefik-public}"
-    fi
-    if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
-        if [ "$DB_TYPE" = "postgresql" ]; then
-            echo "pgAdmin: ${PGADMIN_URL} (${PGADMIN_EMAIL})"
-        elif [ "$DB_TYPE" = "mongodb" ]; then
-            echo "Mongo Express: ${MONGO_EXPRESS_URL} (${MONGO_EXPRESS_USERNAME})"
-        fi
-    fi
-    echo ""
-else
-    # Interactive mode: prompt for all values
-    echo ""
-    echo "Step 2: Deployment Configuration"
-    echo "===================================="
-    echo ""
-    echo "These values are specific to THIS deployment instance."
-    echo ""
-
-    # Stack name - generate from app name if no existing value - requires non-empty
-    if [ -n "$EXISTING_STACK_NAME" ]; then
-        DEFAULT_STACK_NAME="$EXISTING_STACK_NAME"
-    else
-        # Convert app name to stack-friendly format (lowercase, spaces to hyphens)
-        DEFAULT_STACK_NAME=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr '_' '-')
-    fi
-    while true; do
-        read -p "Docker stack name [${DEFAULT_STACK_NAME}]: " STACK_NAME
-        STACK_NAME="${STACK_NAME:-$DEFAULT_STACK_NAME}"
-        if _validate_non_empty "$STACK_NAME"; then
-            break
-        fi
-        echo "Stack name is required. Please provide a value."
-    done
-
-    # Domain - requires non-empty and must contain a dot for public profiles.
-    # Internal-only profiles use the configured internal service URL instead.
-    if [ "$APP_IS_INTERNAL" = "true" ]; then
-        DEFAULT_DOMAIN="${EXISTING_DOMAIN:-${APP_INTERNAL_URL:-}}"
-        DOMAIN="${DEFAULT_DOMAIN:-http://${APP_INTERNAL_SERVICE:-secure_messaging_api}:8080}"
-        echo "Domain: ${DOMAIN} (internal service URL)"
-    else
-        DEFAULT_DOMAIN="${EXISTING_DOMAIN:-}"
-        while true; do
-            read -p "Domain (e.g. api.example.com) [${DEFAULT_DOMAIN}]: " DOMAIN
-            DOMAIN="${DOMAIN:-$DEFAULT_DOMAIN}"
-            if _validate_domain "$DOMAIN"; then
-                break
-            fi
-            echo "Domain is required and must be a valid domain (e.g., api.example.com)."
-            # Clear default after first failed attempt so user must consciously enter a value
-            DEFAULT_DOMAIN=""
-        done
-    fi
-
-# Derive secret prefix from stack name (internal, not prompted)
-SECRET_PREFIX=$(echo "$STACK_NAME" | tr '-' '_' | tr '[:upper:]' '[:lower:]')
-
-# Profiles that declare literal, unprefixed secret names (e.g. secure_messaging)
-# override the derived prefix so the exact names from the template are used.
-if [ "${APP_SECRETS_PREFIXED:-true}" = "false" ]; then
-    SECRET_PREFIX=""
-fi
-
-# Database mode (app manifest knows the type, user picks mode)
-DB_TYPE="$APP_DB_TYPE"
-echo ""
-echo "Database type (from deployment profile): ${DB_TYPE}"
-
-DB_MODE="$APP_DB_DEFAULT_MODE"
-if [ "$DB_TYPE" != "none" ]; then
-    echo ""
-    echo "Database mode:"
-    echo "  1) Local (deploy in swarm)"
-    echo "  2) External (existing server)"
-    echo ""
-    case "${EXISTING_DB_MODE:-$APP_DB_DEFAULT_MODE}" in
-        external) dbm_default="2" ;;
-        *)        dbm_default="1" ;;
-    esac
-    while true; do
-        read -p "Your choice (1-2) [$dbm_default]: " DBM_CHOICE
-        DBM_CHOICE="${DBM_CHOICE:-$dbm_default}"
-        case "$DBM_CHOICE" in
-            1) DB_MODE="local"; break ;;
-            2) DB_MODE="external"; break ;;
-            *) echo "Invalid choice: '$DBM_CHOICE'. Please enter 1 or 2." ;;
-        esac
-    done
-    echo "DB mode: $DB_MODE"
-fi
-
-# Proxy / SSL / Traefik network
-# Internal-only profiles are never exposed publicly, so proxy configuration is
-# skipped and fixed to "none".
-if [ "$APP_IS_INTERNAL" = "true" ]; then
-    PROXY_TYPE="none"
-    SSL_MODE=""
-    echo ""
-    echo "Proxy: none (internal-only profile)"
-else
-    echo ""
-    echo "Proxy type:"
-    echo "  1) Traefik (automatic HTTPS)"
-    echo "  2) None (direct port)"
-    echo ""
-    case "${EXISTING_PROXY_TYPE:-traefik}" in
-        none) proxy_default="2" ;;
-        *)    proxy_default="1" ;;
-    esac
-    while true; do
-        read -p "Your choice (1-2) [$proxy_default]: " PROXY_CHOICE
-        PROXY_CHOICE="${PROXY_CHOICE:-$proxy_default}"
-        case "$PROXY_CHOICE" in
-            1) PROXY_TYPE="traefik"; break ;;
-            2) PROXY_TYPE="none"; break ;;
-            *) echo "Invalid choice: '$PROXY_CHOICE'. Please enter 1 or 2." ;;
-        esac
-    done
-    echo "Proxy: $PROXY_TYPE"
-
-    # SSL mode (Traefik only)
-    SSL_MODE="letsencrypt"
-    if [ "$PROXY_TYPE" = "traefik" ]; then
-        echo ""
-        echo "SSL mode:"
-        echo "  1) letsencrypt (Traefik obtains certificate)"
-        echo "  2) proxy (SSL terminated upstream, e.g. Cloudflare)"
-        echo ""
-        while true; do
-            read -p "Your choice (1-2) [1]: " SSL_CHOICE
-            SSL_CHOICE="${SSL_CHOICE:-1}"
-            case "$SSL_CHOICE" in
-                1) SSL_MODE="letsencrypt"; break ;;
-                2) SSL_MODE="proxy"; break ;;
-                *) echo "Invalid choice: '$SSL_CHOICE'. Please enter 1 or 2." ;;
-            esac
-        done
-        echo "SSL: $SSL_MODE"
-    fi
-
-    # Prompt for Traefik network in interactive mode (after SSL mode is known)
-    if [ "$SETUP_MODE" = "interactive" ] && [ "$PROXY_TYPE" = "traefik" ]; then
-        TRAEFIK_NETWORK=$(prompt_traefik_network) || exit 1
-    fi
-fi
-
-# Admin UI configuration (for pgAdmin/mongo-express)
-if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
-    echo ""
-    echo "Admin UI Configuration"
-    echo "   (Admin UI services are disabled by default with replicas=0)"
-    echo ""
-    admin_ui_type=""
-    admin_ui_default_domain=""
-    if [ "$DB_TYPE" = "postgresql" ]; then
-        admin_ui_type="pgAdmin"
-        admin_ui_default_domain="${EXISTING_PGADMIN_URL:-admin.${DOMAIN}}"
-    elif [ "$DB_TYPE" = "mongodb" ]; then
-        admin_ui_type="Mongo Express"
-        admin_ui_default_domain="${EXISTING_MONGO_EXPRESS_URL:-admin.${DOMAIN}}"
-    fi
-
-    # Domain prompt - requires non-empty domain
-    if [ -n "$admin_ui_type" ]; then
-        echo "${admin_ui_type} domain:"
-        if [ "$DB_TYPE" = "postgresql" ]; then
-            while true; do
-                read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " PGADMIN_URL
-                PGADMIN_URL="${PGADMIN_URL:-$admin_ui_default_domain}"
-                if _validate_domain "$PGADMIN_URL"; then
-                    break
-                fi
-                echo " ${admin_ui_type} domain is required and must be a valid domain (e.g., admin.example.com)."
-            done
-            echo " ${admin_ui_type} URL: $PGADMIN_URL"
-        elif [ "$DB_TYPE" = "mongodb" ]; then
-            while true; do
-                read -p "${admin_ui_type} domain [${admin_ui_default_domain}]: " MONGO_EXPRESS_URL
-                MONGO_EXPRESS_URL="${MONGO_EXPRESS_URL:-$admin_ui_default_domain}"
-                if _validate_domain "$MONGO_EXPRESS_URL"; then
-                    break
-                fi
-                echo " ${admin_ui_type} domain is required and must be a valid domain (e.g., admin.example.com)."
-            done
-            echo " ${admin_ui_type} URL: $MONGO_EXPRESS_URL"
-        fi
-    fi
-
-    # Admin identity prompts with validation
-    echo ""
-    echo "Admin identity (non-secret values stored in .env):"
-    if [ "$DB_TYPE" = "postgresql" ]; then
-        # Compute domain prefix for email hint (e.g., api2.fe-wi.com -> api2)
-        domain_prefix="${DOMAIN%%.*}"
-        echo "Hint: use pattern pgadmin.${domain_prefix}@your-domain.com"
-        echo ""
-        # pgAdmin requires email - validate until acceptable
-        while true; do
-            pgadmin_email_default="${EXISTING_PGADMIN_EMAIL:-}"
-            read -p "pgAdmin login email [${pgadmin_email_default}]: " PGADMIN_EMAIL
-            PGADMIN_EMAIL="${PGADMIN_EMAIL:-$pgadmin_email_default}"
-
-            if validate_email "$PGADMIN_EMAIL"; then
-                break
-            fi
-            echo ""
-        done
-        echo "pgAdmin email: $PGADMIN_EMAIL"
-    elif [ "$DB_TYPE" = "mongodb" ]; then
-        # Compute domain prefix for username hint (e.g., api2.fe-wi.com -> api2)
-        domain_prefix="${DOMAIN%%.*}"
-        echo "Hint: use pattern dbadmin.${domain_prefix} (e.g., dbadmin.${domain_prefix})"
-        echo ""
-        # Mongo Express requires username - validate until acceptable
-        while true; do
-            mongo_user_default="${EXISTING_MONGO_EXPRESS_USERNAME:-dbadmin}"
-            read -p "Mongo Express username [${mongo_user_default}]: " MONGO_EXPRESS_USERNAME
-            MONGO_EXPRESS_USERNAME="${MONGO_EXPRESS_USERNAME:-$mongo_user_default}"
-
-            if validate_username "$MONGO_EXPRESS_USERNAME" "Mongo Express username"; then
-                break
-            fi
-            echo "Username cannot be empty, 'admin', or contain unsafe characters."
-            echo "Please try again."
-            echo ""
-        done
-        echo "Mongo Express username: $MONGO_EXPRESS_USERNAME"
-    fi
-fi
-
-# Docker image
-echo ""
-echo "Docker Image"
-DEFAULT_IMAGE_NAME="${APP_IMAGE_NAME}"
-DEFAULT_IMAGE_VERSION="${EXISTING_IMAGE_VERSION:-$APP_IMAGE_DEFAULT_VERSION}"
-while true; do
-    read -p "Image name [$DEFAULT_IMAGE_NAME]: " IMAGE_NAME
-    IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"
-    if _validate_non_empty "$IMAGE_NAME"; then
-        break
-    fi
-    echo "Image name is required."
-done
-while true; do
-    read -p "Image version [$DEFAULT_IMAGE_VERSION]: " IMAGE_VERSION
-    IMAGE_VERSION="${IMAGE_VERSION:-$DEFAULT_IMAGE_VERSION}"
-    if _validate_non_empty "$IMAGE_VERSION"; then
-        break
-    fi
-    echo "Image version is required."
-done
-echo "Image: $IMAGE_NAME:$IMAGE_VERSION"
-
-# Resources
-echo ""
-DEFAULT_REPLICAS="${APP_DEFAULT_REPLICAS}"
-if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
-    read -p "Nginx replicas [$DEFAULT_REPLICAS]: " NGINX_REPLICAS
-    NGINX_REPLICAS="${NGINX_REPLICAS:-$DEFAULT_REPLICAS}"
-    API_REPLICAS="$NGINX_REPLICAS"
-else
-    read -p "API replicas [$DEFAULT_REPLICAS]: " API_REPLICAS
-    API_REPLICAS="${API_REPLICAS:-$DEFAULT_REPLICAS}"
-fi
-echo ""
-echo "Memory limit (Docker memory constraint):"
-echo "  - Leave empty for unlimited (recommended for most deployments)"
-echo "  - 256M-512M for minimal/light usage (testing/development)"
-echo "  - 1G-2G for moderate API load with some caching"
-echo "  - 4G+ for heavy workloads or large file processing"
-echo ""
-read -p "Memory limit [unlimited]: " MEMORY_LIMIT
-MEMORY_LIMIT="${MEMORY_LIMIT:-}"
-
-# Data root - requires non-empty path
-echo ""
-DEFAULT_DATA_ROOT="${EXISTING_DATA_ROOT:-$PROJECT_ROOT}"
-while true; do
-    read -p "Data root path [$DEFAULT_DATA_ROOT]: " DATA_ROOT
-    DATA_ROOT="${DATA_ROOT:-$DEFAULT_DATA_ROOT}"
-    if _validate_non_empty "$DATA_ROOT"; then
-        break
-    fi
-    echo "Data root path is required."
-done
-
-fi  # End of interactive mode conditional
-
-# Make the selected profile metadata available to direct builder calls.
-STACK_FAMILY="${APP_STACK_FAMILY:-api}"
-STACK_ROLE="${APP_STACK_ROLE:-api}"
-PRIMARY_SERVICE="${APP_PRIMARY_SERVICE:-api}"
-export STACK_FAMILY STACK_ROLE PRIMARY_SERVICE
-
-# =============================================================================
-# STEP 3: Generate root .env
-# =============================================================================
-
-echo ""
-echo "Generating .env at project root..."
-
-ENV_FILE="${PROJECT_ROOT}/.env"
-
-{
-    echo "# Generated by setup-wizard.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "# Deployment profile: ${SELECTED_CONFIG}"
-    echo ""
-    echo "# Deployment Identity"
-    echo "STACK_NAME=${STACK_NAME}"
-    echo "DOMAIN=${DOMAIN}"
-    echo "DEPLOYMENT_PROFILE_ID=${SELECTED_CONFIG}"
-    echo "BACKEND_APP_ID=${APP_ID}"
-    echo "STACK_FAMILY=${APP_STACK_FAMILY:-api}"
-    echo "STACK_ROLE=${APP_STACK_ROLE:-api}"
-    echo "PRIMARY_SERVICE=${APP_PRIMARY_SERVICE:-api}"
-    echo ""
-    echo "# Database"
-    echo "DB_TYPE=${DB_TYPE}"
-    echo "DB_MODE=${DB_MODE}"
-} > "$ENV_FILE"
-
-# Database-specific env vars
-if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
-    {
-        echo "DB_HOST=${STACK_NAME}_postgres"
-        echo "DB_PORT=5432"
-        echo "DB_NAME=${STACK_NAME//-/_}_db"
-        echo "DB_USER=${STACK_NAME//-/_}_user"
-        echo "POSTGRES_HOST=${STACK_NAME}_postgres"
-        echo "POSTGRES_PORT=5432"
-        echo "POSTGRES_DB=${STACK_NAME//-/_}_db"
-        echo "POSTGRES_USER=${STACK_NAME//-/_}_user"
-        echo "POSTGRES_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
-        echo "POSTGRES_REPLICAS=1"
-    } >> "$ENV_FILE"
-elif [ "$DB_TYPE" = "mongodb" ] && [ "$DB_MODE" = "local" ]; then
-    {
-        echo "MONGODB_HOST=mongodb"
-        echo "MONGODB_PORT=27017"
-        echo "MONGODB_DB=${STACK_NAME//-/_}_db"
-        echo "MONGODB_USER=${STACK_NAME//-/_}_user"
-        echo "MONGODB_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
-    } >> "$ENV_FILE"
-elif [ "$DB_TYPE" = "neo4j" ] && [ "$DB_MODE" = "local" ]; then
-    {
-        echo "NEO4J_HOST=neo4j"
-        echo "NEO4J_PORT=7687"
-        echo "NEO4J_AUTH_FILE=/run/secrets/${SECRET_PREFIX}_db_password"
-    } >> "$ENV_FILE"
-fi
-
-# Admin UI configuration
-if [ "$DB_MODE" = "local" ] && [ "$DB_TYPE" != "none" ]; then
-    {
-        echo ""
-        echo "# Admin UI (database management)"
-    } >> "$ENV_FILE"
-    if [ "$DB_TYPE" = "postgresql" ]; then
-        {
-            echo "PGADMIN_URL=${PGADMIN_URL}"
-            echo "PGADMIN_REPLICAS=0"
-            echo "PGADMIN_EMAIL=${PGADMIN_EMAIL}"
-            echo "PGADMIN_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_ui_admin_password"
-        } >> "$ENV_FILE"
-    elif [ "$DB_TYPE" = "mongodb" ]; then
-        {
-            echo "MONGO_EXPRESS_URL=${MONGO_EXPRESS_URL}"
-            echo "MONGO_EXPRESS_REPLICAS=0"
-            echo "MONGO_EXPRESS_USER=${MONGO_EXPRESS_USERNAME}"
-            echo "MONGO_EXPRESS_PASSWORD_FILE=/run/secrets/${SECRET_PREFIX}_db_ui_admin_password"
-        } >> "$ENV_FILE"
-    fi
-fi
-
-{
-    echo ""
-    if [ "${APP_STACK_ROLE:-}" = "redirector" ] || [ "${APP_REDIRECTOR_ENABLED:-false}" = "true" ]; then
-        echo "# Redirector"
-        echo "REDIRECT_TARGET_BASE_URL=${REDIRECT_TARGET_BASE_URL:-${EXISTING_REDIRECT_TARGET_BASE_URL:-${APP_REDIRECT_TARGET_BASE_URL}}}"
-        echo "REDIRECT_STATUS_CODE=${REDIRECT_STATUS_CODE:-${EXISTING_REDIRECT_STATUS_CODE:-${APP_REDIRECT_STATUS_CODE:-302}}}"
-        echo ""
-    fi
-    if [ "${APP_REQUIRES_REDIS:-true}" = "true" ] && [ "${APP_STACK_FAMILY:-api}" != "nginx" ]; then
-        echo "# Redis"
-        echo "REDIS_HOST=redis"
-        echo "REDIS_PORT=6379"
-        echo "REDIS_REPLICAS=1"
-        echo "REDIS_URL=redis://redis:6379/0"
-        echo ""
-    fi
-    if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
-        echo "# Nginx"
-        echo "PORT=${APP_ROUTING_CONTAINER_PORT:-80}"
-        echo ""
-    else
-        echo "# API"
-        echo "API_URL=${DOMAIN}"
-        echo "PYTHON_VERSION=3.11"
-        echo "PORT=${APP_ROUTING_CONTAINER_PORT:-8080}"
-        echo "DEBUG=false"
-        echo ""
-    fi
-    echo "# Docker Image"
-    echo "IMAGE_NAME=${IMAGE_NAME}"
-    echo "IMAGE_VERSION=${IMAGE_VERSION}"
-    echo ""
-    echo "# Resources"
-    if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
-        echo "NGINX_REPLICAS=${NGINX_REPLICAS:-${API_REPLICAS:-1}}"
-    else
-        echo "API_REPLICAS=${API_REPLICAS}"
-    fi
-    if [ -n "${MEMORY_LIMIT}" ]; then
-        echo "MEMORY_LIMIT=${MEMORY_LIMIT}"
-    fi
-    echo ""
-    echo "# Data"
-    echo "DATA_ROOT=${DATA_ROOT}"
-    echo ""
-    echo "# Proxy"
-    echo "PROXY_TYPE=${PROXY_TYPE}"
-} >> "$ENV_FILE"
-
-if [ "$PROXY_TYPE" = "traefik" ]; then
-    {
-        echo "TRAEFIK_NETWORK=${TRAEFIK_NETWORK:-traefik-public}"
-        echo "TRAEFIK_ROUTER_NAME=${STACK_NAME}"
-        echo "TRAEFIK_RULE='Host(\`${DOMAIN}\`)'"
-        echo "TRAEFIK_ENTRYPOINT=websecure"
-        if [ "$SSL_MODE" = "letsencrypt" ]; then
-            echo "TRAEFIK_TLS_CERTRESOLVER=letsencrypt"
-        fi
-    } >> "$ENV_FILE"
-fi
-
-if [ "${SECRETS_REQUIRED:-false}" = "true" ]; then
-    {
-        echo ""
-        echo "# Secrets"
-        echo "# Empty SECRETS_PREFIX means the stack uses literal secret names from the template."
-        echo "SECRETS_PREFIX=${SECRET_PREFIX}"
-    } >> "$ENV_FILE"
-fi
-
-echo " .env written: $ENV_FILE"
-
-# =============================================================================
-# STEP 4: Build swarm-stack.yml
-# =============================================================================
-
-echo ""
-echo "Building swarm-stack.yml..."
-
-STACK_FILE="${PROJECT_ROOT}/swarm-stack.yml"
-
-# Derive secret names when the selected profile needs Docker secrets.
-PREFIX_UPPER=$(echo "$SECRET_PREFIX" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')
-DB_PASSWORD_SECRET="${PREFIX_UPPER}_DB_PASSWORD"
-ADMIN_API_KEY_SECRET="${PREFIX_UPPER}_ADMIN_API_KEY"
-BACKUP_RESTORE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_RESTORE_API_KEY"
-BACKUP_DELETE_API_KEY_SECRET="${PREFIX_UPPER}_BACKUP_DELETE_API_KEY"
-
-if ! build_current_stack_file; then
-    echo "Initial stack build failed. You can build manually later with scripts/build-site-stack.sh."
-fi
-
-# =============================================================================
-# STEP 5: Final Actions Menu
-# =============================================================================
-
-echo ""
-echo "============================================"
-echo "Configuration complete!"
-echo "============================================"
-echo ""
-echo "Stack Name:   $STACK_NAME"
-echo "Domain:       $DOMAIN"
-echo "App:          $APP_NAME ($APP_ID)"
-echo "Database:     $DB_TYPE ($DB_MODE)"
-echo "Image:        $IMAGE_NAME:$IMAGE_VERSION"
-echo "  .env:         $ENV_FILE"
-echo ""
-echo "What would you like to do next?"
-echo "  1) Done (save only)"
-echo "  2) Create data directories"
-echo "  3) Build swarm-stack.yml"
-if [ "$SECRETS_REQUIRED" = "true" ]; then
-    echo "  4) Create secrets from secrets.env file (recommended)"
-    echo "  5) Create secrets interactively"
-    echo "  6) Deploy to Docker Swarm"
-    echo "  7) Full deploy (data dirs + stack + secrets + deploy)"
-    max_choice=7
-else
-    echo "  4) Deploy to Docker Swarm"
-    echo "  5) Full deploy (data dirs + stack + deploy)"
-    echo ""
-    echo "No Docker secrets are required for this deployment profile."
-    max_choice=5
-fi
-echo ""
-while true; do
-    read -p "Your choice (1-${max_choice}) [1]: " FINAL_ACTION
-    FINAL_ACTION="${FINAL_ACTION:-1}"
-    if [[ "$FINAL_ACTION" =~ ^[0-9]+$ ]] && [ "$FINAL_ACTION" -ge 1 ] && [ "$FINAL_ACTION" -le "$max_choice" ]; then
-        if [ "$SECRETS_REQUIRED" != "true" ]; then
-            case "$FINAL_ACTION" in
-                4) FINAL_ACTION=6 ;;
-                5) FINAL_ACTION=7 ;;
-            esac
-        fi
-        break
-    fi
-    echo "Invalid choice: '$FINAL_ACTION'. Please enter a number between 1 and ${max_choice}."
-done
-
-
-case "$FINAL_ACTION" in
-    1)
-        echo ""
-        echo "Configuration saved. No further actions taken."
-        echo ""
-        echo "Next steps you can do manually:"
-        echo "  - Create data dirs:   mkdir -p ${DATA_ROOT}/{postgres_data,redis_data}"
-        echo "  - Build stack:        ./setup/setup-wizard.sh -> option 3"
-        if [ "$SECRETS_REQUIRED" = "true" ]; then
-            echo "  - Create secrets:     ./quick-start.sh -> Manage Docker secrets"
-        else
-            echo "  - Secrets:            none required for this profile"
-        fi
-        echo "  - Deploy:             ./quick-start.sh -> deploy option"
-        echo "  - Manual deploy:      set -a; source .env; set +a"
-        echo "                         docker stack deploy -c <(docker compose -f swarm-stack.yml config) $STACK_NAME"
-        ;;
-    2)
-        echo ""
-        create_data_directories "$DATA_ROOT" "$DB_TYPE"
-        echo ""
-        echo "Data directories initialized."
-        ;;
-    3)
-        echo ""
-        echo "Building swarm-stack.yml..."
-        if build_current_stack_file; then
-            echo ""
-            echo "swarm-stack.yml built."
-        else
-            echo "Stack builder failed. Run scripts/build-site-stack.sh manually."
-        fi
-        ;;
-    4)
-        echo ""
-        create_secrets_from_env_file "secrets.env" "$SECRETS_TEMPLATE_PATH" "$PREFIX_UPPER"
-        ;;
-    5)
-        echo ""
-        if [ -n "$APP_SECRET_NAMES" ]; then
-            echo "Creating secrets interactively:"
-            if [ "${APP_SECRETS_PREFIXED:-true}" = "false" ]; then
-                echo "   Using literal names from the profile."
-            else
-                echo "   Using prefix: ${PREFIX_UPPER}_*"
-            fi
-            SELECTED_EDITOR=""
-            choose_editor || SELECTED_EDITOR=""
-            for base_name in $APP_SECRET_NAMES; do
-                if [ -n "$SELECTED_EDITOR" ]; then
-                    if [ "${APP_SECRETS_PREFIXED:-true}" = "false" ]; then
-                        create_single_secret "$base_name" "$SELECTED_EDITOR"
-                    else
-                        create_single_secret "${PREFIX_UPPER}_${base_name}" "$SELECTED_EDITOR"
-                    fi
-                fi
-            done
-        else
-            echo "Creating secrets interactively with prefix: ${PREFIX_UPPER}_*"
-            create_docker_secrets "$DB_PASSWORD_SECRET" "$ADMIN_API_KEY_SECRET" "$BACKUP_RESTORE_API_KEY_SECRET" "$BACKUP_DELETE_API_KEY_SECRET" "${PREFIX_UPPER}_DB_UI_ADMIN_PASSWORD"
-        fi
-        echo ""
-        echo "Secrets created."
-        ;;
-    6)
-        echo ""
-        echo "Deploying..."
-        if [ -f "$STACK_FILE" ]; then
-            check_stack_conflict "$STACK_NAME"
-            deploy_stack "$STACK_NAME" "$STACK_FILE"
-            echo ""
-            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN" 20
-        else
-            echo "swarm-stack.yml not found. Build it first (option 3)."
-        fi
-        ;;
-    7)
-        echo ""
-        echo "Full deploy sequence"
-        echo ""
-
-        echo "--- Step 1/4: Data directories ---"
-        create_data_directories "$DATA_ROOT" "$DB_TYPE"
-        echo ""
-
-        if [ "$SECRETS_REQUIRED" = "true" ]; then
-            echo "--- Step 2/4: Build swarm-stack.yml ---"
-        else
-            echo "--- Step 2/3: Build swarm-stack.yml ---"
-        fi
-        if ! build_current_stack_file; then
-            echo "Stack builder failed. Build the stack before deploying."
-            exit 1
-        fi
-        echo ""
-
-        if [ "$SECRETS_REQUIRED" = "true" ]; then
-            echo "--- Step 3/4: Secrets ---"
-            create_secrets_from_env_file "secrets.env" "$SECRETS_TEMPLATE_PATH" "$PREFIX_UPPER"
-            echo ""
-            echo "--- Step 4/4: Deploy ---"
-        else
-            echo "No Docker secrets required; skipping secret creation."
-            echo ""
-            echo "--- Step 3/3: Deploy ---"
-        fi
-        if [ -f "$STACK_FILE" ]; then
-            # Check/create Traefik network if needed
-            if [ "$PROXY_TYPE" = "traefik" ]; then
-                traefik_net="${TRAEFIK_NETWORK:-traefik-public}"
-                if ! docker network ls --format '{{.Name}}' | grep -q "^${traefik_net}$"; then
-                    echo ""
-                    echo "Traefik network '${traefik_net}' not found."
-                    echo "This external network must exist before deployment."
-                    read -p "   Create it now? (Y/n): " create_net
-                    create_net="${create_net:-Y}"
-                    if [[ "$create_net" =~ ^[Yy] ]]; then
-                        docker network create --driver overlay --scope swarm "${traefik_net}" 2>/dev/null || true
-                        echo "Created network: ${traefik_net}"
-                    else
-                        echo "Deployment may fail without the Traefik network."
-                    fi
-                    echo ""
-                fi
-            fi
-            check_stack_conflict "$STACK_NAME"
-            deploy_stack "$STACK_NAME" "$STACK_FILE"
-            echo ""
-            check_deployment_health "$STACK_NAME" "$DB_TYPE" "$PROXY_TYPE" "$DOMAIN" 20
-        else
-            echo "swarm-stack.yml not found. Build it first (option 3)."
-        fi
-        ;;
-    *)
-        echo "Invalid choice. No action taken."
-        ;;
-esac
-
-echo ""
-echo "Setup wizard complete!"
-echo ""
+run_setup_wizard

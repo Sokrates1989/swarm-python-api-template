@@ -1,296 +1,139 @@
-# Modular Setup System - Implementation Summary
+# Modular Setup Summary
 
-## Overview
+This document summarizes the current setup architecture. Earlier revisions of
+this repository used separate Bash and PowerShell wizards and a smaller set of
+renderer-owned prompts. Those implementations are obsolete; native
+PowerShell deployment scripts are archived under
+`old/deprecated-windows-server-deploy-scripts/`.
 
-The setup system has been completely refactored into a **modular architecture** with separate, maintainable components. This document summarizes the changes and new structure.
+## Outcome
 
-## What Was Created
+Every deployment profile now enters one numbered, capability-driven Bash
+dialogue before persistence or rendering is selected.
 
-### 1. Main Setup Wizards (Project Root)
-
-#### `setup-wizard.sh` (Linux/Mac)
-- **Location**: Project root
-- **Size**: ~5KB (down from 24KB)
-- **Purpose**: Orchestrates the setup process using modular components
-- **Features**:
-  - Automatic backup of existing files
-  - Interactive configuration collection
-  - Full deployment automation
-  - Health checks after deployment
-
-#### `setup-wizard.ps1` (Windows)
-- **Location**: Project root
-- **Size**: ~5KB (down from 27KB)
-- **Purpose**: Windows PowerShell equivalent with identical functionality
-- **Features**: Same as Bash version with PowerShell-specific implementations
-
-### 2. Modular Components (setup/modules/)
-
-All modules have both Bash (`.sh`) and PowerShell (`.ps1`) implementations:
-
-#### `user-prompts.sh/.ps1`
-**Purpose**: Centralized user input collection
-**Functions**:
-- Database type selection (PostgreSQL/Neo4j)
-- Proxy type selection (Traefik/None)
-- Database mode selection (Local/External)
-- Stack name, data root, domain/port prompts
-- Docker image verification
-- Replica count configuration
-- Secret name configuration
-- Generic yes/no prompts
-
-#### `config-builder.sh/.ps1`
-**Purpose**: Build configuration files from templates
-**Functions**:
-- `build_env_file()` / `New-EnvFile` - Concatenates .env templates
-- `build_stack_file()` / `New-StackFile` - Builds swarm-stack.yml with snippet injection
-- `update_env_values()` / `Update-EnvValue` - Updates .env key-value pairs
-- `update_stack_secrets()` / `Update-StackSecrets` - Replaces secret placeholders
-- `backup_existing_files()` / `Backup-ExistingFiles` - Creates timestamped backups
-
-#### `network-check.sh/.ps1`
-**Purpose**: DNS verification for Traefik deployments
-**Functions**:
-- `network_verify()` / `Network-Verify` - Checks DNS resolution
-- Confirms resolved IP matches swarm manager
-- Allows proceeding even if DNS not configured
-
-#### `data-dirs.sh/.ps1`
-**Purpose**: Create required data directories
-**Functions**:
-- `create_data_directories()` / `New-DataDirectories` - Creates all directories
-- Checks for existing directories
-- Creates database-specific directories (PostgreSQL/Neo4j)
-- Creates Redis data directory
-
-#### `secret-manager.sh/.ps1`
-**Purpose**: Docker secret management
-**Functions**:
-- `create_docker_secrets()` / `New-DockerSecrets` - Interactive secret creation
-- `list_docker_secrets()` / `Get-DockerSecrets` - Lists existing secrets
-- `verify_secrets_exist()` / `Test-SecretsExist` - Verifies required secrets
-- Bash: Uses text editor for secret input
-- PowerShell: Uses secure input (hidden)
-
-#### `deploy-stack.sh/.ps1`
-**Purpose**: Stack deployment and health verification
-**Functions**:
-- `deploy_stack()` / `Invoke-StackDeploy` - Deploys to Docker Swarm
-- `check_deployment_health()` / `Test-DeploymentHealth` - Comprehensive health checks
-- Verifies service replicas
-- Checks service logs
-- Tests API health endpoint
-- Provides deployment summary
-
-### 3. Documentation
-
-#### `setup/README.md`
-- Updated to reflect modular structure
-- Documents the new wizard locations
-- Explains modular architecture benefits
-- Provides usage instructions
-
-#### `setup/modules/README.md` (NEW)
-- Comprehensive module documentation
-- Function reference for all modules
-- Design principles explanation
-- Guide for adding new modules
-- Testing instructions
-
-#### `setup/MIGRATION.md` (NEW)
-- Migration guide from old to new system
-- Explains what changed and why
-- Backward compatibility information
-- Troubleshooting guide
-- FAQ section
-
-#### `MODULAR_SETUP_SUMMARY.md` (This file)
-- High-level overview of the new system
-- Quick reference for developers
-
-#### Main `README.md`
-- Updated Quick Start section
-- Added modular architecture explanation
-- Updated setup wizard instructions
-
-## Key Improvements
-
-### 1. Maintainability
-- **Before**: All logic in two 24-27KB monolithic scripts
-- **After**: Logic split into 6 focused modules (~2-4KB each)
-- **Benefit**: Easier to understand, modify, and test individual components
-
-### 2. Code Reusability
-- **Before**: Duplicate code between Bash and PowerShell versions
-- **After**: Shared logic in modules, platform-specific implementations
-- **Benefit**: Changes need to be made in fewer places
-
-### 3. Separation of Concerns
-- **Before**: Mixed responsibilities in single scripts
-- **After**: Each module has a single, clear responsibility
-- **Benefit**: Easier to locate and fix issues
-
-### 4. Cross-Platform Consistency
-- **Before**: Different features between platforms
-- **After**: Feature parity with platform-appropriate implementations
-- **Benefit**: Consistent user experience on Windows, Linux, and Mac
-
-### 5. Extensibility
-- **Before**: Hard to add new database types or proxy options
-- **After**: Modular design makes extensions straightforward
-- **Benefit**: Easy to add MongoDB, nginx, or other options
-
-### 6. Testability
-- **Before**: Difficult to test individual components
-- **After**: Modules can be tested independently
-- **Benefit**: Better quality assurance
-
-## File Structure
-
-```
-swarm-python-api-template/
-├── setup-wizard.sh              # NEW: Main wizard for Linux/Mac
-├── setup-wizard.ps1             # NEW: Main wizard for Windows
-├── README.md                    # UPDATED: New setup instructions
-├── MODULAR_SETUP_SUMMARY.md     # NEW: This file
-│
-└── setup/
-    ├── README.md                # UPDATED: Modular system docs
-    ├── MIGRATION.md             # NEW: Migration guide
-    │
-    ├── modules/                 # Modular components
-    │   ├── README.md            # NEW: Module documentation
-    │   ├── user-prompts.sh      # NEW: User input (Bash)
-    │   ├── user-prompts.ps1     # NEW: User input (PowerShell)
-    │   ├── config-builder.sh    # NEW: Config building (Bash)
-    │   ├── config-builder.ps1   # NEW: Config building (PowerShell)
-    │   ├── network-check.sh     # ENHANCED: DNS verification (Bash)
-    │   ├── network-check.ps1    # ENHANCED: DNS verification (PowerShell)
-    │   ├── data-dirs.sh         # ENHANCED: Directory creation (Bash)
-    │   ├── data-dirs.ps1        # ENHANCED: Directory creation (PowerShell)
-    │   ├── secret-manager.sh    # NEW: Secret management (Bash)
-    │   ├── secret-manager.ps1   # NEW: Secret management (PowerShell)
-    │   ├── deploy-stack.sh      # ENHANCED: Deployment (Bash)
-    │   └── deploy-stack.ps1     # ENHANCED: Deployment (PowerShell)
-    │
-    ├── compose-modules/         # Docker Compose templates
-    │   ├── README.md            # Existing
-    │   ├── base.yml
-    │   ├── api.template.yml
-    │   ├── footer.yml
-    │   ├── postgres-local.yml
-    │   ├── neo4j-local.yml
-    │   └── snippets/
-    │
-    └── env-templates/           # Environment templates
-        ├── README.md            # Existing
-        ├── .env.base.template
-        ├── .env.postgres-*.template
-        ├── .env.neo4j-*.template
-        └── .env.proxy-*.template
+```text
+profile selection
+  -> common input collector
+  -> normalized deployment values
+  -> profile-declared persistence/render adapter
+  -> common final-action menu
+  -> common operations menu
 ```
 
-## Usage
+This separation prevents a new renderer or app profile from introducing a
+second operator experience.
 
-### For End Users
+## Shared dialogue modules
 
-Simply run the appropriate setup wizard:
+### `deployment-profile-prompts.sh`
+
+Provides numbered enum/boolean selection and validated free-text primitives.
+Pressing Enter accepts the displayed default.
+
+### `deployment-profile-inputs.sh`
+
+Coordinates stack identity, domains, database mode, connection defaults, and
+the other capability sections. It also loads an existing root `.env` either
+as fast re-setup input or as interactive defaults.
+
+### `deployment-profile-routing.sh`
+
+Collects Traefik/direct routing, TLS ownership, a real discovered Traefik
+overlay network, certificate resolver, and applicable published ports.
+
+### `deployment-profile-services.sh`
+
+Collects API and optional WebApp images, semantic versions, replicas, memory,
+storage, optional database management, internal networks, and redirector
+settings.
+
+## Persistence and rendering
+
+### Versions 3.0 and 3.1
+
+`legacy-profile-environment.sh` writes the compatibility root `.env`.
+`scripts/build-site-stack.sh` and `config-builder.sh` assemble reusable Compose
+modules. A version-3.1 profile may select safe repository-relative complete
+Compose assets for a specialized topology.
+
+### Version 5.0
+
+`executable-profile-wizard.sh` is a prompt-free adapter. It passes the common
+answers to `scripts/site_profile.py`, whose validators write the public root
+`.env` and whose deterministic renderer builds and Compose-checks
+`swarm-stack.yml`.
+
+Version 5.0 fixes application and authentication identity while allowing
+deployment-instance values such as stack name, domains, image repositories
+and tags, replicas, ports, and storage to use profile defaults that the
+operator can change.
+
+There is no version 4 profile format. Version 5.0 is a separate strict contract
+family, not an incremental version-3 extension.
+
+## Capability-driven actions
+
+`deployment-setup-actions.sh` builds one final-action menu. Entries appear only
+when the selected profile declares the required capability:
+
+- data-directory preparation;
+- Docker secret management;
+- Keycloak realm/client reconciliation; and
+- deployment through the shared stack action.
+
+The main quick-start menu similarly discovers active profile services for
+status, logs, health, update, scale, and rollback behavior.
+
+## Application boundaries
+
+`site-configs/<profile>.json` is the only app-specific dispatch boundary. A
+profile supplies:
+
+- service topology and database mode;
+- public, direct, or internal exposure;
+- routing and service defaults;
+- optional WebApp and management services;
+- authentication identity and allowed callbacks/origins;
+- exact required and optional secret identifiers; and
+- optional safe paths to specialized Compose assets.
+
+Shared scripts must never branch on `APP_ID` or a profile filename. A WebApp is
+an ordinary `services.web` capability; it does not justify a separate app
+wizard.
+
+## Generated and secret state
+
+The setup wizard writes:
+
+```text
+.env              Public deployment-instance values
+swarm-stack.yml   Generated stack definition
+```
+
+It does not create a completion marker and does not deploy without the
+operator selecting the explicit shared action.
+
+Secret values stay in Docker secrets. Site configs and root `.env` contain
+only public values and secret identifiers.
+
+## Platform status
+
+The Linux/Bash flow is authoritative. There is no maintained
+`setup-wizard.ps1` or set of paired PowerShell modules. From Windows, use WSL
+to execute the Bash flow when local inspection is needed.
+
+## Extension checklist
+
+1. Express the difference in the site-config format.
+2. Implement one generic behavior for that field.
+3. Keep renderer adapters prompt-free.
+4. Test with at least two differently named profiles.
+5. Update `site-configs/README.md` and relevant companion profile docs.
+6. Reject any application-name branch in shared execution sources.
+
+## Verification
 
 ```bash
-# Linux/Mac
-./setup-wizard.sh
-
-# Windows
-.\setup-wizard.ps1
+bash -n quick-start.sh setup/setup-wizard.sh setup/modules/*.sh scripts/*.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
-
-The wizard handles everything automatically.
-
-### For Developers
-
-To modify the setup process:
-
-1. **Identify the module** responsible for the functionality
-2. **Update both implementations** (.sh and .ps1)
-3. **Test on both platforms**
-4. **Update module documentation** if adding new functions
-
-Example - Adding a new prompt:
-
-```bash
-# In setup/modules/user-prompts.sh
-prompt_new_feature() {
-    read -p "Enter value: " VALUE
-    echo "$VALUE"
-}
-
-# In setup/modules/user-prompts.ps1
-function Get-NewFeature {
-    $Value = Read-Host "Enter value"
-    return $Value
-}
-
-# Export in PowerShell
-Export-ModuleMember -Function Get-NewFeature
-```
-
-## Benefits Summary
-
-| Aspect | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| **Main wizard size** | 24-27KB | ~5KB | 80% reduction |
-| **Code duplication** | High | Low | Shared logic in modules |
-| **Maintainability** | Difficult | Easy | Single responsibility per module |
-| **Testability** | Hard | Easy | Independent module testing |
-| **Extensibility** | Limited | High | Modular design |
-| **Cross-platform** | Inconsistent | Consistent | Feature parity |
-| **Documentation** | Basic | Comprehensive | 4 detailed docs |
-
-## Migration Path
-
-Existing users don't need to change anything. The new wizards:
-- Generate identical configuration files
-- Work with existing deployments
-- Provide the same user experience
-- Add automatic backups and better error handling
-
-See `setup/MIGRATION.md` for detailed migration information.
-
-## Future Enhancements
-
-The modular architecture makes these additions straightforward:
-
-1. **New database types**: Add MongoDB, MySQL, etc.
-   - Create new env templates
-   - Create new compose modules
-   - Add option to user-prompts module
-
-2. **New proxy types**: Add nginx, HAProxy, etc.
-   - Create new env templates
-   - Create new compose snippets
-   - Add option to user-prompts module
-
-3. **CI/CD integration**: Add deployment automation
-   - Create new ci-cd module
-   - Add to setup wizard workflow
-
-4. **Testing module**: Add automated testing
-   - Create test-runner module
-   - Integrate with deploy-stack module
-
-5. **Monitoring setup**: Add Prometheus/Grafana
-   - Create monitoring module
-   - Add to deployment workflow
-
-## Conclusion
-
-The modular setup system provides:
-- ✅ Better maintainability
-- ✅ Consistent cross-platform support
-- ✅ Easier testing and debugging
-- ✅ Straightforward extensibility
-- ✅ Comprehensive documentation
-- ✅ Backward compatibility
-
-All while reducing code size and complexity.

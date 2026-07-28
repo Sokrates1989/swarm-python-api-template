@@ -4,17 +4,26 @@
     image: mongo-express:latest
     environment:
       ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_USER}
-      ME_CONFIG_MONGODB_ADMINPASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_MONGODB_PASSWORD_XXX
+      ME_CONFIG_MONGODB_ADMINPASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_DB_PASSWORD_XXX
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-dbadmin}
       ME_CONFIG_BASICAUTH_PASSWORD_FILE: /run/secrets/XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX
     networks:
-      - default
+      - backend
+###ADMIN_TRAEFIK_NETWORK_START###
       - XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX
+###ADMIN_TRAEFIK_NETWORK_END###
     secrets:
-      - XXX_CHANGE_ME_MONGODB_PASSWORD_XXX
+      - XXX_CHANGE_ME_DB_PASSWORD_XXX
       - XXX_CHANGE_ME_MONGO_EXPRESS_PASSWORD_XXX
+###ADMIN_DIRECT_PORTS_START###
+    ports:
+      - target: 8081
+        published: ${PGADMIN_PUBLISHED_PORT}
+        protocol: tcp
+        mode: host
+###ADMIN_DIRECT_PORTS_END###
     deploy:
       mode: replicated
       replicas: ${MONGO_EXPRESS_REPLICAS:-0}
@@ -24,9 +33,6 @@
       resources:
         limits:
           memory: 256M
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.rule=Host(`${MONGO_EXPRESS_URL}`)"
-        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.entrypoints=websecure"
-        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.tls=true"
-        - "traefik.http.services.XXX_CHANGE_ME_STACK_NAME_XXX_mongoexpress.loadbalancer.server.port=8081"
+###ADMIN_TRAEFIK_LABELS_START###
+###ADMIN_TRAEFIK_LABELS###
+###ADMIN_TRAEFIK_LABELS_END###

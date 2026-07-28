@@ -1,10 +1,12 @@
 # SSL/TLS Configuration Options
 
-The setup wizard now supports two different SSL/TLS configurations for Traefik deployments.
+The shared setup dialogue supports two TLS ownership modes for public profiles
+that allow Traefik. The selected site config or existing root `.env` supplies
+the displayed default.
 
 ## Configuration Modes
 
-### 1. Direct SSL (Default)
+### 1. Let's Encrypt (Traefik-owned TLS)
 **When to use:** Traefik directly faces the internet and handles SSL/TLS termination.
 
 **Characteristics:**
@@ -73,7 +75,7 @@ The setup wizard now supports two different SSL/TLS configurations for Traefik d
 Internet → Traefik → API
          (SSL here)
 ```
-**Choose:** Direct SSL
+**Choose:** Let's Encrypt
 
 ### Scenario 2: Behind Cloudflare
 ```
@@ -101,13 +103,14 @@ Internet → Edge Traefik → Internal Traefik → API
 ## Troubleshooting
 
 ### Issue: "Too Many Redirects" with Cloudflare
-**Cause:** Cloudflare SSL mode set to "Flexible" with Direct SSL configuration.
+**Cause:** Cloudflare SSL mode set to "Flexible" with Traefik-owned TLS.
 **Solution:** 
 - Use Proxy SSL configuration, OR
 - Set Cloudflare SSL mode to "Full" or "Full (strict)"
 
 ### Issue: "Connection Not Secure" Warning
-**Cause:** Using Direct SSL but Let's Encrypt can't reach your server.
+**Cause:** Using Let's Encrypt mode but the certificate authority cannot reach
+your Traefik service.
 **Solution:**
 - Ensure ports 80 and 443 are open
 - Check DNS points to your server
@@ -128,20 +131,21 @@ When you run the setup wizard:
 
 1. **Select Proxy Type:** Choose "Traefik"
 2. **Select SSL Mode:**
-   - **Option 1:** Direct SSL (Traefik handles SSL with Let's Encrypt)
+   - **Option 1:** Let's Encrypt (Traefik owns certificates)
    - **Option 2:** Proxy SSL (SSL terminated at upstream proxy)
 
 The wizard will automatically:
-- Select the appropriate Traefik label snippet
+- retain the selection in root `.env`
+- route rendering through the selected profile adapter
 - Configure entrypoints correctly
 - Add or omit TLS configuration
 - Set up middleware if needed
 
 ---
 
-## File Structure
+## Renderer implementation
 
-The SSL configuration is implemented through separate snippet files:
+Version-3 compatibility rendering uses shared label snippets:
 
 ```
 setup/compose-modules/snippets/
@@ -149,28 +153,31 @@ setup/compose-modules/snippets/
 └── proxy-traefik-proxy-ssl.labels.yml     # Proxy SSL labels
 ```
 
-The wizard selects the appropriate file based on your choice.
+Version-5 executable rendering emits the equivalent labels through the shared
+deterministic renderer. These are renderer details only; both formats use the
+same numbered setup section.
 
 ---
 
 ## Migration
 
-### From Direct SSL to Proxy SSL
+### From Let's Encrypt to Proxy SSL
 1. Run setup wizard again
 2. Select "Proxy SSL" mode
-3. Redeploy stack
+3. Review the rendered stack and redeploy it in place
 
-### From Proxy SSL to Direct SSL
+### From Proxy SSL to Let's Encrypt
 1. Ensure Traefik can obtain Let's Encrypt certificates
 2. Run setup wizard again
-3. Select "Direct SSL" mode
-4. Redeploy stack
+3. Select "Let's Encrypt" mode
+4. Review the rendered stack and redeploy it in place
 
 ---
 
 ## Best Practices
 
-1. **Use Direct SSL when possible** - Simpler configuration, fewer moving parts
+1. **Use Traefik-owned TLS when appropriate** - Confirm DNS, external
+   reachability, and the selected certificate resolver
 2. **Use Proxy SSL when required** - Behind CDN, load balancer, or multi-tier setup
 3. **Document your choice** - Note which mode you're using for future reference
 4. **Test after deployment** - Verify SSL works correctly in browser

@@ -52,6 +52,7 @@
     "WEB_MEMORY_LIMIT"
   ],
   "requiredSecretFileFields": [
+    "DB_PASSWORD_FILE",
     "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
   ],
   "configurationInput": {
@@ -76,7 +77,7 @@
   "deploymentBoundary": {
     "candidateHost": "felix-app.fe-wi.com",
     "candidateApiHost": "api.felix-app.fe-wi.com",
-    "candidateStackName": "felix-new",
+    "candidateStackName": "felix",
     "legacyHost": "felix.app.fe-wi.com",
     "legacyForwardingRequiresCutoverApproval": true,
     "mutableImageTagsAllowed": false

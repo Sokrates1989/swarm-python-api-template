@@ -28,14 +28,32 @@
 #   APP_CONFIG_FILE, APP_ID, APP_NAME, APP_DESCRIPTION,
 #   APP_KIND, APP_STACK_NAME, APP_STACK_FAMILY, APP_STACK_ROLE,
 #   APP_PRIMARY_SERVICE,
-#   APP_ROUTING_CONTAINER_PORT, APP_DB_TYPE, APP_DB_DEFAULT_MODE,
+#   APP_ROUTING_CONTAINER_PORT, APP_ROUTING_DOMAIN,
+#   APP_ROUTING_API_BASE_URL, APP_ROUTING_WEB_DOMAIN,
+#   APP_ROUTING_WEB_BASE_URL, APP_ROUTING_DEFAULT_SSL_MODE,
+#   APP_ROUTING_HEALTH_PATH, APP_ROUTING_WEB_HEALTH_PATH,
+#   APP_ROUTING_TRAEFIK_NETWORK, APP_ROUTING_TRAEFIK_CONSTRAINT_LABEL,
+#   APP_ROUTING_TRAEFIK_CERT_RESOLVER,
+#   APP_ROUTING_API_PUBLISHED_PORT, APP_ROUTING_WEB_PUBLISHED_PORT,
+#   APP_ROUTING_PGADMIN_PUBLISHED_PORT, APP_DB_TYPE, APP_DB_DEFAULT_MODE,
+#   APP_DB_ALLOWED_MODES, APP_DB_DEFAULT_HOST, APP_DB_DEFAULT_PORT,
+#   APP_DB_EXTERNAL_HOST_DEFAULT, APP_DB_EXTERNAL_PORT_DEFAULT,
 #   APP_REQUIRES_REDIS, APP_REQUIRES_DATABASE, APP_SECRET_COUNT,
 #   APP_IMAGE_NAME, APP_IMAGE_DEFAULT_VERSION,
+#   APP_WEB_IMAGE_NAME, APP_WEB_IMAGE_DEFAULT_VERSION,
 #   APP_DEFAULT_REPLICAS, APP_DEFAULT_MEMORY_LIMIT,
+#   APP_WEB_DEFAULT_REPLICAS, APP_WEB_DEFAULT_MEMORY_LIMIT,
 #   APP_EXPOSURE_TYPE, APP_INTERNAL_URL, APP_INTERNAL_SERVICE,
-#   APP_INTERNAL_NETWORK, APP_SECRETS_TEMPLATE, APP_SECRETS_PREFIXED,
+#   APP_INTERNAL_NETWORK, APP_INTERNAL_NETWORK_EXTERNAL,
+#   APP_INTERNAL_NETWORK_ATTACHABLE, APP_DATA_ROOT, APP_ADMIN_UI_TYPE,
+#   APP_ADMIN_UI_DEFAULT_DOMAIN, APP_ADMIN_UI_DEFAULT_EMAIL,
+#   APP_ADMIN_UI_DEFAULT_DOMAIN_PREFIX, APP_ADMIN_UI_DEFAULT_ENABLED,
+#   APP_ADMIN_UI_DEFAULT_REPLICAS, APP_ADMIN_UI_CONFIGURABLE_REPLICAS,
+#   APP_ADMIN_UI_SECRET,
+#   APP_SECRETS_TEMPLATE, APP_SECRETS_PREFIXED,
 #   APP_SECRET_NAMES, APP_OPTIONAL_SECRET_NAMES, APP_ENV_KEYS,
-#   APP_RENDERER_TYPE, APP_RENDERER_STRICT, APP_REQUIRES_WEB
+#   APP_RENDERER_TYPE, APP_RENDERER_STRICT, APP_RENDERER_API_TEMPLATE,
+#   APP_RENDERER_FOOTER_TEMPLATE, APP_REQUIRES_WEB
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
@@ -89,6 +107,43 @@ _jq_or_default() {
     else
         echo "$val"
     fi
+}
+
+# ==============================================================================
+# site_profile_declares_secrets
+# ==============================================================================
+# Checks whether a site profile declares any base, optional, enabled-capability,
+# or database-management Docker secret.
+#
+# Arguments:
+#   $1 - json_file: path to the selected site-profile JSON.
+#
+# Returns:
+#   0 when at least one secret identifier is declared; otherwise 1.
+# ==============================================================================
+site_profile_declares_secrets() {
+    local json_file="$1"
+
+    [ -f "$json_file" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -e '
+      (
+        [
+          .secrets[]?,
+          .optionalSecrets[]?,
+          (
+            (.capabilities // {})
+            | to_entries[]
+            | select(.value.enabled == true)
+            | .value.secretMounts[]?.name
+          ),
+          .database.pgadminSecret?
+        ]
+        | map(select(type == "string" and length > 0))
+        | unique
+        | length
+      ) > 0
+    ' "$json_file" >/dev/null
 }
 
 # ==============================================================================
@@ -169,6 +224,19 @@ load_app_config() {
     APP_STACK_ROLE="$(_jq_or_default "$config_file" '.stack.role' "api")"
     APP_PRIMARY_SERVICE="$(_jq_or_default "$config_file" '.stack.primaryService' "api")"
     APP_ROUTING_CONTAINER_PORT="$(_jq_or_default "$config_file" '.routing.containerPort' "8080")"
+    APP_ROUTING_DOMAIN="$(_jq_or_default "$config_file" '.routing.domain // .routing.defaultDomain' "")"
+    APP_ROUTING_API_BASE_URL="$(_jq_or_default "$config_file" '.routing.apiBaseUrl' "")"
+    APP_ROUTING_HEALTH_PATH="$(_jq_or_default "$config_file" '.routing.healthPath' "/health")"
+    APP_ROUTING_WEB_DOMAIN="$(_jq_or_default "$config_file" '.routing.webDomain' "")"
+    APP_ROUTING_WEB_BASE_URL="$(_jq_or_default "$config_file" '.routing.webBaseUrl' "")"
+    APP_ROUTING_WEB_HEALTH_PATH="$(_jq_or_default "$config_file" '.routing.webHealthPath' "/health")"
+    APP_ROUTING_DEFAULT_SSL_MODE="$(_jq_or_default "$config_file" '.routing.sslMode' "letsencrypt")"
+    APP_ROUTING_TRAEFIK_NETWORK="$(_jq_or_default "$config_file" '.routing.traefikNetwork' "traefik-public")"
+    APP_ROUTING_TRAEFIK_CONSTRAINT_LABEL="$(_jq_or_default "$config_file" '.routing.traefikConstraintLabel' "traefik-public")"
+    APP_ROUTING_TRAEFIK_CERT_RESOLVER="$(_jq_or_default "$config_file" '.routing.traefikCertResolver' "le")"
+    APP_ROUTING_API_PUBLISHED_PORT="$(_jq_or_default "$config_file" '.routing.publishedPort' "8083")"
+    APP_ROUTING_WEB_PUBLISHED_PORT="$(_jq_or_default "$config_file" '.routing.webPublishedPort' "8084")"
+    APP_ROUTING_PGADMIN_PUBLISHED_PORT="$(_jq_or_default "$config_file" '.routing.pgadminPublishedPort' "5054")"
     APP_REDIRECTOR_ENABLED="$(_jq_or_default "$config_file" '.redirector.enabled' "false")"
     APP_REDIRECT_TARGET_BASE_URL="$(_jq_or_default "$config_file" '.redirector.defaultTargetBaseUrl' "")"
     APP_REDIRECT_STATUS_CODE="$(_jq_or_default "$config_file" '.redirector.statusCode' "302")"
@@ -176,13 +244,17 @@ load_app_config() {
     # Exposure metadata. Internal-only profiles (exposure.type == "internal")
     # are never given a public domain, Traefik labels, or published ports.
     APP_EXPOSURE_TYPE="$(_jq_or_default "$config_file" '.exposure.type' "public")"
+    APP_EXPOSURE_TRAEFIK="$(_jq_or_default "$config_file" '.exposure.traefik' "true")"
+    APP_EXPOSURE_PUBLISHED_PORTS="$(_jq_or_default "$config_file" '.exposure.publishedPorts' "true")"
     APP_INTERNAL_URL="$(_jq_or_default "$config_file" '.routing.internalUrl' "")"
     APP_INTERNAL_SERVICE="$(_jq_or_default "$config_file" '.routing.internalServiceName' "$APP_PRIMARY_SERVICE")"
     APP_INTERNAL_NETWORK="$(_jq_or_default "$config_file" '.networking.internalNetwork' "")"
+    APP_INTERNAL_NETWORK_EXTERNAL="$(_jq_or_default "$config_file" '.networking.externalNetwork' "false")"
+    APP_INTERNAL_NETWORK_ATTACHABLE="$(_jq_or_default "$config_file" '.networking.attachable' "false")"
 
     # Secret-handling metadata (optional). Profiles whose Docker secrets use
-    # literal, unprefixed names (e.g. secure_messaging) declare their own
-    # secrets template and set secretsConfig.prefixed = false.
+    # Profiles with literal, unprefixed secret names declare their own secrets
+    # template and set secretsConfig.prefixed = false.
     APP_SECRETS_TEMPLATE="$(_jq_or_default "$config_file" '.secretsConfig.template' "")"
     APP_SECRETS_PREFIXED="$(_jq_or_default "$config_file" '.secretsConfig.prefixed' "true")"
     APP_SECRET_NAMES="$(jq -r '.secrets[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
@@ -192,25 +264,73 @@ load_app_config() {
     # rendered environment allowlist instead of informational documentation.
     APP_RENDERER_TYPE="$(_jq_or_default "$config_file" '.renderer.type' "generic")"
     APP_RENDERER_STRICT="$(_jq_or_default "$config_file" '.renderer.strict' "false")"
+    APP_RENDERER_API_TEMPLATE="$(_jq_or_default "$config_file" '.renderer.apiTemplate' "")"
+    APP_RENDERER_FOOTER_TEMPLATE="$(_jq_or_default "$config_file" '.renderer.footerTemplate' "")"
     APP_ENV_KEYS="$(jq -r '.envKeys[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
 
     # Database requirements
     APP_DB_TYPE="$(_jq_or_default "$config_file" '.database.type' "postgresql")"
     APP_DB_DEFAULT_MODE="$(_jq_or_default "$config_file" '.database.defaultMode' "local")"
+    APP_DB_ALLOWED_MODES="$(jq -r '.database.allowedModes[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
+    if [ -z "$APP_DB_ALLOWED_MODES" ]; then
+        if [ "$APP_DB_TYPE" = "none" ]; then
+            APP_DB_ALLOWED_MODES="none"
+        else
+            APP_DB_ALLOWED_MODES="local external"
+        fi
+    fi
+    local default_db_host="postgres"
+    local default_db_port="5432"
+    case "$APP_DB_TYPE" in
+        mongodb)
+            default_db_host="mongodb"
+            default_db_port="27017"
+            ;;
+        neo4j)
+            default_db_host="neo4j"
+            default_db_port="7687"
+            ;;
+    esac
+    APP_DB_DEFAULT_HOST="$(_jq_or_default "$config_file" '.environment.DB_HOST' "$default_db_host")"
+    APP_DB_DEFAULT_PORT="$(_jq_or_default "$config_file" '.environment.DB_PORT // .database.port' "$default_db_port")"
+    APP_DB_EXTERNAL_HOST_DEFAULT="$(_jq_or_default "$config_file" '.database.externalHostDefault' "")"
+    APP_DB_EXTERNAL_PORT_DEFAULT="$(_jq_or_default "$config_file" '.database.externalPortDefault // .database.port' "$default_db_port")"
+    APP_DB_DEFAULT_NAME="$(_jq_or_default "$config_file" '.environment.DB_NAME' "$APP_ID")"
+    APP_DB_DEFAULT_USER="$(_jq_or_default "$config_file" '.environment.DB_USER' "$APP_ID")"
+    APP_DB_PROMPT_IDENTITY="$(_jq_or_default "$config_file" '((.environment.DB_NAME? != null) or (.environment.DB_USER? != null))' "false")"
 
     # Service requirements
     APP_REQUIRES_REDIS="$(_jq_or_default "$config_file" '.services.redis' "true")"
     APP_REQUIRES_DATABASE="$(_jq_or_default "$config_file" '.services.database' "true")"
     APP_REQUIRES_WEB="$(_jq_or_default "$config_file" '.services.web' "false")"
-    APP_SECRET_COUNT="$(_jq_or_default "$config_file" '.secrets | length' "0")"
+    APP_SECRET_COUNT=0
+    if site_profile_declares_secrets "$config_file"; then
+        APP_SECRET_COUNT=1
+    fi
 
     # Image defaults
     APP_IMAGE_NAME="$(_jq_or_default "$config_file" '.image.name' "")"
     APP_IMAGE_DEFAULT_VERSION="$(_jq_or_default "$config_file" '.image.defaultVersion' "latest")"
+    APP_WEB_IMAGE_NAME="$(_jq_or_default "$config_file" '.web.image.name' "")"
+    APP_WEB_IMAGE_DEFAULT_VERSION="$(_jq_or_default "$config_file" '.web.image.defaultVersion' "")"
 
     # Resource defaults
     APP_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.resources.defaultReplicas' "1")"
     APP_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.resources.defaultMemoryLimit' "512M")"
+    APP_WEB_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.web.resources.defaultReplicas' "1")"
+    APP_WEB_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.web.resources.defaultMemoryLimit // .resources.defaultWebMemoryLimit' "128M")"
+    APP_DATA_ROOT="$(_jq_or_default "$config_file" '.storage.dataRoot' "$project_root")"
+
+    # Optional database-management service metadata. New profiles declare the
+    # full pgadmin object; compatibility profiles may use adminUI.
+    APP_ADMIN_UI_TYPE="$(_jq_or_default "$config_file" '.adminUI.type // (if .pgadmin then "pgadmin" else "" end)' "")"
+    APP_ADMIN_UI_SECRET="$(_jq_or_default "$config_file" '.adminUI.secret' "")"
+    APP_ADMIN_UI_DEFAULT_DOMAIN="$(_jq_or_default "$config_file" '.pgadmin.domain' "")"
+    APP_ADMIN_UI_DEFAULT_DOMAIN_PREFIX="$(_jq_or_default "$config_file" '.adminUI.defaultDomainPrefix' "admin")"
+    APP_ADMIN_UI_DEFAULT_EMAIL="$(_jq_or_default "$config_file" '.pgadmin.email' "")"
+    APP_ADMIN_UI_DEFAULT_ENABLED="$(_jq_or_default "$config_file" '.pgadmin.enabled' "false")"
+    APP_ADMIN_UI_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.adminUI.defaultReplicas' "0")"
+    APP_ADMIN_UI_CONFIGURABLE_REPLICAS="$(_jq_or_default "$config_file" '.adminUI.configurableReplicas' "false")"
 
     return 0
 }
@@ -356,6 +476,8 @@ _load_stack_env_fields() {
     export PROXY_TYPE="$(_root_env_value "$env_file" PROXY_TYPE)"
     export SSL_MODE="$(_root_env_value "$env_file" SSL_MODE)"
     export TRAEFIK_NETWORK="$(_root_env_value "$env_file" TRAEFIK_NETWORK)"
+    export TRAEFIK_CONSTRAINT_LABEL="$(_root_env_value "$env_file" TRAEFIK_CONSTRAINT_LABEL)"
+    export TRAEFIK_CERT_RESOLVER="$(_root_env_value "$env_file" TRAEFIK_CERT_RESOLVER)"
     export IMAGE_NAME="$(_root_env_value "$env_file" IMAGE_NAME)"
     export IMAGE_VERSION="$(_root_env_value "$env_file" IMAGE_VERSION)"
     export API_REPLICAS="$(_root_env_value "$env_file" API_REPLICAS)"
@@ -363,6 +485,8 @@ _load_stack_env_fields() {
     export DATA_ROOT="$(_root_env_value "$env_file" DATA_ROOT)"
     export API_PUBLISHED_PORT="$(_root_env_value "$env_file" API_PUBLISHED_PORT)"
     export WEB_PUBLISHED_PORT="$(_root_env_value "$env_file" WEB_PUBLISHED_PORT)"
+    export PGADMIN_PUBLISHED_PORT="$(_root_env_value "$env_file" PGADMIN_PUBLISHED_PORT)"
+    export INTERNAL_NETWORK="$(_root_env_value "$env_file" INTERNAL_NETWORK)"
     export SECRET_PREFIX="$(_root_env_value "$env_file" SECRETS_PREFIX)"
 }
 
@@ -438,8 +562,10 @@ _load_generic_service_env_fields() {
 # ==============================================================================
 # load_root_env
 # ==============================================================================
-# Loads the root .env file (PROJECT_ROOT/.env) and exports convenience
-# globals used by menu_handlers, deploy-stack, and other modules.
+# Loads the root .env file (PROJECT_ROOT/.env), exports convenience globals,
+# and hydrates the matching site profile when one exists. Reloading a restored
+# or wizard-updated environment therefore cannot leave stale capability data in
+# the long-running quick-start menu.
 #
 # Arguments:
 #   $1 - project_root: absolute path to the repository root
@@ -450,6 +576,7 @@ _load_generic_service_env_fields() {
 load_root_env() {
     local project_root="$1"
     local env_file="${project_root}/.env"
+    local profile_id=""
 
     if [ ! -f "$env_file" ]; then
         return 1
@@ -457,5 +584,13 @@ load_root_env() {
     _load_stack_env_fields "$env_file"
     _load_executable_env_fields "$env_file"
     _load_generic_service_env_fields "$env_file"
+    profile_id="${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-}}"
+    if [ -n "$profile_id" ]; then
+        if [ ! -f "${project_root}/site-configs/${profile_id}.json" ]; then
+            echo "Deployment profile is missing: ${profile_id}" >&2
+            return 1
+        fi
+        load_app_config "$project_root" "$profile_id" || return 1
+    fi
     return 0
 }

@@ -460,6 +460,62 @@ create_secret_from_value() {
 }
 
 # ------------------------------------------------------------------------------
+# _validate_secret_env_keys
+# ------------------------------------------------------------------------------
+# Validates every effective key in a saved secret-values file before any Docker
+# mutation. Exact-name profiles pass a newline-separated profile allowlist;
+# legacy prefixed workflows may omit enforcement but still receive safe-name
+# validation. Enforcement is independent from allowlist contents so an exact
+# profile with no batch-importable secrets rejects every effective key.
+#
+# Arguments:
+#   $1 - secrets_file: values file to inspect.
+#   $2 - allowed_keys: newline-separated exact-name allowlist (may be empty).
+#   $3 - enforce_allowlist: true to require membership; false by default.
+#
+# Returns:
+#   0 when every key is safe and, when enforced, allowed; otherwise 1.
+#
+# Errors:
+#   Returns 1 for an invalid enforcement flag, unsafe key, or undeclared key.
+# ------------------------------------------------------------------------------
+_validate_secret_env_keys() {
+    local secrets_file="$1"
+    local allowed_keys="${2:-}"
+    local enforce_allowlist="${3:-false}"
+    local key=""
+    local ignored_value=""
+
+    case "$enforce_allowlist" in
+        true|false) ;;
+        *)
+            echo "[ERROR] Invalid secret allowlist enforcement mode: ${enforce_allowlist}" >&2
+            return 1
+            ;;
+    esac
+
+    while IFS='=' read -r key ignored_value || [ -n "$key" ]; do
+        key="${key%$'\r'}"
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        case "$key" in
+            export\ *) key="${key#export }" ;;
+            ""|\#*) continue ;;
+        esac
+        if [[ ! "$key" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+            echo "[ERROR] Unsafe Docker secret key in ${secrets_file}: ${key}" >&2
+            return 1
+        fi
+        if [ "$enforce_allowlist" = "true" ] &&
+            ! printf '%s\n' "$allowed_keys" | grep -Fxq -- "$key"; then
+            echo "[ERROR] Undeclared Docker secret key in ${secrets_file}: ${key}" >&2
+            echo "        Add it to the selected site profile before importing." >&2
+            return 1
+        fi
+    done < "$secrets_file"
+}
+
+# ------------------------------------------------------------------------------
 # create_secrets_from_env_file
 # ------------------------------------------------------------------------------
 # Creates Docker secrets from a secrets.env file. This is the main workflow
@@ -473,7 +529,10 @@ create_secret_from_value() {
 # Arguments:
 #   $1 - secrets_file: path to secrets.env (default: secrets.env)
 #   $2 - template_file: path to template (default: setup/templates/secrets.env.template)
-#   $3 - prefix: secret name prefix (required, e.g., myapp)
+#   $3 - prefix: optional secret name prefix (for example, myapp)
+#   $4 - allowed_keys: optional newline-separated exact-name allowlist
+#   $5 - enforce_allowlist: true for exact-name profile enforcement; false by
+#        default for legacy prefixed imports.
 #
 # Returns:
 #   0 on success, 1 on failure
@@ -486,6 +545,8 @@ create_secrets_from_env_file() {
     local secrets_file="${1:-secrets.env}"
     local template_file="${2:-setup/templates/secrets.env.template}"
     local prefix="${3:-}"
+    local allowed_keys="${4:-}"
+    local enforce_allowlist="${5:-false}"
 
     echo ""
     echo "🔐 Create Docker Secrets from File"
@@ -529,6 +590,14 @@ create_secrets_from_env_file() {
         echo "⚠️  No editor found. Please edit $secrets_file manually, then continue."
         read -p "Press Enter when ready to create secrets..."
         echo ""
+    fi
+
+    if ! _validate_secret_env_keys \
+        "$secrets_file" \
+        "$allowed_keys" \
+        "$enforce_allowlist"; then
+        echo "[ERROR] No Docker secrets were changed."
+        return 1
     fi
 
     # Parse and create secrets

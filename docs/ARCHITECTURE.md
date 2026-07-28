@@ -1,468 +1,204 @@
 # Architecture Overview
 
-This document explains the modular architecture of the Swarm Python API Template.
+This repository is one reusable Docker Swarm deployment system. A server clone
+represents one deployed app stack; the selected file in `site-configs/`
+provides that stack's capabilities and defaults.
 
-## Design Philosophy
+## Architectural invariant
 
-The template uses a **two-layer modular approach**:
+Shared production code must not branch on an application ID, profile filename,
+stack name, domain, realm, client ID, image name, or secret prefix.
 
-### Layer 1: Modular Setup Wizards
-- Reusable script modules for setup process
-- Cross-platform support (Bash + PowerShell)
-- Single responsibility per module
-- No code duplication between platforms
+All profiles use:
 
-### Layer 2: Template Injection System
-- Configuration snippets injected into templates
-- No redundant YAML files
-- Single source of truth for API configuration
+1. one numbered setup dialogue;
+2. one normalized set of deployment answers;
+3. a profile-declared persistence/render adapter;
+4. one capability-driven final-action menu; and
+5. one common operations menu for secrets, Keycloak, deploy, status, logs,
+   health, and rollback.
 
-This provides:
+Profiles may reference safe repository-relative Compose assets for specialized
+topologies. The profile remains the only dispatch boundary: shared scripts
+must not contain the application name or hard-code those asset paths.
 
-1. **No Redundancy** - Each configuration option is defined once
-2. **Easy Maintenance** - Update one module/snippet to affect all combinations
-3. **Clear Separation** - Database, proxy, and setup logic are isolated
-4. **Flexibility** - Easy to add new options without exponential file growth
-5. **Cross-platform** - Identical functionality on Windows, Linux, and Mac
+## Setup flow
 
-## Configuration Matrix
-
-The template supports these combinations:
-
-| Database | Mode | Proxy | Result |
-|----------|------|-------|--------|
-| PostgreSQL | Local | Traefik | PostgreSQL deployed in swarm with Traefik routing |
-| PostgreSQL | Local | None | PostgreSQL deployed in swarm with direct port |
-| PostgreSQL | External | Traefik | Connect to external PostgreSQL with Traefik routing |
-| PostgreSQL | External | None | Connect to external PostgreSQL with direct port |
-| Neo4j | Local | Traefik | Neo4j deployed in swarm with Traefik routing |
-| Neo4j | Local | None | Neo4j deployed in swarm with direct port |
-| Neo4j | External | Traefik | Connect to external Neo4j with Traefik routing |
-| Neo4j | External | None | Connect to external Neo4j with direct port |
-| MongoDB | Local | Traefik | MongoDB deployed in swarm with Traefik routing |
-| MongoDB | Local | None | MongoDB deployed in swarm with direct port |
-| MongoDB | External | Traefik | Connect to external MongoDB with Traefik routing |
-| MongoDB | External | None | Connect to external MongoDB with direct port |
-
-**Total combinations**: 12
-
-**Without modular approach**: Would require 12 complete template files
-
-**With modular approach**: Only 12 small module files + 1 base template
-
-## File Structure
-
-```
-swarm-python-api-template/
-├── setup-wizard.sh          # Main wizard (Linux/Mac)
-├── setup-wizard.ps1         # Main wizard (Windows)
-│
-└── setup/
-    ├── compose-modules/     # Docker Compose templates
-    │   ├── base.yml        # Base structure (services: + Redis)
-    │   ├── api.template.yml # API template with placeholders
-    │   ├── footer.yml      # Networks and secrets
-    │   ├── postgres-local.yml # PostgreSQL service
-    │   ├── neo4j-local.yml   # Neo4j service
-    │   └── snippets/       # Configuration snippets
-    │       ├── db-postgresql-local.env.yml
-    │       ├── db-postgresql-external.env.yml
-    │       ├── db-neo4j-local.env.yml
-    │       ├── db-neo4j-external.env.yml
-    │       ├── proxy-traefik.network.yml
-    │       ├── proxy-traefik.labels.yml
-    │       └── proxy-none.ports.yml
-    │
-    ├── env-templates/      # Environment variable templates
-    │   ├── .env.base.template
-    │   ├── .env.postgres-local.template
-    │   ├── .env.postgres-external.template
-    │   ├── .env.neo4j-local.template
-    │   ├── .env.neo4j-external.template
-    │   ├── .env.proxy-traefik.template
-    │   └── .env.proxy-none.template
-    │
-    └── modules/            # Reusable script modules
-        ├── user-prompts.sh/.ps1    # User input collection
-        ├── config-builder.sh/.ps1  # Config file builders
-        ├── network-check.sh/.ps1   # DNS verification
-        ├── data-dirs.sh/.ps1       # Directory creation
-        ├── secret-manager.sh/.ps1  # Secret management
-        └── deploy-stack.sh/.ps1    # Deployment & health
+```text
+quick-start.sh
+  |
+  +-- setup/setup-wizard.sh
+        |
+        +-- select site-config
+        +-- load profile capabilities and defaults
+        +-- collect normalized answers once
+        |     +-- stack and domains
+        |     +-- database mode and connection defaults
+        |     +-- proxy, TLS, network, and direct ports
+        |     +-- API/WebApp images and resources
+        |     +-- storage and optional admin service
+        |
+        +-- persist through selected adapter
+        |     +-- version 3.0/3.1 compatibility environment
+        |     +-- version 5.0 strict executable environment
+        |
+        +-- render through selected adapter
+        |     +-- compose-module builder
+        |     +-- deterministic executable renderer
+        |
+        +-- shared final-action menu
+              +-- return without external changes
+              +-- create data directories
+              +-- manage declared Docker secrets
+              +-- reconcile declared Keycloak identity
+              +-- deploy through the common stack action
 ```
 
-## How Configuration is Built
+Renderer selection happens only after the dialogue. A renderer is not allowed
+to own a second setup wizard or change the operator interaction style.
 
-### Template Injection Process
+## Profile-format families
 
-The `config-builder` module builds `swarm-stack.yml` using **template injection**:
+| Version | Purpose | Persistence/rendering |
+|---------|---------|-----------------------|
+| `3.0` | Original API/database/Redis compatibility profiles | Shared compatibility `.env` writer and compose-module builder |
+| `3.1` | Compatibility profiles with exposure/routing metadata or profile-selected complete Compose assets | Same shared dialogue and compatibility adapters |
+| `5.0` | Strict full-stack contract with exact services, routing, auth, environment, and secret mounts | Python-validated `.env` writer and deterministic renderer |
 
-1. Start with `base.yml` (services: + Redis)
-2. Copy `api.template.yml` and inject snippets into placeholders:
-   - `###DATABASE_ENV###` → database environment snippet
-   - `###PROXY_NETWORK###` → proxy network snippet (if Traefik)
-   - `###PROXY_CONFIG###` → proxy configuration snippet
-3. Append database service (if local mode)
-4. Append `footer.yml` (networks: + secrets:)
+There is no version 4 format. Version 5.0 deliberately starts a new major
+family because strict validation and exact secret mounts are not a
+backward-compatible extension of version 3.
 
-### Example 1: PostgreSQL Local + Traefik
+See [`../site-configs/README.md`](../site-configs/README.md) for the canonical
+field guide.
 
-**Generated swarm-stack.yml structure:**
-```
-base.yml (services: + Redis)
-+ api.template.yml with injected:
-  - db-postgresql-local.env.yml
-  - proxy-traefik.network.yml
-  - proxy-traefik.labels.yml
-+ postgres-local.yml
-+ footer.yml
-```
+## Configuration ownership
 
-**Generated .env:**
-```bash
-# From .env.base.template
-API_REPLICAS=1
-REDIS_REPLICAS=1
-IMAGE_NAME=...
-# ...
+| Concern | Owner |
+|---------|-------|
+| App identity and capabilities | `site-configs/<profile>.json` |
+| Operator-selected production values | ignored root `.env` |
+| Passwords, tokens, and client secrets | Docker secrets |
+| Numbered setup interaction | `deployment-profile-*.sh` modules |
+| Version-3 persistence | `legacy-profile-environment.sh` |
+| Version-3 rendering | `scripts/build-site-stack.sh` and compose modules |
+| Version-5 persistence | `executable-profile-wizard.sh` and Python validators |
+| Version-5 rendering | `scripts/executable_stack_renderer.py` |
+| Realm/client reconciliation | profile-driven Keycloak adapters |
+| Deploy, health, logs, and rollback | common operations modules |
 
-# From .env.postgres-local.template
-POSTGRES_REPLICAS=1
-DB_TYPE=postgresql
-DB_NAME=apidb
-# ...
+Site configs contain safe defaults. The final stack name, domains, image
+repositories and versions, replicas, ports, routing choice, and storage path
+are deployment-instance values written to `.env`.
 
-# From .env.proxy-traefik.template
-API_URL=api.example.com
-TRAEFIK_NETWORK_NAME=traefik
-```
+## Current file structure
 
-**Result:**
-- API service with Traefik labels
-- PostgreSQL service deployed in swarm
-- Redis service
-- Traefik network connection
-- Secrets for database password
-
-### Example 2: Neo4j External + No Proxy
-
-**Generated swarm-stack.yml structure:**
-```
-base.yml (services: + Redis)
-+ api.template.yml with injected:
-  - db-neo4j-external.env.yml
-  - proxy-none.ports.yml
-+ footer.yml
-```
-
-**Generated .env:**
-```bash
-# From .env.base.template
-API_REPLICAS=1
-REDIS_REPLICAS=1
-IMAGE_NAME=...
-# ...
-
-# From .env.neo4j-external.template
-DB_TYPE=neo4j
-DB_USER=neo4j
-NEO4J_URL=bolt://external-host:7687
-DB_PASSWORD=...
-
-# From .env.proxy-none.template
-PUBLISHED_PORT=8000
-```
-
-**Result:**
-- API service with direct port exposure
-- No database service (connects to external)
-- Redis service
-- No Traefik network
-- Only Admin API key secret needed
-
-## Setup Wizard Modules
-
-The setup wizard uses 6 modular components:
-
-### 1. user-prompts
-- Collects all user input
-- Database type, proxy type, database mode
-- Stack name, image, replicas, secrets
-- Domain (Traefik) or port (no proxy)
-
-### 2. config-builder
-- Builds `.env` by concatenating templates
-- Builds `swarm-stack.yml` using template injection
-- Updates configuration values
-- Creates backups of existing files
-
-### 3. network-check
-- Verifies DNS resolution (Traefik only)
-- Confirms IP matches swarm manager
-- Allows proceeding if DNS not configured
-
-### 4. data-dirs
-- Creates data root directory
-- Creates database-specific directories
-- Creates Redis data directory
-- Checks for existing directories
-
-### 5. secret-manager
-- Guides Docker secret creation
-- Database password (local mode)
-- Admin API key
-- Lists existing secrets
-
-### 6. deploy-stack
-- Deploys stack to Docker Swarm
-- Checks service replica status
-- Inspects service logs
-- Tests API health endpoint
-- Provides deployment summary
-
-## Template Injection Details
-
-### API Template Structure
-
-```yaml
-# api.template.yml
-services:
-  api:
-    image: ${IMAGE_NAME}:${IMAGE_VERSION}
-    environment:
-      PORT: ${PORT}
-      ###DATABASE_ENV###
-    networks:
-      - backend
-      ###PROXY_NETWORK###
-    deploy:
-      replicas: ${API_REPLICAS}
-      ###PROXY_CONFIG###
-```
-
-### Snippet Injection
-
-Placeholders are replaced with snippet content:
-
-```yaml
-# Before injection
-###DATABASE_ENV###
-
-# After injection (PostgreSQL local)
-DB_TYPE: postgresql
-DB_NAME: ${DB_NAME}
-DB_USER: ${DB_USER}
-```
-
-## Setup Wizard Flow
-
-```
-1. User Input Collection (user-prompts module)
-   ├─ Database Type: PostgreSQL or Neo4j
-   ├─ Proxy Type: Traefik or None
-   ├─ Database Mode: Local or External
-   ├─ Stack name, data root, image
-   ├─ Domain (Traefik) or Port (No proxy)
-   ├─ Replica counts
-   └─ Secret names
-
-2. Configuration Building (config-builder module)
-   ├─ Build .env:
-   │   ├─ Concatenate .env.base.template
-   │   ├─ Concatenate .env.{db}-{mode}.template
-   │   └─ Concatenate .env.proxy-{type}.template
-   │
-   └─ Build swarm-stack.yml:
-       ├─ Append base.yml
-       ├─ Inject snippets into api.template.yml
-       ├─ Append {db}-local.yml (if local)
-       └─ Append footer.yml
-
-3. Secret Creation (secret-manager module)
-   ├─ Database password (if local DB)
-   └─ Admin API key
-
-4. Network Verification (network-check module)
-   └─ Verify DNS resolution (if Traefik)
-
-5. Directory Creation (data-dirs module)
-   ├─ Data root
-   ├─ Database directories
-   └─ Redis directory
-
-6. Deployment (deploy-stack module)
-   ├─ Deploy to Docker Swarm
-   ├─ Check service replicas
-   ├─ Inspect logs
-   └─ Test API health
-```
-
-## Adding New Options
-
-### Adding a New Database Type (e.g., MongoDB)
-
-1. **Create compose module:**
-   ```bash
-   setup/compose-modules/mongodb-local.yml
-   ```
-
-2. **Create snippets:**
-   ```bash
-   setup/compose-modules/snippets/db-mongodb-local.env.yml
-   setup/compose-modules/snippets/db-mongodb-external.env.yml
-   ```
-
-3. **Create env templates:**
-   ```bash
-   setup/env-templates/.env.mongodb-local.template
-   setup/env-templates/.env.mongodb-external.template
-   ```
-
-4. **Update user-prompts module:**
-   ```bash
-   # In prompt_database_type() / Get-DatabaseType
-   echo "3) MongoDB (document database)"
-   
-   case $DB_CHOICE in
-       3) echo "mongodb" ;;
-   esac
-   ```
-
-5. **Update config-builder module:**
-   ```bash
-   # In build_env_file() / New-EnvFile
-   elif [ "$db_type" = "mongodb" ]; then
-       cat "${project_root}/setup/env-templates/.env.mongodb-${db_mode}.template" >> .env
-   fi
-   
-   # In build_stack_file() / New-StackFile
-   local db_env_snippet="${project_root}/setup/compose-modules/snippets/db-mongodb-${db_mode}.env.yml"
-   ```
-
-### Adding a New Proxy Type (e.g., nginx)
-
-1. **Create snippets:**
-   ```bash
-   setup/compose-modules/snippets/proxy-nginx.network.yml  # if needed
-   setup/compose-modules/snippets/proxy-nginx.labels.yml   # or ports
-   ```
-
-2. **Create env template:**
-   ```bash
-   setup/env-templates/.env.proxy-nginx.template
-   ```
-
-3. **Update user-prompts module:**
-   ```bash
-   # In prompt_proxy_type() / Get-ProxyType
-   echo "3) nginx (custom reverse proxy)"
-   
-   case $PROXY_CHOICE in
-       3) echo "nginx" ;;
-   esac
-   ```
-
-4. **Update config-builder module:**
-   ```bash
-   # In build_env_file() / New-EnvFile
-   elif [ "$proxy_type" = "nginx" ]; then
-       cat "${project_root}/setup/env-templates/.env.proxy-nginx.template" >> .env
-   fi
-   
-   # In build_stack_file() / New-StackFile
-   local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-nginx.labels.yml"
-   ```
-
-## Benefits Over Previous Approach
-
-### Before (Monolithic Wizards)
-
-```
+```text
+quick-start.sh
 setup/
-├── setup-wizard.sh                 (~24KB monolithic)
-├── setup-wizard.ps1                (~27KB monolithic)
-└── modules/ (3 basic modules)
-    ├── data-dirs.sh/.ps1
-    ├── deploy-stack.sh/.ps1
-    └── network-check.sh/.ps1
-
-Total: ~51KB with duplicated logic
-Problems:
-- All logic in two large scripts
-- Code duplication between Bash/PowerShell
-- Hard to maintain and test
-- Difficult to add new features
+  setup-wizard.sh
+  modules/
+    site_helpers.sh
+    deployment-profile-prompts.sh
+    deployment-profile-inputs.sh
+    deployment-profile-routing.sh
+    deployment-profile-services.sh
+    legacy-profile-environment.sh
+    executable-profile-wizard.sh
+    deployment-setup-actions.sh
+    config-builder.sh
+    docker-secrets-menu.sh
+    keycloak-bootstrap.sh
+    menu_handlers.sh
+    deploy-stack.sh
+    health-check.sh
+  compose-modules/
+    base.yml
+    api.template.yml
+    footer.yml
+    snippets/
+scripts/
+  build-site-stack.sh
+  site_profile.py
+  executable_profile_*.py
+  executable_stack_renderer.py
+  keycloak_profile_*.py
+site-configs/
+  README.md
+  _template.json
+  <profile>.json
+  <profile>.json.md
 ```
 
-### After (Modular System)
+The authoritative production workflow is Bash. Historical native PowerShell
+deployment scripts are archived under
+`old/deprecated-windows-server-deploy-scripts/` and are not maintained. Do not
+add a second PowerShell wizard or paired `.ps1` module implementation.
 
+## Renderer adapters
+
+### Compatibility compose modules
+
+Versions 3.0 and 3.1 use the shared legacy environment writer and
+`scripts/build-site-stack.sh`. Normal database/proxy combinations are assembled
+from reusable fragments. A version-3.1 profile may select complete API/footer
+assets for an unusual topology; the declared paths must be safe and
+repository-relative.
+
+### Strict executable renderer
+
+Version 5.0 profiles use `scripts/site_profile.py` and its validators to:
+
+1. keep application/authentication identity fixed;
+2. accept only declared operator-owned deployment overrides;
+3. write a complete public root `.env` atomically;
+4. validate exact environment and secret-file contracts;
+5. render only profile-declared services; and
+6. Compose-check the result before replacing `swarm-stack.yml`.
+
+An optional WebApp is an ordinary `services.web` capability. Felix therefore
+does not need a Felix-named setup, renderer, Keycloak, deployment, health, or
+rollback module.
+
+## Adding or changing a capability
+
+Use this order:
+
+1. model the difference in the site-config format;
+2. add a generic collector/render behavior for that field;
+3. prove it with at least two differently named profiles;
+4. update `site-configs/README.md`; and
+5. update the companion `<profile>.json.md` for non-commentable JSON.
+
+Never add `_is_<app>`, `if APP_ID=...`, or application identity literals to
+shared setup and operations sources.
+
+## Security and deployment boundary
+
+- Root `.env` is public configuration and must never contain passwords,
+  tokens, private keys, or client-secret values.
+- Docker secret identifiers and file mounts come from the selected profile.
+- Keycloak actions update the existing platform through its Admin API; they do
+  not deploy another Keycloak instance.
+- Setup and rendering do not deploy automatically. Deployment is an explicit
+  common-menu action.
+- Normal updates use `docker stack deploy` without removing the stack first so
+  Swarm retains previous service specifications for rollback.
+
+## Verification
+
+Run the shared validation on Linux:
+
+```bash
+bash -n quick-start.sh setup/setup-wizard.sh setup/modules/*.sh scripts/*.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
-setup-wizard.sh                     (~5KB orchestrator)
-setup-wizard.ps1                    (~5KB orchestrator)
-setup/
-├── compose-modules/
-│   ├── base.yml, api.template.yml, footer.yml
-│   ├── postgres-local.yml, neo4j-local.yml
-│   └── snippets/ (7 snippet files)
-├── env-templates/ (7 template files)
-└── modules/ (6 comprehensive modules)
-    ├── user-prompts.sh/.ps1        (~3KB each)
-    ├── config-builder.sh/.ps1      (~4KB each)
-    ├── network-check.sh/.ps1       (~2KB each)
-    ├── data-dirs.sh/.ps1           (~3KB each)
-    ├── secret-manager.sh/.ps1      (~3KB each)
-    └── deploy-stack.sh/.ps1        (~5KB each)
 
-Total: ~50KB with modular structure
-Benefits:
-- 80% reduction in main wizard size
-- 100% elimination of code duplication
-- 6 focused, testable modules
-- Cross-platform feature parity
-- Easy to add new databases/proxies
+Version-5 profiles can also be checked directly:
+
+```bash
+python3 scripts/site_profile.py --root . validate-stack --compose-check
 ```
 
-## Security Considerations
-
-### Local Database
-- Database password stored in Docker secrets
-- Password never in `.env` file
-- Secrets mounted as files in containers
-
-### External Database
-- Database password in `.env` file (encrypted at rest recommended)
-- Alternative: Use Docker secrets for external DB password too
-- Ensure `.env` is in `.gitignore`
-
-## Performance Considerations
-
-- **Include overhead**: Minimal, processed at deploy time
-- **Module count**: No runtime impact, merged before deployment
-- **Network topology**: Same as monolithic approach
-- **Resource usage**: Identical to monolithic templates
-
-## Troubleshooting
-
-### Issue: Include files not found
-
-**Symptom**: `Error: include file not found`
-
-**Solution**: Ensure you're deploying from the repository root where `swarm-stack.yml` can find `compose-modules/` directory
-
-### Issue: Environment variables not substituted
-
-**Symptom**: Variables like `${PORT}` appear literally in deployed services
-
-**Solution**: Ensure `.env` file exists and contains all required variables
-
-### Issue: Service configuration not as expected
-
-**Symptom**: Service missing expected configuration
-
-**Solution**: Check which modules are included in `swarm-stack.yml` and verify module contents
-
-## References
-
-- [Docker Compose Include Documentation](https://docs.docker.com/reference/compose-file/include/)
-- [Docker Compose Merge Behavior](https://docs.docker.com/reference/compose-file/merge/)
-- [Docker Swarm Stack Deploy](https://docs.docker.com/engine/reference/commandline/stack_deploy/)
+Direct commands are validation adapters. Normal operator setup and deployment
+remain menu-driven through `./quick-start.sh`.

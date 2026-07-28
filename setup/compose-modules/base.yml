@@ -1,16 +1,3 @@
-# Base configuration for all deployments
-# This file contains common settings
-# NOTE: Only contains 'services:' section. Networks and secrets are in footer.yml
+# Base configuration for all compose-module API deployments.
+# Capability-specific services are appended by the shared config builder.
 services:
-  redis:
-    image: redis:7-alpine
-    networks:
-      - backend
-    deploy:
-      mode: replicated
-      replicas: ${REDIS_REPLICAS}
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3

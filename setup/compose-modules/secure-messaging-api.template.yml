@@ -4,7 +4,7 @@ services:
   secure_messaging_api:
     image: ${IMAGE_NAME}:${IMAGE_VERSION}
     networks:
-      secure_messaging_internal:
+      XXX_CHANGE_ME_INTERNAL_NETWORK_XXX:
         aliases:
           - secure_messaging_api
     secrets:
@@ -34,6 +34,9 @@ services:
     deploy:
       mode: replicated
       replicas: ${API_REPLICAS:-1}
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT}
       update_config:
         parallelism: 1
         delay: 10s

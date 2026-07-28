@@ -29,6 +29,9 @@ _config_builder_sed_inplace() {
     fi
 }
 
+# Database-management rendering is a separate capability adapter.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/admin-ui-compose.sh"
+
 # ------------------------------------------------------------------------------
 # build_env_file
 # ------------------------------------------------------------------------------
@@ -78,12 +81,11 @@ build_env_file() {
 }
 
 # ------------------------------------------------------------------------------
-# build_internal_api_stack_file
+# build_profile_compose_stack_file
 # ------------------------------------------------------------------------------
-# Assembles swarm-stack.yml for an internal-only API profile (e.g.
-# secure_messaging). These stacks are never exposed via Traefik or published
-# host ports: the service attaches only to its external overlay network and
-# consumes externally-managed Docker secrets referenced by literal names.
+# Assembles swarm-stack.yml from two complete compose modules declared by the
+# selected site profile. This supports specialized service/network/secret
+# topology without teaching shared orchestration an application identity.
 #
 # The dedicated compose modules already contain the complete services, networks,
 # and secrets definitions, so no snippet injection or placeholder substitution
@@ -92,19 +94,31 @@ build_env_file() {
 #
 # Arguments:
 #   $1 - project_root: absolute path to the repository root.
+#   $2 - API/service module path relative to the repository root.
+#   $3 - Footer module path relative to the repository root.
 #
 # Returns:
 #   0 on success, 1 when a required compose module is missing.
 # ------------------------------------------------------------------------------
-build_internal_api_stack_file() {
+build_profile_compose_stack_file() {
     local project_root="$1"
-    local api_module="${project_root}/setup/compose-modules/secure-messaging-api.template.yml"
-    local footer_module="${project_root}/setup/compose-modules/secure-messaging-footer.yml"
+    local api_relative="$2"
+    local footer_relative="$3"
+    local api_module=""
+    local footer_module=""
 
-    echo "Building swarm-stack.yml (internal-only API)..."
+    if [ -z "$api_relative" ] || [ -z "$footer_relative" ] ||
+        [[ "$api_relative" = /* ]] || [[ "$footer_relative" = /* ]] ||
+        [[ "$api_relative" = *".."* ]] || [[ "$footer_relative" = *".."* ]]; then
+        echo "Profile compose-module paths are missing or unsafe." >&2
+        return 1
+    fi
+    api_module="${project_root}/${api_relative}"
+    footer_module="${project_root}/${footer_relative}"
+    echo "Building swarm-stack.yml (profile-declared compose modules)..."
 
     if [ ! -f "$api_module" ] || [ ! -f "$footer_module" ]; then
-        echo "Internal-api compose modules not found:" >&2
+        echo "Profile-declared compose modules not found:" >&2
         [ -f "$api_module" ] || echo "  missing: $api_module" >&2
         [ -f "$footer_module" ] || echo "  missing: $footer_module" >&2
         return 1
@@ -122,15 +136,16 @@ build_internal_api_stack_file() {
 # ------------------------------------------------------------------------------
 # build_stack_file
 # ------------------------------------------------------------------------------
-# Assembles swarm-stack.yml by concatenating base.yml, api.template.yml (with
-# database/proxy snippet injection), optional database service, and footer.yml.
+# Assembles swarm-stack.yml from the service header, profile-enabled Redis,
+# api.template.yml (with database/proxy snippet injection), optional database
+# and management services, and footer.yml.
 #
 # Arguments:
 #   $1 - db_type: "postgresql" or "neo4j"
 #   $2 - db_mode: "local" or "external"
 #   $3 - proxy_type: "traefik" or "none"
 #   $4 - project_root: absolute path to project root
-#   $5 - ssl_mode: (optional) "direct" or "letsencrypt" for Traefik labels
+#   $5 - ssl_mode: letsencrypt/direct or proxy for Traefik labels.
 # ------------------------------------------------------------------------------
 build_stack_file() {
     if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
@@ -138,8 +153,12 @@ build_stack_file() {
         return $?
     fi
 
-    if [ "${STACK_ROLE:-}" = "internal-api" ]; then
-        build_internal_api_stack_file "$4"
+    if [ -n "${PROFILE_API_TEMPLATE:-}" ] ||
+        [ -n "${PROFILE_FOOTER_TEMPLATE:-}" ]; then
+        build_profile_compose_stack_file \
+            "$4" \
+            "${PROFILE_API_TEMPLATE:-}" \
+            "${PROFILE_FOOTER_TEMPLATE:-}"
         return $?
     fi
 
@@ -148,11 +167,16 @@ build_stack_file() {
     local proxy_type="$3"
     local project_root="$4"
     local ssl_mode="${5:-direct}"  # Default to direct SSL if not specified
+    local label_mode="direct"
     
     echo "Building swarm-stack.yml..."
     
     # Start with base
     cat "${project_root}/setup/compose-modules/base.yml" > "${project_root}/swarm-stack.yml"
+    if [ "${APP_REQUIRES_REDIS:-true}" = "true" ]; then
+        cat "${project_root}/setup/compose-modules/redis.yml" >> \
+            "${project_root}/swarm-stack.yml"
+    fi
     
     # Build API service from template with snippet injection
     local temp_api="${project_root}/setup/compose-modules/api.temp.yml"
@@ -166,36 +190,59 @@ build_stack_file() {
     fi
     
     local db_env_snippet="${project_root}/setup/compose-modules/snippets/db-${db_file_name}-${db_mode}.env.yml"
-    if [ -f "$db_env_snippet" ]; then
+    if [ "$db_type" = "none" ]; then
+        _config_builder_sed_inplace '/###DATABASE_ENV###/d' "$temp_api"
+    elif [ -f "$db_env_snippet" ]; then
         _config_builder_sed_inplace "/###DATABASE_ENV###/r $db_env_snippet" "$temp_api"
         _config_builder_sed_inplace '/###DATABASE_ENV###/d' "$temp_api"
+    else
+        echo "Database environment module is missing: ${db_env_snippet}" >&2
+        rm -f "$temp_api"
+        return 1
     fi
     
     # Inject proxy network snippet (only for Traefik)
     if [ "$proxy_type" = "traefik" ]; then
         local proxy_network_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik.network.yml"
-        if [ -f "$proxy_network_snippet" ]; then
-            _config_builder_sed_inplace "/###PROXY_NETWORK###/r $proxy_network_snippet" "$temp_api"
+        if [ ! -f "$proxy_network_snippet" ]; then
+            echo "Traefik network module is missing: ${proxy_network_snippet}" >&2
+            rm -f "$temp_api"
+            return 1
         fi
+        _config_builder_sed_inplace "/###PROXY_NETWORK###/r $proxy_network_snippet" "$temp_api"
     fi
     _config_builder_sed_inplace '/###PROXY_NETWORK###/d' "$temp_api"
     
     # Inject proxy configuration snippet
     if [ "$proxy_type" = "traefik" ]; then
         # Inject Traefik labels at ###PROXY_LABELS### based on SSL mode
-        local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik-${ssl_mode}-ssl.labels.yml"
-        if [ -f "$proxy_labels_snippet" ]; then
-            _config_builder_sed_inplace "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_api"
+        if [ "$ssl_mode" = "proxy" ]; then
+            label_mode="proxy"
+        elif [ "$ssl_mode" != "direct" ] &&
+            [ "$ssl_mode" != "letsencrypt" ]; then
+            echo "Unsupported Traefik SSL mode: ${ssl_mode}" >&2
+            rm -f "$temp_api"
+            return 1
         fi
+        local proxy_labels_snippet="${project_root}/setup/compose-modules/snippets/proxy-traefik-${label_mode}-ssl.labels.yml"
+        if [ ! -f "$proxy_labels_snippet" ]; then
+            echo "Traefik label module is missing: ${proxy_labels_snippet}" >&2
+            rm -f "$temp_api"
+            return 1
+        fi
+        _config_builder_sed_inplace "/###PROXY_LABELS###/r $proxy_labels_snippet" "$temp_api"
         _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_api"
         # Remove ###PROXY_PORTS### placeholder (not used for Traefik)
         _config_builder_sed_inplace '/###PROXY_PORTS###/d' "$temp_api"
     else
         # Inject ports at ###PROXY_PORTS###
         local proxy_ports_snippet="${project_root}/setup/compose-modules/snippets/proxy-none.ports.yml"
-        if [ -f "$proxy_ports_snippet" ]; then
-            _config_builder_sed_inplace "/###PROXY_PORTS###/r $proxy_ports_snippet" "$temp_api"
+        if [ ! -f "$proxy_ports_snippet" ]; then
+            echo "Direct-port module is missing: ${proxy_ports_snippet}" >&2
+            rm -f "$temp_api"
+            return 1
         fi
+        _config_builder_sed_inplace "/###PROXY_PORTS###/r $proxy_ports_snippet" "$temp_api"
         _config_builder_sed_inplace '/###PROXY_PORTS###/d' "$temp_api"
         # Remove ###PROXY_LABELS### placeholder (not used for direct ports)
         _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_api"
@@ -212,20 +259,24 @@ build_stack_file() {
         if [ "$db_type" = "postgresql" ]; then
             db_file_name="postgres"
         fi
-        cat "${project_root}/setup/compose-modules/${db_file_name}-local.yml" >> "${project_root}/swarm-stack.yml"
+        local database_service_module="${project_root}/setup/compose-modules/${db_file_name}-local.yml"
+        if [ ! -f "$database_service_module" ]; then
+            echo "Local database service module is missing: ${database_service_module}" >&2
+            return 1
+        fi
+        cat "$database_service_module" >> "${project_root}/swarm-stack.yml"
     fi
     
-    # Add admin UI service if local deployment (always included, scaled to 0 by default)
-    if [ "$db_mode" = "local" ] && [ "$db_type" != "none" ]; then
-        local admin_ui_file=""
-        if [ "$db_type" = "postgresql" ]; then
-            admin_ui_file="${project_root}/setup/compose-modules/pgadmin-local.yml"
-        elif [ "$db_type" = "mongodb" ]; then
-            admin_ui_file="${project_root}/setup/compose-modules/mongo-express-local.yml"
-        fi
-        if [ -n "$admin_ui_file" ] && [ -f "$admin_ui_file" ]; then
-            cat "$admin_ui_file" >> "${project_root}/swarm-stack.yml"
-        fi
+    # Add database management only when the selected profile declares it.
+    if [ "$db_mode" = "local" ] &&
+        [ "${PROFILE_ADMIN_UI_ENABLED:-false}" = "true" ] &&
+        [ -n "${PROFILE_ADMIN_UI_TYPE:-}" ]; then
+        append_admin_ui_service \
+            "$project_root" \
+            "$PROFILE_ADMIN_UI_TYPE" \
+            "$proxy_type" \
+            "$ssl_mode" ||
+            return 1
     fi
     
     # Add footer (networks and secrets)
@@ -287,6 +338,7 @@ update_env_values() {
 #   $4 - backup_restore_api_key_secret
 #   $5 - backup_delete_api_key_secret
 #   $6 - db_ui_admin_password_secret (optional, used for pgAdmin or Mongo Express)
+#   $7 - include_db_ui_secret: true only when the management service is rendered
 # ------------------------------------------------------------------------------
 update_stack_secrets() {
     local stack_file="$1"
@@ -295,6 +347,13 @@ update_stack_secrets() {
     local backup_restore_api_key_secret="$4"
     local backup_delete_api_key_secret="$5"
     local db_ui_admin_password_secret="${6:-}"
+    local include_db_ui_secret="${7:-true}"
+
+    if [ "$include_db_ui_secret" != "true" ]; then
+        _config_builder_sed_inplace \
+            '/"XXX_CHANGE_ME_DB_UI_ADMIN_PASSWORD_XXX":/{N;d;}' \
+            "$stack_file"
+    fi
     
     # Use different sed syntax based on OS
     if [[ "$OSTYPE" == "darwin"* ]]; then

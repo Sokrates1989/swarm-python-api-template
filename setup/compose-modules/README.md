@@ -6,7 +6,8 @@ This directory contains modular Docker Compose files and snippets that are combi
 
 ### Core Files
 
-- **`base.yml`** - Base structure with `services:` key and Redis service
+- **`base.yml`** - Base structure with the `services:` key
+- **`redis.yml`** - Redis service, appended only when declared by the profile
 - **`api.template.yml`** - API service template with placeholder markers
 - **`footer.yml`** - Networks and secrets definitions (always last)
 
@@ -46,6 +47,7 @@ The setup wizard uses a **template injection** approach:
 1. **Start with base structure**
    ```bash
    cat base.yml > swarm-stack.yml
+   # Append redis.yml only when services.redis is enabled.
    # Contains: services: + redis service
    ```
 
@@ -72,7 +74,8 @@ The setup wizard uses a **template injection** approach:
 ### Example: PostgreSQL Local + Traefik
 
 ```
-base.yml (services: + redis)
+base.yml (services header)
+  + redis.yml (when services.redis is enabled)
   + api.template.yml with:
     - db-postgresql-local.env.yml injected
     - proxy-traefik.network.yml injected

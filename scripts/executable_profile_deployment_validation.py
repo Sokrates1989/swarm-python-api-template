@@ -3,9 +3,9 @@ Module: executable_profile_deployment_validation.py
 
 Description:
     Validates operator-owned root environment values against the selected
-    tracked executable profile. Fixed identity cannot be overridden, while
-    ports, proxy settings, resources, storage, and database mode are checked
-    before rendering or mutation.
+    tracked executable profile. Application and authentication identity cannot
+    be overridden, while stack names, routing, images, ports, resources,
+    storage, and database mode are validated before rendering or mutation.
 
 Dependencies:
     - Python standard library.
@@ -15,14 +15,18 @@ Dependencies:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from pathlib import PurePosixPath
 
 from executable_profile_config_validation import (
     validate_domain,
+    validate_https,
+    validate_origin,
     validate_port,
 )
 from executable_profile_support import (
+    IMAGE_PATTERN,
     MEMORY_PATTERN,
     NAME_PATTERN,
     SEMVER_PATTERN,
@@ -31,6 +35,78 @@ from executable_profile_support import (
     mapping,
     sequence,
 )
+
+
+def _validate_operator_identity(
+    data: Mapping[str, object],
+    values: Mapping[str, str],
+) -> None:
+    """Validate operator-selected stack, routes, CORS, and image repositories.
+
+    Args:
+        data: Tracked executable profile.
+        values: Complete generated deployment environment.
+
+    Raises:
+        ExecutableProfileError: If a deployment identity value is unsafe,
+            internally inconsistent, or intersects protected legacy origins.
+    """
+
+    if not NAME_PATTERN.fullmatch(values["STACK_NAME"]):
+        raise ExecutableProfileError(".env STACK_NAME is unsafe.")
+    validate_https(values["API_BASE_URL"], ".env API_BASE_URL")
+    validate_domain(
+        values["DOMAIN"],
+        ".env DOMAIN",
+        values["API_BASE_URL"],
+    )
+    for key in ("IMAGE_NAME", "WEB_IMAGE_NAME"):
+        if values[key] and not IMAGE_PATTERN.fullmatch(values[key]):
+            raise ExecutableProfileError(f".env {key} is unsafe.")
+
+    web_enabled = values["WEB_ENABLED"] == "true"
+    if web_enabled:
+        validate_origin(values["WEB_BASE_URL"], ".env WEB_BASE_URL")
+        validate_domain(
+            values["WEB_DOMAIN"],
+            ".env WEB_DOMAIN",
+            values["WEB_BASE_URL"],
+        )
+    elif values["WEB_BASE_URL"] or values["WEB_DOMAIN"]:
+        raise ExecutableProfileError(
+            "Web-disabled profiles must not declare WebApp routing."
+        )
+
+    origins = {
+        origin.strip()
+        for origin in values["CORS_ORIGINS"].split(",")
+        if origin.strip()
+    }
+    if not origins:
+        raise ExecutableProfileError(".env CORS_ORIGINS must not be empty.")
+    for index, origin in enumerate(sorted(origins)):
+        validate_origin(origin, f".env CORS_ORIGINS[{index}]")
+    if web_enabled and values["WEB_BASE_URL"] not in origins:
+        raise ExecutableProfileError(
+            ".env CORS_ORIGINS must include the active WebApp origin."
+        )
+
+    auth = mapping(data.get("auth", {"provider": "none"}), "auth")
+    protected = mapping(
+        auth.get("protectedIdentity", {}),
+        "auth.protectedIdentity",
+    )
+    protected_origins = {
+        str(origin)
+        for origin in sequence(
+            protected.get("origins", []),
+            "auth.protectedIdentity.origins",
+        )
+    }
+    if values["WEB_BASE_URL"] in protected_origins:
+        raise ExecutableProfileError(
+            ".env WEB_BASE_URL must not target a protected legacy origin."
+        )
 
 
 def _validate_counts_and_resources(values: Mapping[str, str]) -> None:
@@ -61,6 +137,8 @@ def _validate_counts_and_resources(values: Mapping[str, str]) -> None:
     if (
         not data_root.is_absolute()
         or values["DATA_ROOT"] in {"/", "\\"}
+        or not re.fullmatch(r"/[A-Za-z0-9._/-]+", values["DATA_ROOT"])
+        or "//" in values["DATA_ROOT"]
         or ".." in data_root.parts
     ):
         raise ExecutableProfileError(
@@ -75,7 +153,8 @@ def _validate_proxy(values: Mapping[str, str]) -> None:
         values: Complete generated deployment environment.
 
     Raises:
-        ExecutableProfileError: If proxy mode, resolver, network, or port fails.
+        ExecutableProfileError: If proxy mode, resolver, network, provider
+            constraint, or port fails.
     """
 
     if values["PROXY_TYPE"] not in {"traefik", "none"}:
@@ -83,9 +162,14 @@ def _validate_proxy(values: Mapping[str, str]) -> None:
             ".env PROXY_TYPE must be traefik or none."
         )
     if values["PROXY_TYPE"] == "none":
-        if values["SSL_MODE"] or values["TRAEFIK_NETWORK"]:
+        if (
+            values["SSL_MODE"]
+            or values["TRAEFIK_NETWORK"]
+            or values["TRAEFIK_CONSTRAINT_LABEL"]
+        ):
             raise ExecutableProfileError(
-                "Direct-port mode must not declare Traefik TLS or network state."
+                "Direct-port mode must not declare Traefik TLS, network, "
+                "or provider-constraint state."
             )
     else:
         if values["SSL_MODE"] not in {"letsencrypt", "proxy"}:
@@ -95,6 +179,12 @@ def _validate_proxy(values: Mapping[str, str]) -> None:
         if not NAME_PATTERN.fullmatch(values["TRAEFIK_NETWORK"]):
             raise ExecutableProfileError(
                 ".env TRAEFIK_NETWORK is required and must be safe."
+            )
+        if not NAME_PATTERN.fullmatch(
+            values["TRAEFIK_CONSTRAINT_LABEL"]
+        ):
+            raise ExecutableProfileError(
+                ".env TRAEFIK_CONSTRAINT_LABEL is required and must be safe."
             )
     if values["SSL_MODE"] == "letsencrypt" and not NAME_PATTERN.fullmatch(
         values["TRAEFIK_CERT_RESOLVER"]
@@ -138,6 +228,17 @@ def _validate_database(
         )
     validate_port(values["DB_PORT"], ".env DB_PORT")
     database_type = str(database["type"])
+    if values["DB_HOST"] and (
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", values["DB_HOST"])
+        or ".." in values["DB_HOST"]
+    ):
+        raise ExecutableProfileError(".env DB_HOST is unsafe.")
+    for key in ("DB_NAME", "DB_USER"):
+        if values[key] and not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*",
+            values[key],
+        ):
+            raise ExecutableProfileError(f".env {key} is unsafe.")
     if database_type == "none":
         if values["DB_MODE"] != "none" or values["PGADMIN_ENABLED"] != "false":
             raise ExecutableProfileError(
@@ -181,10 +282,9 @@ def _validate_database(
         ".env PGADMIN_DOMAIN",
         f"https://{values['PGADMIN_DOMAIN']}",
     )
-    if (
-        "@" not in values["PGADMIN_EMAIL"]
-        or values["PGADMIN_EMAIL"].startswith("@")
-        or values["PGADMIN_EMAIL"].endswith("@")
+    if not re.fullmatch(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
+        values["PGADMIN_EMAIL"],
     ):
         raise ExecutableProfileError(
             ".env PGADMIN_EMAIL must be a non-empty email address."
@@ -195,7 +295,7 @@ def _validate_web(
     data: Mapping[str, object],
     values: Mapping[str, str],
 ) -> None:
-    """Validate optional WebApp enablement and immutable image identity.
+    """Validate optional WebApp enablement.
 
     Args:
         data: Tracked executable profile.
@@ -214,11 +314,6 @@ def _validate_web(
         )
     if values["WEB_ENABLED"] != "true":
         return
-    web_image = mapping(mapping(data["web"], "web")["image"], "web.image")
-    if values["WEB_IMAGE_NAME"] != str(web_image["name"]):
-        raise ExecutableProfileError(
-            ".env WEB_IMAGE_NAME must match web.image.name."
-        )
 
 
 def validate_deployment(
@@ -251,6 +346,7 @@ def validate_deployment(
         raise ExecutableProfileError(
             ".env PGADMIN_ENABLED must be true or false."
         )
+    _validate_operator_identity(data, values)
     _validate_counts_and_resources(values)
     _validate_proxy(values)
     _validate_database(data, values)

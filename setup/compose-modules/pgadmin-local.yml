@@ -9,12 +9,21 @@
       # Connect to postgres service
       PGADMIN_CONFIG_SERVER_MODE: "True"
     networks:
-      - default
+      - backend
+###ADMIN_TRAEFIK_NETWORK_START###
       - XXX_CHANGE_ME_TRAEFIK_NETWORK_NAME_XXX
+###ADMIN_TRAEFIK_NETWORK_END###
     volumes:
-      - ${DATA_ROOT}/pgadmin_data:/var/lib/pgadmin
+      - ${DATA_ROOT}/pgadmin:/var/lib/pgadmin
     secrets:
       - XXX_CHANGE_ME_PGADMIN_PASSWORD_XXX
+###ADMIN_DIRECT_PORTS_START###
+    ports:
+      - target: 5050
+        published: ${PGADMIN_PUBLISHED_PORT}
+        protocol: tcp
+        mode: host
+###ADMIN_DIRECT_PORTS_END###
     deploy:
       mode: replicated
       replicas: ${PGADMIN_REPLICAS:-0}
@@ -24,9 +33,6 @@
       resources:
         limits:
           memory: 256M
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.rule=Host(`${PGADMIN_URL}`)"
-        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.entrypoints=websecure"
-        - "traefik.http.routers.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.tls=true"
-        - "traefik.http.services.XXX_CHANGE_ME_STACK_NAME_XXX_pgadmin.loadbalancer.server.port=5050"
+###ADMIN_TRAEFIK_LABELS_START###
+###ADMIN_TRAEFIK_LABELS###
+###ADMIN_TRAEFIK_LABELS_END###

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This runbook creates the isolated `felix-new` stack for:
+This runbook creates the `felix` stack for:
 
 - WebApp: `https://felix-app.fe-wi.com`;
 - API: `https://api.felix-app.fe-wi.com`;
@@ -61,9 +61,11 @@ Keycloak stack.
 
 The Felix deployment menu talks to the existing server's Admin API. It reads
 realm `felix-new`, clients, callbacks, origins, audience, and target Docker
-secret name from `site-configs/felix.json`. Re-running the action is
+secret name from `site-configs/felix.json`. The stack name remains `felix`;
+stack and authentication identity are independent. Re-running the action is
 idempotent: it preserves unrelated realm settings and social identity
-providers while reconciling the declared clients.
+providers while reconciling the declared clients. The legacy realm `felix`
+is protected and is never a candidate bootstrap target.
 
 The administrator password is entered without terminal echo. The confidential
 backend secret is not printed or written to `.env`; when its Docker secret is
@@ -82,12 +84,12 @@ If no root `.env` exists:
 
 1. choose **Run setup wizard**;
 2. select **Felix Backend and WebApp**;
-3. choose local or external PostgreSQL;
-4. choose Traefik or direct published ports and the correct TLS ownership;
-5. when Traefik owns certificates, confirm its configured certificate
-   resolver; direct mode also collects an optional pgAdmin port;
-6. confirm backend and WebApp semantic versions;
-7. choose replicas, memory, data root, and optional pgAdmin; and
+3. confirm or change the stack name plus API and WebApp domains;
+4. choose local or external PostgreSQL through the numbered database menu;
+5. choose Traefik or direct published ports and the correct TLS ownership;
+6. choose the real Traefik overlay network from the discovered numbered list;
+7. confirm backend and WebApp image repositories, semantic versions,
+   replicas, memory, data root, and optional pgAdmin; and
 8. let the wizard write root `.env` and Compose-validate
    `swarm-stack.yml`.
 
@@ -116,7 +118,7 @@ The shared action ensures:
   `realm-management/manage-users` client role needed for identity deletion;
 - broader undeclared role grants fail closed for manual review; and
 - missing Docker secret
-  `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET` is created.
+  `FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET` is created.
 
 If that Docker secret already exists, it is kept without retrieving client
 secret material. Use the separate explicit rotation action only when
@@ -134,10 +136,10 @@ Choose **Manage Docker secrets**. The exact list is read from the profile.
 
 For the current Felix profile:
 
-- create `FELIX_NEW_DB_PASSWORD`;
+- create `FELIX_DB_PASSWORD`;
 - verify the Keycloak bootstrap created
-  `FELIX_NEW_KEYCLOAK_ADMIN_CLIENT_SECRET`; and
-- create `FELIX_NEW_PGADMIN_PASSWORD` only if pgAdmin is enabled.
+  `FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET`; and
+- create `FELIX_PGADMIN_PASSWORD` only if pgAdmin is enabled.
 
 Optional AI chat and Web Push secrets are shown separately. They become
 required only when their corresponding site-config capability is enabled.
@@ -172,7 +174,7 @@ maintenance window:
 2. confirm the stack is healthy;
 3. choose **Roll back retained service specifications**;
 4. press Enter to start the rollback;
-5. watch `docker stack services felix-new` until the service converges; and
+5. watch the configured `felix` stack until the service converges; and
 6. rerun the common status and public health checks.
 
 Docker reports a warning for a service that has no retained previous

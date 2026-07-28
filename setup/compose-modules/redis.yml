@@ -1,0 +1,14 @@
+# Redis service appended only when the selected profile declares services.redis.
+# Networks and persistent requirements remain shared deployment configuration.
+  redis:
+    image: redis:7-alpine
+    networks:
+      - backend
+    deploy:
+      mode: replicated
+      replicas: ${REDIS_REPLICAS}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3

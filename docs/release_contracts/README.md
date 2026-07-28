@@ -9,12 +9,18 @@ the shared schema-5 site-profile pipeline:
 
 - `site-configs/felix.json` contains Felix values;
 - `scripts/site_profile.py` validates and renders any executable profile;
-- the setup wizard routes by `renderer.type`;
+- one shared setup dialogue collects normalized values before
+  `renderer.type` selects only the persistence/render adapter;
 - Keycloak actions route by `auth.provider`;
 - WebApp inclusion routes by `services.web`;
 - protected legacy identity and service-account roles route by `auth`;
 - exact secrets route by declared secret mounts; and
 - deployment, health, logs, and rollback use common stack discovery.
+
+The Felix contract requires both `DB_PASSWORD_FILE` and
+`KEYCLOAK_ADMIN_CLIENT_SECRET_FILE`. Their values are Docker secret mount
+paths; the underlying credentials never belong in the contract, site profile,
+or root `.env`.
 
 Production Keycloak remains the existing `swarm-keycloak` deployment at
 `/swarm/administration/keycloak`. The app quick-start menu reconciles its
@@ -29,7 +35,7 @@ The contract protects:
 - candidate realm `felix-new`;
 - clients/audience `felix-new-frontend` and `felix-new-backend`;
 - legacy host `felix.app.fe-wi.com`;
-- possible legacy realms `felix` and `felixappnew`;
+- protected legacy realms `felix` and `felixappnew`;
 - one full-stack service boundary; and
 - explicit approval before legacy forwarding.
 

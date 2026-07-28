@@ -43,8 +43,8 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
             )
         )
 
-    def test_candidate_and_legacy_identity_remain_distinct(self) -> None:
-        """Keep candidate hosts, realm, and stack separate from legacy.
+    def test_declared_felix_identity_and_legacy_host_boundary(self) -> None:
+        """Keep the intentional Felix defaults and legacy host boundary.
 
         Returns:
             Nothing.
@@ -59,7 +59,7 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
         self.assertEqual(candidate["realm"], "felix-new")
         self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
         self.assertEqual(candidate["backendAudience"], "felix-new-backend")
-        self.assertEqual(boundary["candidateStackName"], "felix-new")
+        self.assertEqual(boundary["candidateStackName"], "felix")
         self.assertNotEqual(boundary["candidateHost"], boundary["legacyHost"])
         self.assertNotIn(candidate["realm"], protected["protectedRealms"])
 
@@ -172,7 +172,14 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
             "scripts/keycloak_profile_secret_bridge.py",
             "setup/setup-wizard.sh",
             "setup/modules/site_helpers.sh",
+            "setup/modules/deployment-profile-prompts.sh",
+            "setup/modules/deployment-profile-routing.sh",
+            "setup/modules/deployment-profile-services.sh",
+            "setup/modules/deployment-profile-inputs.sh",
+            "setup/modules/legacy-profile-environment.sh",
             "setup/modules/executable-profile-wizard.sh",
+            "setup/modules/deployment-setup-actions.sh",
+            "setup/modules/config-builder.sh",
             "setup/modules/keycloak-bootstrap.sh",
             "setup/modules/docker-secrets-menu.sh",
             "setup/modules/menu_handlers.sh",
@@ -182,7 +189,16 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
             content = (REPOSITORY_ROOT / relative_path).read_text(
                 encoding="utf-8"
             )
-            self.assertNotIn("felix", content.lower(), relative_path)
+            for forbidden_identity in (
+                "felix",
+                "secure_messaging",
+                "secure-messaging",
+            ):
+                self.assertNotIn(
+                    forbidden_identity,
+                    content.lower(),
+                    relative_path,
+                )
 
     def test_obsolete_app_specific_adapters_are_absent(self) -> None:
         """Prevent reintroduction of the removed production detour.
@@ -208,8 +224,8 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
             else:
                 self.assertFalse(path.exists(), relative_path)
 
-    def test_shell_adapters_route_by_renderer_and_auth_capability(self) -> None:
-        """Require shared renderer and Keycloak adapters in operator menus.
+    def test_setup_collects_once_then_routes_only_to_adapters(self) -> None:
+        """Require one dialog engine before renderer and auth adapters.
 
         Returns:
             Nothing.
@@ -224,27 +240,65 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
         menu = (
             REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
         ).read_text(encoding="utf-8")
+        quick_start = (REPOSITORY_ROOT / "quick-start.sh").read_text(
+            encoding="utf-8"
+        )
         executable_setup = (
             REPOSITORY_ROOT
             / "setup"
             / "modules"
             / "executable-profile-wizard.sh"
         ).read_text(encoding="utf-8")
+        inputs = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "deployment-profile-inputs.sh"
+        ).read_text(encoding="utf-8")
+        routing = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "deployment-profile-routing.sh"
+        ).read_text(encoding="utf-8")
+        prompts = (
+            REPOSITORY_ROOT
+            / "setup"
+            / "modules"
+            / "deployment-profile-prompts.sh"
+        ).read_text(encoding="utf-8")
 
         self.assertIn('APP_RENDERER_TYPE:-generic}" = "executable"', setup)
+        coordinator = setup[setup.index("run_setup_wizard()") :]
+        self.assertLess(
+            coordinator.index("collect_deployment_configuration"),
+            coordinator.index("write_selected_profile_environment"),
+        )
+        self.assertNotIn("run_executable_profile_setup", setup)
         self.assertIn('"$(_selected_renderer_type)" = "executable"', build)
         self.assertIn("scripts/site_profile.py", build)
-        self.assertIn("profile_uses_keycloak", menu)
+        self.assertIn("profile_supports_keycloak_bootstrap", menu)
         self.assertIn("run_profile_keycloak_bootstrap", menu)
         self.assertIn("rollback_stack_services", menu)
-        self.assertIn(
-            '_profile_validate_existing_selection || return 1',
-            executable_setup,
+        self.assertIn("_deploy_configured_stack", menu)
+        self.assertIn("_check_configured_stack_health", menu)
+        self.assertNotIn(
+            'deploy_stack "$STACK_NAME" "$stack_file"',
+            menu,
         )
         self.assertIn(
-            '"$existing_profile" != "$APP_CONFIG_ID"',
-            executable_setup,
+            'source "${PROJECT_ROOT}/setup/modules/deployment-setup-actions.sh"',
+            quick_start,
         )
+        self.assertIn(
+            'source "${PROJECT_ROOT}/setup/modules/user-prompts.sh"',
+            quick_start,
+        )
+        self.assertNotIn("read -", executable_setup)
+        self.assertNotIn("_profile_collect_", executable_setup)
+        self.assertIn("prompt_deployment_choice", inputs)
+        self.assertIn("prompt_traefik_network", routing)
+        self.assertIn("prompt_deployment_choice()", prompts)
 
 
 if __name__ == "__main__":

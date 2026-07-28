@@ -53,6 +53,7 @@ def default_deployment_values(
     storage = mapping(data["storage"], "storage")
     environment = mapping(data["environment"], "environment")
     services = mapping(data["services"], "services")
+    cors = mapping(data["cors"], "cors")
     web = mapping(data.get("web", {}), "web")
     web_image = mapping(web.get("image", {}), "web.image")
     web_resources = mapping(web.get("resources", {}), "web.resources")
@@ -62,6 +63,18 @@ def default_deployment_values(
     proxy_default = "traefik" if bool(exposure.get("traefik")) else "none"
     values.update(
         {
+            "API_BASE_URL": str(routing["apiBaseUrl"]),
+            "DOMAIN": str(routing["domain"]),
+            "WEB_BASE_URL": (
+                str(routing.get("webBaseUrl", "")) if web_enabled else ""
+            ),
+            "WEB_DOMAIN": (
+                str(routing.get("webDomain", "")) if web_enabled else ""
+            ),
+            "CORS_ORIGINS": ",".join(
+                str(item) for item in cors.get("origins", [])
+            ),
+            "STACK_NAME": str(mapping(data["stack"], "stack")["name"]),
             "DB_MODE": str(database["defaultMode"]),
             "DB_HOST": str(environment.get("DB_HOST", "postgres")),
             "DB_PORT": str(
@@ -72,6 +85,16 @@ def default_deployment_values(
             "PROXY_TYPE": proxy_default,
             "SSL_MODE": str(routing.get("sslMode", "")),
             "TRAEFIK_NETWORK": str(routing.get("traefikNetwork", "")),
+            "TRAEFIK_CONSTRAINT_LABEL": (
+                str(
+                    routing.get(
+                        "traefikConstraintLabel",
+                        "traefik-public",
+                    )
+                )
+                if proxy_default == "traefik"
+                else ""
+            ),
             "TRAEFIK_CERT_RESOLVER": str(
                 routing.get("traefikCertResolver", "le")
             ),
@@ -82,6 +105,7 @@ def default_deployment_values(
             "PGADMIN_PUBLISHED_PORT": str(
                 routing.get("pgadminPublishedPort", "5054")
             ),
+            "IMAGE_NAME": str(image["name"]),
             "IMAGE_VERSION": str(image["defaultVersion"]),
             "API_REPLICAS": str(resources.get("defaultReplicas", 1)),
             "MEMORY_LIMIT": str(

@@ -148,10 +148,12 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             (("realm-management", ("manage-users",)),),
         )
         invalid = copy.deepcopy(self.profile_data)
-        invalid["auth"]["realm"] = "felix"
-        invalid["auth"]["issuerUrl"] = "https://keycloak.fe-wi.com/realms/felix"
+        invalid["auth"]["realm"] = "felixappnew"
+        invalid["auth"]["issuerUrl"] = (
+            "https://keycloak.fe-wi.com/realms/felixappnew"
+        )
         invalid["auth"]["jwksUrl"] = (
-            "https://keycloak.fe-wi.com/realms/felix/"
+            "https://keycloak.fe-wi.com/realms/felixappnew/"
             "protocol/openid-connect/certs"
         )
         (self.root / "site-configs" / "felix.json").write_text(

@@ -3,10 +3,10 @@
 # docker-secrets-menu.sh - Site-profile-driven Docker secret management
 # ==============================================================================
 #
-# Executable profiles declare exact required, optional, capability, pgAdmin,
-# and Keycloak secret names in their site config. This module presents one
-# shared workflow for all such profiles. Older profile schemas retain the
-# historical prefixed-secret workflow while they are migrated.
+# Profiles declare required, optional, capability, pgAdmin, and Keycloak secret
+# names plus their exact/prefixed naming policy in site config. This module
+# routes only on that declared policy; renderer type and application identity
+# never select a secret workflow.
 # ==============================================================================
 
 # _secret_status_line
@@ -26,6 +26,90 @@ _secret_status_line() {
     fi
     echo "[MISSING] ${secret_name}"
     return 1
+}
+
+# _rendered_required_secret_names
+# Lists exact top-level Docker secret identifiers from the rendered stack.
+#
+# The rendered stack is the final capability-normalized contract: disabled
+# optional services have already been removed and both renderer families have
+# resolved their secret-name strategy. Reading only the top-level `secrets`
+# mapping avoids confusing service-level secret mounts with declarations.
+#
+# Arguments:
+#   $1 - Rendered Swarm stack path.
+#
+# Outputs:
+#   One exact Docker secret identifier per line.
+#
+# Returns:
+#   0 when the stack can be inspected; 1 when it is missing.
+_rendered_required_secret_names() {
+    local stack_file="$1"
+
+    if [ ! -f "$stack_file" ]; then
+        echo "[ERROR] Rendered stack is missing: ${stack_file}" >&2
+        return 1
+    fi
+    awk '
+      /^secrets:[[:space:]]*$/ {
+        in_secrets = 1
+        next
+      }
+      in_secrets && /^[^[:space:]#]/ {
+        exit
+      }
+      in_secrets && /^  [^[:space:]][^:]*:[[:space:]]*$/ {
+        name = $0
+        sub(/^[[:space:]]+/, "", name)
+        sub(/:[[:space:]]*$/, "", name)
+        gsub(/^"|"$/, "", name)
+        print name
+      }
+    ' "$stack_file"
+}
+
+# verify_required_docker_secrets
+# Fails closed unless every external secret declared by the rendered stack
+# exists in Docker Swarm.
+#
+# Arguments:
+#   $1 - Rendered Swarm stack path.
+#
+# Returns:
+#   0 when all declared secrets exist (or none are declared); otherwise 1.
+verify_required_docker_secrets() {
+    local stack_file="$1"
+    local secret_name=""
+    local secret_count=0
+    local missing_count=0
+
+    if [ ! -f "$stack_file" ]; then
+        echo "[ERROR] Rendered stack is missing: ${stack_file}"
+        return 1
+    fi
+    echo ""
+    echo "Required Docker secret verification"
+    echo "-----------------------------------"
+    while IFS= read -r secret_name; do
+        [ -n "$secret_name" ] || continue
+        secret_count=$((secret_count + 1))
+        if ! _secret_status_line "$secret_name"; then
+            missing_count=$((missing_count + 1))
+        fi
+    done < <(_rendered_required_secret_names "$stack_file")
+
+    if [ "$secret_count" -eq 0 ]; then
+        echo "[OK] This rendered stack declares no Docker secrets."
+        return 0
+    fi
+    if [ "$missing_count" -gt 0 ]; then
+        echo "[ERROR] ${missing_count} required Docker secret(s) are missing."
+        echo "        Open the secret menu or Keycloak bootstrap, then retry."
+        return 1
+    fi
+    echo "[OK] All ${secret_count} required Docker secret(s) exist."
+    return 0
 }
 
 # _secret_editor
@@ -66,6 +150,40 @@ _generic_secret_prefix() {
     printf '%s' "${SECRET_PREFIX:-$STACK_NAME}" |
         tr '[:lower:]' '[:upper:]' |
         sed 's/[^A-Z0-9]/_/g'
+}
+
+# _legacy_admin_ui_secret_name
+# Resolves the enabled database-management secret from profile data.
+#
+# The legacy renderer prefixes site-config secret suffixes with the selected
+# deployment prefix. Disabled admin UIs intentionally return no secret name.
+#
+# Arguments:
+#   $1 - Normalized uppercase legacy secret prefix.
+#
+# Outputs:
+#   Exact Docker secret name, or empty text when the capability is disabled.
+#
+# Returns:
+#   0 when disabled or valid; 1 when enabled without a safe declared suffix.
+_legacy_admin_ui_secret_name() {
+    local prefix_upper="$1"
+    local secret_suffix="${APP_ADMIN_UI_SECRET:-}"
+
+    if [ "${PGADMIN_ENABLED:-false}" != "true" ]; then
+        return 0
+    fi
+    if [ -z "$secret_suffix" ] &&
+        [ -n "${APP_CONFIG_FILE:-}" ] &&
+        [ -f "$APP_CONFIG_FILE" ] &&
+        command -v jq >/dev/null 2>&1; then
+        secret_suffix="$(jq -r '.adminUI.secret // empty' "$APP_CONFIG_FILE")"
+    fi
+    if [[ ! "$secret_suffix" =~ ^[A-Z0-9_]+$ ]]; then
+        echo "[ERROR] Enabled admin UI requires a safe adminUI.secret suffix." >&2
+        return 1
+    fi
+    printf '%s_%s' "$prefix_upper" "$secret_suffix"
 }
 
 # _require_stopped_stack_for_secret_change
@@ -124,6 +242,21 @@ _active_profile_json() {
     [ -n "$profile_id" ] && [ -f "$path" ] || return 1
     printf '%s\n' "$path"
 }
+
+# _profile_secrets_use_exact_names
+# Checks whether the selected profile owns literal Docker secret identifiers.
+#
+# Returns:
+#   0 only when secretsConfig.prefixed is explicitly false.
+_profile_secrets_use_exact_names() {
+    local profile_file=""
+
+    profile_file="$(_active_profile_json)" || return 1
+    jq -e '.secretsConfig.prefixed == false' "$profile_file" >/dev/null
+}
+
+# Batch file import is a separate profile-policy adapter.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/profile-secret-file-workflow.sh"
 
 # _profile_required_secret_names
 # Lists every active required secret declared by the selected site profile.
@@ -381,7 +514,7 @@ _create_selected_profile_secret() {
 }
 
 # _manage_profile_docker_secrets
-# Runs the common exact-name secret menu for any executable site profile.
+# Runs the common exact-name secret menu for any profile declaring literal names.
 #
 # Arguments:
 #   None.
@@ -394,47 +527,66 @@ _create_selected_profile_secret() {
 _manage_profile_docker_secrets() {
     local choice=""
     local keycloak_available="false"
+    local next_choice=3
+    local template_choice=""
+    local keycloak_bootstrap_choice=""
+    local keycloak_rotation_choice=""
+    local list_choice=""
+    local max_choice=""
 
-    if declare -F profile_uses_keycloak >/dev/null 2>&1 &&
-        profile_uses_keycloak; then
+    if declare -F profile_supports_keycloak_bootstrap >/dev/null 2>&1 &&
+        profile_supports_keycloak_bootstrap; then
         keycloak_available="true"
     fi
+    if _profile_declares_secret_template; then
+        template_choice="$next_choice"
+        next_choice=$((next_choice + 1))
+    fi
+    if [ "$keycloak_available" = "true" ]; then
+        keycloak_bootstrap_choice="$next_choice"
+        next_choice=$((next_choice + 1))
+        keycloak_rotation_choice="$next_choice"
+        next_choice=$((next_choice + 1))
+    fi
+    list_choice="$next_choice"
+    max_choice="$next_choice"
+
     while true; do
         _show_profile_secret_status
         echo ""
         echo "  1) Create or replace a required secret"
         echo "  2) Create or replace an optional secret"
-        if [ "$keycloak_available" = "true" ]; then
-            echo "  3) Bootstrap/update Keycloak and create a missing client secret"
-            echo "  4) Rotate the Keycloak client Docker secret"
-        else
-            echo "  3) Keycloak bootstrap (not declared by this profile)"
-            echo "  4) Keycloak secret rotation (not declared by this profile)"
+        if [ -n "$template_choice" ]; then
+            echo "  ${template_choice}) Create secrets from the profile template"
         fi
-        echo "  5) List all Docker secrets"
+        if [ -n "$keycloak_bootstrap_choice" ]; then
+            echo "  ${keycloak_bootstrap_choice}) Bootstrap/update Keycloak and create a missing client secret"
+            echo "  ${keycloak_rotation_choice}) Rotate the Keycloak client Docker secret"
+        fi
+        echo "  ${list_choice}) List all Docker secrets"
         echo "  0) Back"
-        read -r -p "Secret choice (0-5): " choice
-        case "$choice" in
-            1) _create_selected_profile_secret required || true ;;
-            2) _create_selected_profile_secret optional || true ;;
-            3)
-                if [ "$keycloak_available" = "true" ]; then
-                    run_profile_keycloak_bootstrap || true
-                else
-                    echo "[INFO] The selected profile does not use Keycloak."
-                fi
-                ;;
-            4)
-                if [ "$keycloak_available" = "true" ]; then
-                    run_profile_keycloak_secret_rotation || true
-                else
-                    echo "[INFO] The selected profile does not use Keycloak."
-                fi
-                ;;
-            5) list_docker_secrets ;;
-            0) return 0 ;;
-            *) echo "[WARN] Enter a value from 0 through 5." ;;
-        esac
+        read -r -p "Secret choice (0-${max_choice}): " choice
+        if [ "$choice" = "0" ]; then
+            return 0
+        elif [ "$choice" = "1" ]; then
+            _create_selected_profile_secret required || true
+        elif [ "$choice" = "2" ]; then
+            _create_selected_profile_secret optional || true
+        elif [ -n "$template_choice" ] &&
+            [ "$choice" = "$template_choice" ]; then
+            create_profile_secrets_from_env_file \
+                "${PROJECT_ROOT}/secrets.env" || true
+        elif [ -n "$keycloak_bootstrap_choice" ] &&
+            [ "$choice" = "$keycloak_bootstrap_choice" ]; then
+            run_profile_keycloak_bootstrap || true
+        elif [ -n "$keycloak_rotation_choice" ] &&
+            [ "$choice" = "$keycloak_rotation_choice" ]; then
+            run_profile_keycloak_secret_rotation || true
+        elif [ "$choice" = "$list_choice" ]; then
+            list_docker_secrets
+        else
+            echo "[WARN] Enter a displayed menu value."
+        fi
     done
 }
 
@@ -456,18 +608,25 @@ _manage_legacy_docker_secrets() {
     local admin_api_key_secret=""
     local backup_restore_api_key_secret=""
     local backup_delete_api_key_secret=""
+    local db_ui_admin_password_secret=""
 
     prefix_upper="$(_generic_secret_prefix)"
     db_password_secret="${prefix_upper}_DB_PASSWORD"
     admin_api_key_secret="${prefix_upper}_ADMIN_API_KEY"
     backup_restore_api_key_secret="${prefix_upper}_BACKUP_RESTORE_API_KEY"
     backup_delete_api_key_secret="${prefix_upper}_BACKUP_DELETE_API_KEY"
+    db_ui_admin_password_secret="$(
+        _legacy_admin_ui_secret_name "$prefix_upper"
+    )" || return 1
     echo ""
     echo "Legacy prefixed Docker secrets (${prefix_upper}*)"
     _secret_status_line "$db_password_secret" || true
     _secret_status_line "$admin_api_key_secret" || true
     _secret_status_line "$backup_restore_api_key_secret" || true
     _secret_status_line "$backup_delete_api_key_secret" || true
+    if [ -n "$db_ui_admin_password_secret" ]; then
+        _secret_status_line "$db_ui_admin_password_secret" || true
+    fi
     echo ""
     echo "  1) Create secrets from secrets.env file"
     echo "  2) Create secrets interactively"
@@ -488,7 +647,8 @@ _manage_legacy_docker_secrets() {
                 "$db_password_secret" \
                 "$admin_api_key_secret" \
                 "$backup_restore_api_key_secret" \
-                "$backup_delete_api_key_secret"
+                "$backup_delete_api_key_secret" \
+                "$db_ui_admin_password_secret"
             ;;
         3) list_docker_secrets ;;
         0) ;;
@@ -498,7 +658,7 @@ _manage_legacy_docker_secrets() {
 }
 
 # manage_docker_secrets_menu
-# Routes by profile schema capability, never by application identity.
+# Routes by the profile-declared naming policy, never by schema or app identity.
 #
 # Arguments:
 #   None.
@@ -510,8 +670,7 @@ manage_docker_secrets_menu() {
     echo "Manage Docker secrets"
     echo "====================="
 
-    if declare -F profile_uses_executable_renderer >/dev/null 2>&1 &&
-        profile_uses_executable_renderer; then
+    if _profile_secrets_use_exact_names; then
         _manage_profile_docker_secrets
         return $?
     fi
