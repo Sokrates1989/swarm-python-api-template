@@ -332,6 +332,16 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
         self.assertEqual(events, ["proved", "written"])
         self.assertEqual(summary["dockerSecretAction"], "created")
         self.assertIs(summary["dockerSecretBindingVerified"], True)
+        self.assertEqual(
+            summary["dockerSecretName"],
+            self.identity.docker_secret,
+        )
+        self.assertNotIn("dockerSecret", summary)
+        evidence = summary["clientSecretValueEvidence"]
+        self.assertIsInstance(evidence, dict)
+        self.assertIs(evidence["observedThisRun"], True)
+        self.assertIs(evidence["distinctFromDockerSecretName"], True)
+        self.assertEqual(evidence["length"], len(secret_value))
         self.assertNotIn(secret_value, json.dumps(summary))
 
     def test_existing_docker_secret_remains_opaque(self) -> None:
@@ -351,6 +361,10 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
             "present-unverified",
         )
         self.assertIs(summary["dockerSecretBindingVerified"], False)
+        evidence = summary["clientSecretValueEvidence"]
+        self.assertIsInstance(evidence, dict)
+        self.assertIs(evidence["observedThisRun"], False)
+        self.assertIsNone(evidence["sha256Prefix"])
         boundaries["buildPlan"].assert_called_once_with(
             admin_client,
             docker_secret_present=True,

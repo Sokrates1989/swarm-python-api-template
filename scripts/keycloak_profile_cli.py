@@ -96,7 +96,7 @@ def print_target(
     print(f"  Backend client:      {identity.backend_client_id}")
     print(f"  Backend audience:    {identity.audience}")
     print(f"  Audience mapper:     {identity.audience_mapper_name}")
-    print(f"  Docker secret:       {identity.docker_secret}")
+    print(f"  Docker secret name:  {identity.docker_secret}")
     print("")
     print("Realm settings:")
     for name, value in identity.realm_settings:

@@ -161,6 +161,14 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         self.assertEqual(summary["dockerSecretAction"], "created")
         self.assertIs(summary["keycloakStateVerified"], True)
         self.assertIs(summary["dockerSecretBindingVerified"], True)
+        self.assertEqual(
+            summary["dockerSecretName"],
+            self.identity.docker_secret,
+        )
+        evidence = summary["clientSecretValueEvidence"]
+        self.assertIsInstance(evidence, dict)
+        self.assertIs(evidence["observedThisRun"], True)
+        self.assertIs(evidence["distinctFromDockerSecretName"], True)
 
     def _assert_reconciled_state(self) -> None:
         """Require exact read-back state, role assignment, and client scope.

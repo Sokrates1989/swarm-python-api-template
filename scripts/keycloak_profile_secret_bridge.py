@@ -14,6 +14,7 @@ Dependencies:
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import uuid
 from typing import Protocol
@@ -33,6 +34,61 @@ class _Identity(Protocol):
     """Describe Keycloak identity state required by the Docker bridge."""
 
     docker_secret: str
+
+
+def build_client_secret_value_evidence(
+    secret: str,
+    docker_secret_name: str,
+) -> dict[str, object]:
+    """Build one-way evidence for one observed client secret value.
+
+    Args:
+        secret: Credential returned by the Keycloak Admin API.
+        docker_secret_name: Identifier of the receiving Docker secret object.
+
+    Returns:
+        JSON-compatible evidence containing source, length, and a short
+        SHA-256 prefix. No credential characters are returned.
+
+    Raises:
+        KeycloakSecretBridgeError: If the value is empty or equals the Docker
+            secret object's identifier.
+    """
+
+    if not secret:
+        raise KeycloakSecretBridgeError(
+            "Keycloak returned an empty confidential-client credential."
+        )
+    if secret == docker_secret_name:
+        raise KeycloakSecretBridgeError(
+            "Keycloak returned a client credential equal to the Docker "
+            "secret name; refusing to publish an ambiguous credential."
+        )
+    fingerprint = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+    return {
+        "observedThisRun": True,
+        "source": "keycloak-admin-api",
+        "distinctFromDockerSecretName": True,
+        "length": len(secret),
+        "sha256Prefix": fingerprint,
+    }
+
+
+def build_opaque_client_secret_value_evidence() -> dict[str, object]:
+    """Describe an existing Docker secret whose value Swarm cannot reveal.
+
+    Returns:
+        JSON-compatible unavailable-evidence markers. Null fields explicitly
+        avoid claiming that an opaque existing value was inspected.
+    """
+
+    return {
+        "observedThisRun": False,
+        "source": "existing-docker-secret-opaque",
+        "distinctFromDockerSecretName": None,
+        "length": None,
+        "sha256Prefix": None,
+    }
 
 
 def _docker(
@@ -222,6 +278,8 @@ def write_docker_secret(
 
 __all__ = [
     "KeycloakSecretBridgeError",
+    "build_client_secret_value_evidence",
+    "build_opaque_client_secret_value_evidence",
     "docker_secret_exists",
     "stack_is_running",
     "write_docker_secret",

@@ -206,7 +206,7 @@ _profile_keycloak_summary() {
     echo "  Realm:           $(_profile_keycloak_active_value KEYCLOAK_REALM '.auth.realm')"
     echo "  Frontend client: $(_profile_keycloak_active_value KEYCLOAK_FRONTEND_CLIENT_ID '.auth.frontendClientId')"
     echo "  Backend client:  $(_profile_keycloak_active_value KEYCLOAK_BACKEND_CLIENT_ID '.auth.adminClientId')"
-    echo "  Docker secret:   ${secret_name:-not declared}"
+    echo "  Docker secret name: ${secret_name:-not declared}"
     echo ""
     echo "This updates the existing Keycloak deployment through its Admin API."
     echo "It does not deploy another Keycloak instance and does not change social"

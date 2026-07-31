@@ -161,6 +161,14 @@ client-credentials grant. Profiles declaring a built-in realm-management
 user-read role additionally require the resulting token to authorize a
 read-only realm-user Admin API request.
 
+The completion summary labels the Docker object identifier as
+`dockerSecretName`. For a newly created or rotated binding it also reports the
+credential length, a short SHA-256 fingerprint, and an explicit assertion that
+the observed value differs from that identifier. These fields provide stable
+operator evidence without revealing any credential characters. An existing
+Docker secret remains opaque and therefore reports unavailable value evidence
+until explicitly rotated.
+
 Test-user passwords never belong in JSON or `.env`. When an enabled user or its
 password credential is missing, the bootstrap asks for that password without
 terminal echo after the authenticated plan and sends it directly to Keycloak.

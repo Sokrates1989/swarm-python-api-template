@@ -69,6 +69,8 @@ from keycloak_profile_roles import (
 )
 from keycloak_profile_secret_bridge import (
     KeycloakSecretBridgeError,
+    build_client_secret_value_evidence,
+    build_opaque_client_secret_value_evidence,
     docker_secret_exists,
     stack_is_running,
     write_docker_secret,
@@ -202,7 +204,7 @@ def _bridge_client_secret(
     *,
     docker_secret_present: bool,
     replace_secret: bool,
-) -> str:
+) -> tuple[str, dict[str, object]]:
     """Keep, create, or rotate the profile-declared Docker client secret.
 
     Args:
@@ -215,7 +217,7 @@ def _bridge_client_secret(
         replace_secret: Whether explicit rotation was requested.
 
     Returns:
-        Docker secret action.
+        Docker secret action and secret-safe value evidence.
 
     Raises:
         KeycloakProfileError: If Keycloak omits the credential.
@@ -223,22 +225,30 @@ def _bridge_client_secret(
     """
 
     if docker_secret_present and not replace_secret:
-        return "present-unverified"
+        return (
+            "present-unverified",
+            build_opaque_client_secret_value_evidence(),
+        )
     if replace_secret and backend_action != "created":
         secret = regenerate_client_secret(client, backend_uuid)
     else:
         secret = get_client_secret(client, backend_uuid)
     try:
+        evidence = build_client_secret_value_evidence(
+            secret,
+            identity.docker_secret,
+        )
         client.prove_client_credentials(
             identity.backend_client_id,
             secret,
         )
-        return write_docker_secret(
+        action = write_docker_secret(
             profile,
             identity,
             secret,
             replace=replace_secret,
         )
+        return action, evidence
     finally:
         secret = ""
 
@@ -397,6 +407,7 @@ def _build_summary(
     actions: tuple[str, str, str, str, str, str, str, str, str],
     docker_action: str,
     binding_verified: bool,
+    secret_value_evidence: dict[str, object],
 ) -> dict[str, object]:
     """Build the final secret-free reconciliation result.
 
@@ -407,6 +418,7 @@ def _build_summary(
             role-scope, service-account role, and test-user actions plus UUID.
         docker_action: Docker secret bridge action.
         binding_verified: Whether the secret was proven and written this run.
+        secret_value_evidence: One-way credential observation evidence.
 
     Returns:
         JSON-compatible summary without credentials.
@@ -437,10 +449,11 @@ def _build_summary(
         "frontendRealmRoleScopeAction": frontend_role_scope,
         "serviceAccountRolesAction": roles,
         "bootstrapTestUsersAction": test_users,
-        "dockerSecret": identity.docker_secret,
+        "dockerSecretName": identity.docker_secret,
         "dockerSecretAction": docker_action,
         "keycloakStateVerified": True,
         "dockerSecretBindingVerified": binding_verified,
+        "clientSecretValueEvidence": secret_value_evidence,
     }
 
 
@@ -480,7 +493,7 @@ def _bridge_reconciled_secret(
     docker_secret_present: bool,
     replace_secret: bool,
     progress: Callable[[str], None] | None,
-) -> tuple[str, bool]:
+) -> tuple[str, bool, dict[str, object]]:
     """Bridge the reconciled backend credential and report proof state.
 
     Args:
@@ -493,7 +506,8 @@ def _bridge_reconciled_secret(
         progress: Optional secret-free progress callback.
 
     Returns:
-        Docker action and whether this run proved the exact stored binding.
+        Docker action, whether this run proved the exact stored binding, and
+        one-way client-secret value evidence.
 
     Raises:
         KeycloakProfileError: If Keycloak cannot provide or prove a credential.
@@ -501,7 +515,7 @@ def _bridge_reconciled_secret(
     """
 
     _report(progress, "[10/10] Reconciling the Docker client-secret bridge...")
-    docker_action = _bridge_client_secret(
+    docker_action, secret_value_evidence = _bridge_client_secret(
         profile,
         identity,
         client,
@@ -512,7 +526,7 @@ def _bridge_reconciled_secret(
     )
     binding_verified = docker_action in {"created", "replaced"}
     _report_secret_bridge(progress, binding_verified)
-    return docker_action, binding_verified
+    return docker_action, binding_verified, secret_value_evidence
 
 
 def _prepare_keycloak_apply(
@@ -612,7 +626,11 @@ def reconcile_authenticated(
         bootstrap_test_user_passwords or {},
         progress,
     )
-    docker_action, binding_verified = _bridge_reconciled_secret(
+    (
+        docker_action,
+        binding_verified,
+        secret_value_evidence,
+    ) = _bridge_reconciled_secret(
         profile,
         identity,
         client,
@@ -627,6 +645,7 @@ def reconcile_authenticated(
         actions,
         docker_action,
         binding_verified,
+        secret_value_evidence,
     )
 
 

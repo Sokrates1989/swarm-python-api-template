@@ -12,6 +12,8 @@ Dependencies:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 import sys
 import unittest
@@ -28,6 +30,8 @@ if str(SCRIPTS_DIRECTORY) not in sys.path:
 from keycloak_profile_secret_bridge import (  # noqa: E402
     KeycloakSecretBridgeError,
     _docker,
+    build_client_secret_value_evidence,
+    build_opaque_client_secret_value_evidence,
     docker_secret_exists,
     write_docker_secret,
 )
@@ -35,6 +39,67 @@ from keycloak_profile_secret_bridge import (  # noqa: E402
 
 class KeycloakProfileSecretBridgeTests(unittest.TestCase):
     """Exercise fail-closed Docker secret inspection."""
+
+    def test_observed_secret_evidence_discloses_no_value_characters(
+        self,
+    ) -> None:
+        """Report stable proof metadata without returning credential text.
+
+        Returns:
+            Nothing.
+        """
+
+        secret = "keycloak-generated-sensitive-sentinel"
+        evidence = build_client_secret_value_evidence(
+            secret,
+            "EXAMPLE_KEYCLOAK_SECRET",
+        )
+
+        self.assertIs(evidence["observedThisRun"], True)
+        self.assertEqual(evidence["source"], "keycloak-admin-api")
+        self.assertIs(evidence["distinctFromDockerSecretName"], True)
+        self.assertEqual(evidence["length"], len(secret))
+        self.assertEqual(
+            evidence["sha256Prefix"],
+            hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16],
+        )
+        self.assertNotIn(secret, json.dumps(evidence))
+
+    def test_secret_value_cannot_equal_docker_secret_name(self) -> None:
+        """Reject an ambiguous credential before proof or publication.
+
+        Returns:
+            Nothing.
+        """
+
+        with self.assertRaisesRegex(
+            KeycloakSecretBridgeError,
+            "equal to the Docker secret name",
+        ):
+            build_client_secret_value_evidence(
+                "EXAMPLE_KEYCLOAK_SECRET",
+                "EXAMPLE_KEYCLOAK_SECRET",
+            )
+
+    def test_existing_opaque_secret_has_no_invented_value_evidence(
+        self,
+    ) -> None:
+        """Mark value evidence unavailable when Swarm cannot reveal it.
+
+        Returns:
+            Nothing.
+        """
+
+        evidence = build_opaque_client_secret_value_evidence()
+
+        self.assertIs(evidence["observedThisRun"], False)
+        self.assertEqual(
+            evidence["source"],
+            "existing-docker-secret-opaque",
+        )
+        self.assertIsNone(evidence["distinctFromDockerSecretName"])
+        self.assertIsNone(evidence["length"])
+        self.assertIsNone(evidence["sha256Prefix"])
 
     def test_missing_secret_is_reported_as_absent(self) -> None:
         """Return false only for Docker's explicit missing-secret response.
