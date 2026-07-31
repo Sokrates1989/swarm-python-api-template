@@ -60,7 +60,7 @@ server. That repository is for local development. Do not create a second
 Keycloak stack.
 
 The Felix deployment menu talks to the existing server's Admin API. It reads
-realm `felix-new`, clients, callbacks, origins, audience, and target Docker
+realm `felix`, candidate clients, callbacks, origins, audience, and target Docker
 secret name from `site-configs/felix.json`. The stack name remains `felix`;
 stack and authentication identity are independent. Re-running the action is
 idempotent: it preserves unrelated realm settings and social identity
@@ -111,7 +111,8 @@ username, and enter its password at the hidden Python prompt.
 
 The shared action ensures:
 
-- realm `felix-new` exists;
+- existing realm `felix` is reconciled without replacing unrelated clients or
+  social identity providers;
 - public PKCE client `felix-new-frontend` has the exact Web and mobile callback
   allowlist;
 - confidential service client `felix-new-backend` exists;

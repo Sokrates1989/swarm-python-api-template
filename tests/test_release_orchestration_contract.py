@@ -56,7 +56,7 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
 
         self.assertEqual(candidate["webOrigin"], "https://felix-app.fe-wi.com")
         self.assertEqual(candidate["apiOrigin"], "https://api.felix-app.fe-wi.com")
-        self.assertEqual(candidate["realm"], "felix-new")
+        self.assertEqual(candidate["realm"], "felix")
         self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
         self.assertEqual(candidate["backendAudience"], "felix-new-backend")
         self.assertEqual(boundary["candidateStackName"], "felix")

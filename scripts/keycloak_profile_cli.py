@@ -80,6 +80,20 @@ def print_target(
     print("its value is never displayed or written to a file.")
 
 
+def prompt_admin_user(default: str = "admin") -> str:
+    """Read the Keycloak administrator immediately before its password.
+
+    Args:
+        default: Username selected when the operator presses Enter.
+
+    Returns:
+        Explicit username, or ``default`` for an empty answer.
+    """
+
+    answer = input(f"Keycloak admin username [{default}]: ").strip()
+    return answer or default
+
+
 def print_plan(plan: dict[str, object]) -> None:
     """Print one sanitized live-state reconciliation plan.
 
@@ -218,4 +232,5 @@ __all__ = [
     "print_completion",
     "print_plan",
     "print_target",
+    "prompt_admin_user",
 ]

@@ -196,8 +196,7 @@ _profile_keycloak_summary() {
 #
 # Arguments:
 #   $1 - Python command.
-#   $2 - Keycloak administrator username.
-#   $3 - optional literal --replace-secret.
+#   $2 - optional literal --replace-secret.
 #
 # Returns:
 #   Python adapter status.
@@ -207,12 +206,10 @@ _profile_keycloak_summary() {
 #   the declared Docker secret, but never prints the secret value.
 _profile_keycloak_reconcile() {
     local python_command="$1"
-    local admin_user="$2"
-    local replace_flag="${3:-}"
+    local replace_flag="${2:-}"
     local arguments=(
         "${PROJECT_ROOT}/scripts/keycloak_profile_bootstrap.py"
         --root "$PROJECT_ROOT"
-        --admin-user "$admin_user"
     )
 
     if [ "$replace_flag" = "--replace-secret" ]; then
@@ -237,7 +234,6 @@ _profile_keycloak_reconcile() {
 #   operator accepts the Python adapter's Enter-default confirmation.
 run_profile_keycloak_bootstrap() {
     local python_command=""
-    local admin_user="admin"
 
     if ! profile_supports_keycloak_bootstrap; then
         echo "[INFO] The selected profile does not declare supported Keycloak bootstrap."
@@ -248,9 +244,7 @@ run_profile_keycloak_bootstrap() {
         return 1
     }
     _profile_keycloak_summary
-    read -r -p "Keycloak admin username [admin]: " admin_user
-    admin_user="${admin_user:-admin}"
-    _profile_keycloak_reconcile "$python_command" "$admin_user"
+    _profile_keycloak_reconcile "$python_command"
 }
 
 # run_profile_keycloak_secret_rotation
@@ -268,7 +262,6 @@ run_profile_keycloak_bootstrap() {
 #   action while the selected stack is running.
 run_profile_keycloak_secret_rotation() {
     local python_command=""
-    local admin_user="admin"
     local confirmation=""
 
     if ! profile_supports_keycloak_bootstrap; then
@@ -286,10 +279,7 @@ run_profile_keycloak_secret_rotation() {
         echo "Keycloak secret rotation cancelled."
         return 1
     fi
-    read -r -p "Keycloak admin username [admin]: " admin_user
-    admin_user="${admin_user:-admin}"
     _profile_keycloak_reconcile \
         "$python_command" \
-        "$admin_user" \
         "--replace-secret"
 }

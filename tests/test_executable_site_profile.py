@@ -203,7 +203,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             profile.web_image_reference,
             "sokrates1989/flutter-aurora-web:1.0.5",
         )
-        self.assertEqual(identity.realm, "aurora-new")
+        self.assertEqual(identity.realm, "aurora")
         self.assertEqual(identity.frontend_client_id, "aurora-new-frontend")
         self.assertEqual(identity.backend_client_id, "aurora-new-backend")
         self.assertEqual(identity.docker_secret, "AURORA_KEYCLOAK_ADMIN_CLIENT_SECRET")

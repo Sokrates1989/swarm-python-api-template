@@ -34,10 +34,11 @@ The contract protects:
 
 - candidate WebApp `felix-app.fe-wi.com`;
 - candidate API `api.felix-app.fe-wi.com`;
-- candidate realm `felix-new`;
+- shared existing realm `felix`;
 - clients/audience `felix-new-frontend` and `felix-new-backend`;
 - legacy host `felix.app.fe-wi.com`;
-- protected legacy realms `felix` and `felixappnew`;
+- protected separate legacy realm `felixappnew` plus protected legacy clients
+  and origin state inside the shared `felix` realm;
 - one full-stack service boundary; and
 - explicit approval before legacy forwarding.
 

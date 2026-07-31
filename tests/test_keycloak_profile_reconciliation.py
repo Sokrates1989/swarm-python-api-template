@@ -258,7 +258,7 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             if path.endswith("/users/service-user/role-mappings"):
                 return 200, {
                     "realmMappings": [
-                        {"name": "default-roles-felix-new"},
+                        {"name": "default-roles-felix"},
                     ],
                     "clientMappings": {},
                 }
@@ -321,7 +321,7 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             if path.endswith("/users/service-user/role-mappings"):
                 return 200, {
                     "realmMappings": [
-                        {"name": "default-roles-felix-new"},
+                        {"name": "default-roles-felix"},
                     ],
                     "clientMappings": {
                         "realm-management": {
@@ -373,7 +373,7 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 "client-scope",
                 {
                     "realmMappings": [
-                        {"name": "default-roles-felix-new"},
+                        {"name": "default-roles-felix"},
                     ],
                     "clientMappings": {},
                 },
@@ -445,7 +445,7 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 return 200, {
                     **declared_mapping,
                     "realmMappings": [
-                        {"name": "default-roles-felix-new"},
+                        {"name": "default-roles-felix"},
                     ],
                 }
             if path.endswith("/clients/backend-uuid/scope-mappings"):
@@ -503,7 +503,7 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 return 200, {
                     **declared_mapping,
                     "realmMappings": [
-                        {"name": "default-roles-felix-new"},
+                        {"name": "default-roles-felix"},
                     ],
                 }
             if path.endswith("/clients/backend-uuid/scope-mappings"):

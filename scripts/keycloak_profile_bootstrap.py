@@ -38,6 +38,7 @@ from keycloak_profile_cli import (
     print_completion,
     print_plan,
     print_target,
+    prompt_admin_user,
 )
 from keycloak_profile_reconciliation import (
     backend_payload as _backend_payload,
@@ -526,8 +527,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--admin-user",
-        default="admin",
-        help="Existing Keycloak administrator username.",
+        default=None,
+        help=(
+            "Existing Keycloak administrator username. When omitted, the "
+            "interactive prompt follows the complete target summary."
+        ),
     )
     parser.add_argument(
         "--replace-secret",
@@ -560,9 +564,10 @@ def main(argv: list[str] | None = None) -> int:
         profile = load_executable_profile(args.root)
         identity = load_keycloak_identity(profile)
         print_target(profile, identity)
+        admin_user = args.admin_user or prompt_admin_user()
         client, docker_present, plan = authenticate_and_plan(
             identity,
-            args.admin_user,
+            admin_user,
             replace_secret=args.replace_secret,
         )
         print_plan(plan)

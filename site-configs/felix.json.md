@@ -17,8 +17,9 @@ Felix differs only through profile data:
 - backend image `sokrates1989/python-api-felix`;
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
-- isolated Keycloak realm `felix-new`, public client `felix-new-frontend`, and
-  confidential backend client/audience `felix-new-backend`; and
+- shared existing Keycloak realm `felix`, candidate public client
+  `felix-new-frontend`, and confidential backend client/audience
+  `felix-new-backend`; and
 - exact Docker secret identifiers and file mounts.
 
 Felix recommends `storage.dataRoot: /swarm/prod/felix`. Pressing Enter at the
@@ -58,8 +59,10 @@ backend service-account client roles, and the confidential-client Docker
 secret target from this JSON. It reconciles only the allowlisted
 `realmSettings` fields and preserves all other realm settings and social
 identity providers. Stack identity is independent from authentication
-identity: the stack is `felix`, while the candidate realm and clients retain
-the isolated `felix-new` names required by the published application images.
+identity: the stack and shared realm are `felix`, while candidate clients keep
+the `felix-new-frontend` and `felix-new-backend` names. Reconciliation touches
+only declared realm fields and candidate clients; unrelated legacy clients and
+social providers in `felix` are preserved.
 Every declared frontend callback is also admitted as a post-logout redirect,
 including the native `felixkc:/callback`, while browser origins additionally
 receive their Web wildcard.

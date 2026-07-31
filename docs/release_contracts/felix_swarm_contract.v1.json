@@ -14,8 +14,8 @@
   "candidate": {
     "webOrigin": "https://felix-app.fe-wi.com",
     "apiOrigin": "https://api.felix-app.fe-wi.com",
-    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
-    "realm": "felix-new",
+    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix",
+    "realm": "felix",
     "frontendClientId": "felix-new-frontend",
     "backendAudience": "felix-new-backend",
     "backendAdminClientId": "felix-new-backend",
@@ -28,7 +28,6 @@
   "legacyProtection": {
     "webOrigin": "https://felix.app.fe-wi.com",
     "protectedRealms": [
-      "felix",
       "felixappnew"
     ],
     "protectedClientIds": [
