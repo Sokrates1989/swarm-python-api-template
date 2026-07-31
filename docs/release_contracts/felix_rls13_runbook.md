@@ -89,7 +89,9 @@ If no root `.env` exists:
 5. choose Traefik or direct published ports and the correct TLS ownership;
 6. choose the real Traefik overlay network from the discovered numbered list;
 7. confirm backend and WebApp image repositories, semantic versions,
-   replicas, memory, data root, and optional pgAdmin; and
+   replicas, memory, and optional pgAdmin; at **Host data root**, press Enter to
+   accept the checkout default (`/swarm/prod/felix`) unless an intentional
+   separate absolute host path is required; and
 8. let the wizard write root `.env` and Compose-validate
    `swarm-stack.yml`.
 
@@ -144,8 +146,10 @@ For the current Felix profile:
 Optional AI chat and Web Push secrets are shown separately. They become
 required only when their corresponding site-config capability is enabled.
 
-Create the data directories offered by the setup wizard. Secret values must
-never be placed in site config, root `.env`, command arguments, logs, or
+Create the data directories offered by the setup wizard. With the current
+recommended default they are ignored subdirectories of `/swarm/prod/felix`;
+an explicitly selected external data root is also supported. Secret values
+must never be placed in site config, root `.env`, command arguments, logs, or
 tracked files.
 
 ## First deployment

@@ -78,7 +78,7 @@
     "defaultWebMemoryLimit": "128M"
   },
   "storage": {
-    "dataRoot": "/swarm/volumes/example-app"
+    "dataRoot": ""
   },
   "secretsConfig": {
     "prefixed": false

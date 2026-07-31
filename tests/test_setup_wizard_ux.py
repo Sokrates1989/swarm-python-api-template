@@ -129,6 +129,30 @@ class SetupWizardUxTests(unittest.TestCase):
         self.assertNotIn("felix", source.lower())
         self.assertNotIn("secure_messaging", source.lower())
 
+    def test_data_root_uses_profile_or_checkout_default(self) -> None:
+        """Use an optional profile default and retain an explicit choice.
+
+        Returns:
+            Nothing.
+        """
+
+        services = SERVICES_MODULE.read_text(encoding="utf-8")
+        helpers = SITE_HELPERS.read_text(encoding="utf-8")
+        felix = json.loads(
+            (REPOSITORY_ROOT / "site-configs" / "felix.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertIn("'.storage.dataRoot'", helpers)
+        self.assertIn('"$project_root")', helpers)
+        self.assertIn("Host data root", services)
+        self.assertIn("_deployment_existing_value DATA_ROOT", services)
+        self.assertEqual(
+            felix["storage"]["dataRoot"],
+            "/swarm/prod/felix",
+        )
+
     def test_management_changes_reuse_the_shared_dialogue(self) -> None:
         """Keep image, replica, and admin settings out of renderer branches.
 

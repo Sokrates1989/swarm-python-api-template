@@ -88,8 +88,11 @@ field guide.
 | Deploy, health, logs, and rollback | common operations modules |
 
 Site configs contain safe defaults. The final stack name, domains, image
-repositories and versions, replicas, ports, routing choice, and storage path
-are deployment-instance values written to `.env`.
+repositories and versions, replicas, ports, and routing choice are
+deployment-instance values written to `.env`. `DATA_ROOT` uses an optional
+profile recommendation and otherwise defaults dynamically to the deployment
+checkout. Felix recommends `/swarm/prod/felix`, while the shared prompt still
+permits an intentional safe absolute override.
 
 ## Current file structure
 

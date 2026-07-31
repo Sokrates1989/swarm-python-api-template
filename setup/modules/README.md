@@ -48,7 +48,10 @@ profile values never fall back to renderer-specific raw text prompts.
 Runs the only deployment dialogue. It normalizes profile defaults and existing
 `.env` values, then collects applicable stack, domain, database, proxy/TLS,
 Traefik network, service image/tag/replica/memory/port, storage, admin-service,
-internal-network, and redirector values.
+internal-network, and redirector values. The host storage prompt uses an
+optional profile recommendation, falls back to the checkout root when it is
+absent or empty, and preserves an existing explicit choice during
+reconfiguration.
 
 `deployment-profile-routing.sh` and `deployment-profile-services.sh` contain
 the larger capability sections while remaining part of this one dialogue.

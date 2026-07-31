@@ -77,6 +77,8 @@ _collect_deployment_service() {
 # collect_deployment_services_and_storage
 # ------------------------------------------------------------------------------
 # Collects primary/additional service deployment values and the host data root.
+# A profile recommendation or the checkout fallback supplies the first-run
+# default; an explicit operator path is retained during reconfiguration.
 #
 # Returns:
 #   0 after setting image, resource, WebApp, and storage globals.

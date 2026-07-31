@@ -34,12 +34,14 @@ from executable_profile_support import (
 def default_deployment_values(
     data: Mapping[str, object],
     config_id: str,
+    root: Path,
 ) -> dict[str, str]:
     """Build fixed and operator-owned deployment defaults.
 
     Args:
         data: Parsed executable profile.
         config_id: Selected site-config ID.
+        root: Deployment repository root used when storage has no default.
 
     Returns:
         Complete generated root environment values.
@@ -50,7 +52,7 @@ def default_deployment_values(
     database = mapping(data["database"], "database")
     image = mapping(data["image"], "image")
     resources = mapping(data["resources"], "resources")
-    storage = mapping(data["storage"], "storage")
+    storage = mapping(data.get("storage", {}), "storage")
     environment = mapping(data["environment"], "environment")
     services = mapping(data["services"], "services")
     cors = mapping(data["cors"], "cors")
@@ -111,7 +113,7 @@ def default_deployment_values(
             "MEMORY_LIMIT": str(
                 resources.get("defaultMemoryLimit", "512M")
             ),
-            "DATA_ROOT": str(storage["dataRoot"]),
+            "DATA_ROOT": str(storage.get("dataRoot") or root.resolve()),
             "PGADMIN_ENABLED": str(pgadmin.get("enabled", False)).lower(),
             "PGADMIN_DOMAIN": str(pgadmin.get("domain", "")),
             "PGADMIN_EMAIL": str(pgadmin.get("email", "")),
@@ -153,7 +155,7 @@ def load_config_defaults(
     selected_path = config_path(root.resolve(), config_id)
     data = load_json(selected_path)
     validate_config(data)
-    return data, default_deployment_values(data, config_id)
+    return data, default_deployment_values(data, config_id, root.resolve())
 
 
 def write_deployment_env(

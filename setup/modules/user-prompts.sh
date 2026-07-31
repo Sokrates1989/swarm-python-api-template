@@ -13,7 +13,6 @@
 #   prompt_ssl_mode        - Ask for direct or proxy SSL termination
 #   prompt_database_mode   - Ask for local or external database
 #   prompt_stack_name      - Ask for Docker stack name
-#   prompt_data_root       - Ask for data directory path
 #   prompt_traefik_network - Select or create Traefik overlay network
 #   prompt_api_domain      - Ask for API domain (required for Traefik)
 #   prompt_published_port  - Ask for port when not using Traefik
@@ -151,12 +150,6 @@ prompt_site_name() {
     fi
     
     echo "$SITE_NAME"
-}
-
-prompt_data_root() {
-    local default_path="$1"
-    read -p "Data root directory [$default_path]: " DATA_ROOT
-    echo "${DATA_ROOT:-$default_path}"
 }
 
 # ------------------------------------------------------------------------------

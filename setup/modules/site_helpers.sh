@@ -319,6 +319,8 @@ load_app_config() {
     APP_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.resources.defaultMemoryLimit' "512M")"
     APP_WEB_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.web.resources.defaultReplicas' "1")"
     APP_WEB_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.web.resources.defaultMemoryLimit // .resources.defaultWebMemoryLimit' "128M")"
+    # A profile may recommend a production host path. Missing or empty storage
+    # defaults remain relocatable by resolving to this deployment checkout.
     APP_DATA_ROOT="$(_jq_or_default "$config_file" '.storage.dataRoot' "$project_root")"
 
     # Optional database-management service metadata. New profiles declare the
@@ -582,6 +584,9 @@ load_root_env() {
         return 1
     fi
     _load_stack_env_fields "$env_file"
+    if [ -z "$DATA_ROOT" ]; then
+        export DATA_ROOT="$project_root"
+    fi
     _load_executable_env_fields "$env_file"
     _load_generic_service_env_fields "$env_file"
     profile_id="${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-}}"

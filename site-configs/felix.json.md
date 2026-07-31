@@ -21,6 +21,13 @@ Felix differs only through profile data:
   confidential backend client/audience `felix-new-backend`; and
 - exact Docker secret identifiers and file mounts.
 
+Felix recommends `storage.dataRoot: /swarm/prod/felix`. Pressing Enter at the
+shared prompt therefore places `postgres_data`, `redis_data`, `backups`,
+`logs`, and any other enabled service directory below that production clone.
+Profiles with an absent or empty recommendation default to their actual
+checkout instead. The common prompt also accepts another safe absolute path
+when an operator intentionally wants a separate volume location.
+
 The legacy host `felix.app.fe-wi.com` is deliberately absent from executable
 routing and remains outside this stack.
 

@@ -104,7 +104,8 @@ The wizard:
 1. Lets you select which **deployment profile** to use (from `site-configs/`).
 2. Uses the same numbered sections for every applicable stack name, database,
    proxy, TLS, Traefik network, service image, tag, replica, memory, port, and
-   storage choice.
+   storage choice. The storage prompt uses the profile recommendation when one
+   exists and otherwise defaults to the deployment checkout.
 3. Adds or skips questions only from profile capabilities such as an internal
    service, WebApp, database management, redirector, or Keycloak.
 4. Generates the root `.env`, then selects the legacy compatibility or
@@ -236,9 +237,11 @@ resolver, direct service ports, and optional pgAdmin are also profile fields.
 
 Site configs store safe defaults and allowed capabilities. Final
 deployment-instance selections such as domain, proxy, SSL ownership, image
-repository/version, replicas, ports, storage, and any compatibility secret
-prefix are written to the ignored root `.env`; changing `.env` never changes
-the tracked profile defaults.
+repository/version, replicas, ports, and any compatibility secret prefix are
+written to the ignored root `.env`; changing `.env` never changes the tracked
+profile defaults. `DATA_ROOT` uses the optional `storage.dataRoot` recommendation
+or falls back to the repository checkout path. The shared setup prompt can
+change either default to another safe absolute host path.
 
 There is no schema version 4 in this repository. Version 5.0 was introduced as
 the strict executable full-stack contract and deliberately uses a new major

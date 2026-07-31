@@ -13,9 +13,12 @@ build/
 # ==============================================================================
 postgres_data/
 mongodb_data/
+mongodb_config/
 neo4j_data/
 neo4j_logs/
 redis_data/
+pgadmin/
+logs/
 
 # ==============================================================================
 # Secrets (never commit)

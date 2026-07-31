@@ -44,8 +44,9 @@ overlay network, certificate resolver, and applicable published ports.
 ### `deployment-profile-services.sh`
 
 Collects API and optional WebApp images, semantic versions, replicas, memory,
-storage, optional database management, internal networks, and redirector
-settings.
+optional database management, internal networks, and redirector settings. The
+shared storage prompt uses an optional profile recommendation, falls back to
+the deployment checkout root, and accepts an explicit safe absolute host path.
 
 ## Persistence and rendering
 
@@ -65,8 +66,9 @@ answers to `scripts/site_profile.py`, whose validators write the public root
 
 Version 5.0 fixes application and authentication identity while allowing
 deployment-instance values such as stack name, domains, image repositories
-and tags, replicas, ports, and storage to use profile defaults that the
-operator can change.
+and tags, replicas, and ports to use profile defaults that the operator can
+change. `DATA_ROOT` uses an optional `storage.dataRoot` recommendation or the
+deployment repository root as its dynamic fallback.
 
 There is no version 4 profile format. Version 5.0 is a separate strict contract
 family, not an incremental version-3 extension.

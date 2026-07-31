@@ -559,6 +559,57 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             ("https://test-felix.example.com",),
         )
 
+    def test_data_root_uses_profile_or_checkout_default_and_allows_override(
+        self,
+    ) -> None:
+        """Resolve profile/checkout defaults and accept an explicit path.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = self._configure("felix", self.felix_config)
+        self.assertEqual(
+            profile.deployment["DATA_ROOT"],
+            "/swarm/prod/felix",
+        )
+        checkout_default = copy.deepcopy(self.felix_config)
+        checkout_default["storage"]["dataRoot"] = ""
+        checkout_profile = self._configure("felix", checkout_default)
+        self.assertEqual(
+            checkout_profile.deployment["DATA_ROOT"],
+            str(self.root.resolve()),
+        )
+        write_deployment_env(
+            self.root,
+            "felix",
+            {"DATA_ROOT": "/swarm/volumes/felix"},
+            force=True,
+        )
+        overridden = load_executable_profile(self.root)
+        self.assertEqual(
+            overridden.deployment["DATA_ROOT"],
+            "/swarm/volumes/felix",
+        )
+
+    def test_storage_default_must_be_empty_or_safe_absolute_path(self) -> None:
+        """Reject malformed site-config storage recommendations.
+
+        Returns:
+            Nothing.
+        """
+
+        for invalid_path in ("relative/data", "/", "/swarm/../felix"):
+            with self.subTest(data_root=invalid_path):
+                invalid = copy.deepcopy(self.felix_config)
+                invalid["storage"]["dataRoot"] = invalid_path
+                self._write_config("felix", invalid)
+                with self.assertRaisesRegex(
+                    ExecutableProfileError,
+                    "storage.dataRoot",
+                ):
+                    load_config_defaults(self.root, "felix")
+
     def test_application_identity_cannot_be_overridden(self) -> None:
         """Reject attempts to override profile and authentication identity.
 
@@ -623,6 +674,10 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         stack = render_stack(profile)
 
         self.assertEqual(profile.app_id, "example_app")
+        self.assertEqual(
+            profile.deployment["DATA_ROOT"],
+            str(self.root.resolve()),
+        )
         self.assertIn("your-username/flutter-example-app-web:0.1.0", stack)
         self.assertIn("example-app-frontend", json.dumps(profile.data))
 

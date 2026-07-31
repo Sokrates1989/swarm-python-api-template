@@ -117,7 +117,9 @@ Common variables:
 - `${IMAGE_NAME}` - Docker image name
 - `${IMAGE_VERSION}` - Docker image version
 - `${STACK_NAME}` - Docker stack name
-- `${DATA_ROOT}` - Path for persistent data
+- `${DATA_ROOT}` - Selected absolute host path for persistent service
+  directories; the shared wizard uses an optional profile recommendation or
+  defaults it to the deployment checkout root
 - `${PORT}` - API port
 - `${API_URL}` - Domain for Traefik routing
 - `${PUBLISHED_PORT}` - Port for direct exposure

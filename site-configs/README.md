@@ -81,8 +81,11 @@ The shared executable path then:
 All schemas first pass through the same numbered setup dialogue. Renderer
 selection happens only after its normalized answers have been collected.
 Stack names, applicable domains, service image repositories/tags, replicas,
-ports, resource limits, and storage paths are profile defaults rather than a
-second fixed identity layer.
+ports, and resource limits are profile defaults rather than a second fixed
+identity layer. `storage.dataRoot` may provide a safe absolute recommended
+host path. Missing or empty values fall back to the deployment checkout. The
+operator may choose another safe absolute path, which the ignored root `.env`
+preserves for later reconfiguration.
 
 `services.web` controls the optional WebApp service. When true, `web.image`,
 `web.resources`, and the `routing.web*` fields define that service. No code

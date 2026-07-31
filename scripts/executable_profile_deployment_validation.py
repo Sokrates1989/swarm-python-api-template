@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from executable_profile_config_validation import (
     validate_domain,
@@ -110,13 +110,13 @@ def _validate_operator_identity(
 
 
 def _validate_counts_and_resources(values: Mapping[str, str]) -> None:
-    """Validate replicas, memory limits, and data root.
+    """Validate replicas and memory limits.
 
     Args:
         values: Complete generated deployment environment.
 
     Raises:
-        ExecutableProfileError: If a resource or storage value is unsafe.
+        ExecutableProfileError: If a resource value is unsafe.
     """
 
     for key in ("API_REPLICAS", "WEB_REPLICAS", "PGADMIN_REPLICAS"):
@@ -133,13 +133,35 @@ def _validate_counts_and_resources(values: Mapping[str, str]) -> None:
             raise ExecutableProfileError(
                 f".env {key} is not a safe memory limit."
             )
-    data_root = PurePosixPath(values["DATA_ROOT"])
+
+
+def _validate_data_root(values: Mapping[str, str]) -> None:
+    """Require one safe absolute POSIX or Windows host storage path.
+
+    Args:
+        values: Complete generated deployment environment.
+
+    Raises:
+        ExecutableProfileError: If ``DATA_ROOT`` is broad or malformed.
+    """
+
+    data_root = values["DATA_ROOT"]
+    posix_path = PurePosixPath(data_root)
+    native_path = Path(data_root)
+    posix_safe = bool(re.fullmatch(r"/[A-Za-z0-9._/-]+", data_root))
+    windows_safe = bool(
+        re.fullmatch(r"[A-Za-z]:[\\/][A-Za-z0-9._/\\ -]+", data_root)
+    )
+    path_parts = tuple(part for part in re.split(r"[\\/]", data_root) if part)
     if (
-        not data_root.is_absolute()
-        or values["DATA_ROOT"] in {"/", "\\"}
-        or not re.fullmatch(r"/[A-Za-z0-9._/-]+", values["DATA_ROOT"])
-        or "//" in values["DATA_ROOT"]
-        or ".." in data_root.parts
+        not (
+            (posix_path.is_absolute() and posix_safe)
+            or (native_path.is_absolute() and windows_safe)
+        )
+        or data_root in {"/", "\\"}
+        or ".." in path_parts
+        or "//" in data_root
+        or "\\\\" in data_root
     ):
         raise ExecutableProfileError(
             ".env DATA_ROOT must be a specific absolute host path."
@@ -348,6 +370,7 @@ def validate_deployment(
         )
     _validate_operator_identity(data, values)
     _validate_counts_and_resources(values)
+    _validate_data_root(values)
     _validate_proxy(values)
     _validate_database(data, values)
     _validate_web(data, values)

@@ -279,6 +279,38 @@ def _validate_database(
         )
 
 
+def _validate_storage(data: Mapping[str, object]) -> None:
+    """Validate an optional recommended production data-root path.
+
+    Missing or empty ``storage.dataRoot`` deliberately means that the shared
+    setup should use the current deployment checkout as its default.
+
+    Args:
+        data: Full site profile.
+
+    Raises:
+        ExecutableProfileError: If a non-empty profile default is not a safe,
+            specific absolute POSIX host path.
+    """
+
+    storage = mapping(data.get("storage", {}), "storage")
+    value = storage.get("dataRoot", "")
+    if value == "":
+        return
+    data_root = text(value, "storage.dataRoot")
+    parsed = PurePosixPath(data_root)
+    if (
+        not parsed.is_absolute()
+        or data_root == "/"
+        or not re.fullmatch(r"/[A-Za-z0-9._/-]+", data_root)
+        or "//" in data_root
+        or ".." in parsed.parts
+    ):
+        raise ExecutableProfileError(
+            "storage.dataRoot must be empty or a specific absolute host path."
+        )
+
+
 def _validate_secret_declarations(data: Mapping[str, object]) -> None:
     """Validate required, optional, and base-mounted secret identifiers.
 
@@ -462,7 +494,6 @@ def validate_config(data: Mapping[str, object]) -> None:
             "services",
             "image",
             "resources",
-            "storage",
             "cors",
             "environment",
             "envKeys",
@@ -500,6 +531,7 @@ def validate_config(data: Mapping[str, object]) -> None:
     _validate_routing(data, services)
     _validate_release_image(mapping(data["image"], "image"), "image")
     _validate_database(data, services)
+    _validate_storage(data)
     cors = mapping(data["cors"], "cors")
     for index, origin in enumerate(sequence(cors["origins"], "cors.origins")):
         validate_origin(

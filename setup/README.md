@@ -38,7 +38,8 @@ Passwords, tokens, private keys, and client-secret values never belong in
 1. select a JSON profile from `site-configs/`;
 2. load its capabilities and safe defaults;
 3. collect applicable stack, domain, database, proxy/TLS, network, service,
-   image, resource, port, storage, and admin-service values;
+   image, resource, port, storage, and admin-service values; storage uses an
+   optional profile recommendation or the deployment checkout root;
 4. write root `.env` through the selected persistence adapter;
 5. render and Compose-check `swarm-stack.yml` through the selected renderer;
    and
@@ -94,8 +95,9 @@ setup/
 - `deployment-profile-inputs.sh` coordinates the only deployment dialogue.
 - `deployment-profile-routing.sh` owns proxy, TLS, distinct Traefik overlay
   network/provider-label settings, and direct-port questions.
-- `deployment-profile-services.sh` owns images, resources, storage, WebApp,
-  admin-service, internal-network, and redirector questions.
+- `deployment-profile-services.sh` owns images, resources, the profile-or-
+  checkout-default storage path, WebApp, admin-service, internal-network, and
+  redirector questions.
 - `legacy-profile-environment.sh` persists version-3.0/3.1 compatibility
   answers.
 - `executable-profile-wizard.sh` is the prompt-free version-5.0 persistence
