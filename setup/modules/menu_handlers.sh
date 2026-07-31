@@ -265,17 +265,18 @@ show_main_menu() {
         local MENU_SETUP_WIZARD=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
         local MENU_SETUP_SECRETS="__disabled_setup_secrets"
-        local MENU_RESTORE_ENV=$MENU_NEXT
-        MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_RESTORE_SECRETS="__disabled_restore_secrets"
         if _profile_requires_secrets; then
             MENU_SETUP_SECRETS=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
-            if declare -F profile_supports_secret_file_workflow >/dev/null 2>&1 &&
-                profile_supports_secret_file_workflow; then
-                MENU_RESTORE_SECRETS=$MENU_NEXT
-                MENU_NEXT=$((MENU_NEXT+1))
-            fi
+        fi
+        local MENU_RESTORE_ENV=$MENU_NEXT
+        MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_RESTORE_SECRETS="__disabled_restore_secrets"
+        if [ "$MENU_SETUP_SECRETS" != "__disabled_setup_secrets" ] &&
+            declare -F profile_supports_secret_file_workflow >/dev/null 2>&1 &&
+            profile_supports_secret_file_workflow; then
+            MENU_RESTORE_SECRETS=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
         fi
         local MENU_SETUP_AUTH=""
         local MENU_KEYCLOAK_BOOTSTRAP=""

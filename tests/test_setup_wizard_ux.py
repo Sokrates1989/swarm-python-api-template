@@ -49,6 +49,34 @@ MENU_HANDLERS = (
 class SetupWizardUxTests(unittest.TestCase):
     """Verify one numbered dialogue feeds every renderer adapter."""
 
+    def test_main_menu_numbers_secret_management_before_environment_restore(
+        self,
+    ) -> None:
+        """Assign and display secret management before environment restore.
+
+        Returns:
+            Nothing.
+        """
+
+        source = MENU_HANDLERS.read_text(encoding="utf-8")
+        allocation = source[
+            source.index("while true; do") : source.index(
+                'local MENU_SETUP_AUTH=""'
+            )
+        ]
+        display = source[
+            source.index('echo "Setup:"') : source.index('echo "Deployment:"')
+        ]
+
+        self.assertLess(
+            allocation.index("MENU_SETUP_SECRETS=$MENU_NEXT"),
+            allocation.index("local MENU_RESTORE_ENV=$MENU_NEXT"),
+        )
+        self.assertLess(
+            display.index("Manage Docker secrets"),
+            display.index("Quick restore from saved .env"),
+        )
+
     def test_renderer_dispatch_occurs_after_shared_collection(self) -> None:
         """Require collection before persistence and rendering dispatch.
 
