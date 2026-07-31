@@ -185,6 +185,28 @@ class SetupWizardUxTests(unittest.TestCase):
         self.assertNotIn("felix", source.lower())
         self.assertNotIn("secure_messaging", source.lower())
 
+    def test_public_domain_prompts_share_subdomain_creation_help(self) -> None:
+        """Add the Wiki guide to every validated public-domain question.
+
+        The prompt primitive must preserve existing example parentheses and
+        decorate plain service labels without requiring app-specific branches.
+
+        Returns:
+            Nothing.
+        """
+
+        prompts = PROMPTS_MODULE.read_text(encoding="utf-8")
+        inputs = INPUTS_MODULE.read_text(encoding="utf-8")
+        services = SERVICES_MODULE.read_text(encoding="utf-8")
+        guide = "https://wiki.fe-wi.com/en/deployment/create-subdomain"
+
+        self.assertIn(f'PUBLIC_DOMAIN_CREATE_INFO_URL="{guide}"', prompts)
+        self.assertIn('if [ "$validation_kind" = "domain" ]', prompts)
+        self.assertIn("API domain (e.g. api.example.com)", inputs)
+        self.assertIn("WebApp domain (e.g. app.example.com)", inputs)
+        self.assertIn("pgAdmin domain", services)
+        self.assertIn("Mongo Express domain", services)
+
     def test_data_root_uses_profile_or_checkout_default(self) -> None:
         """Use an optional profile default and retain an explicit choice.
 
@@ -281,6 +303,42 @@ class SetupWizardUxTests(unittest.TestCase):
         self.assertIn("2) None", completed.stdout)
         self.assertIn("Invalid choice: '9'", completed.stdout)
         self.assertIn("RESULT=traefik", completed.stdout)
+
+    @unittest.skipIf(
+        sys.platform.startswith("win") or shutil.which("bash") is None,
+        "Native Bash prompt-label test runs on Linux verification hosts.",
+    )
+    def test_public_domain_label_places_help_inside_existing_parentheses(
+        self,
+    ) -> None:
+        """Render exact API and service-domain labels without duplicate links.
+
+        Returns:
+            Nothing.
+        """
+
+        script = (
+            f"source {shlex_quote(PROMPTS_MODULE)}; "
+            "_deployment_public_domain_prompt_label "
+            "'API domain (e.g. api.example.com)'; printf '\\n'; "
+            "_deployment_public_domain_prompt_label 'pgAdmin domain'"
+        )
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        guide = "https://wiki.fe-wi.com/en/deployment/create-subdomain"
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout.splitlines(),
+            [
+                f"API domain (e.g. api.example.com, create-info: {guide})",
+                f"pgAdmin domain (create-info: {guide})",
+            ],
+        )
 
 
 def shlex_quote(path: Path) -> str:

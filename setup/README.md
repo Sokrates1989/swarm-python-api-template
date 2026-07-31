@@ -91,7 +91,9 @@ setup/
 - `site_helpers.sh` discovers profiles and loads profile/root-environment
   values.
 - `deployment-profile-prompts.sh` owns numbered choices and validated text
-  input.
+  input. Every public-domain question automatically includes the shared
+  subdomain-creation guide, including API, WebApp, and database-management
+  service domains.
 - `deployment-profile-inputs.sh` coordinates the only deployment dialogue.
 - `deployment-profile-routing.sh` owns proxy, TLS, distinct Traefik overlay
   network/provider-label settings, and direct-port questions.

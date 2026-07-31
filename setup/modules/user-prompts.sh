@@ -326,7 +326,7 @@ prompt_traefik_network() {
 prompt_api_domain() {
     local api_url=""
     while [ -z "$api_url" ]; do
-        read -p "API domain (e.g., api.example.com; if you need to create a new subdomain, see https://wiki.fe-wi.com/en/deployment/create-subdomain): " api_url
+        read -p "API domain (e.g. api.example.com, create-info: https://wiki.fe-wi.com/en/deployment/create-subdomain): " api_url
         if [ -z "$api_url" ]; then
             echo "⚠️  Domain is required for Traefik"
         fi

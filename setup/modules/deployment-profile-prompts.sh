@@ -17,6 +17,42 @@ if [ -n "${_DEPLOYMENT_PROFILE_PROMPTS_LOADED:-}" ]; then
 fi
 _DEPLOYMENT_PROFILE_PROMPTS_LOADED=1
 
+# Public operator documentation used by every validated public-domain prompt.
+PUBLIC_DOMAIN_CREATE_INFO_URL="https://wiki.fe-wi.com/en/deployment/create-subdomain"
+
+# ------------------------------------------------------------------------------
+# _deployment_public_domain_prompt_label
+# ------------------------------------------------------------------------------
+# Adds the shared subdomain-creation guide to a public-domain prompt label.
+# Labels ending in parentheses receive the hint inside that existing group;
+# plain labels receive a new parenthesized hint. An already decorated label is
+# returned unchanged so callers may safely reuse this helper.
+#
+# Arguments:
+#   $1 - Operator-facing prompt label.
+#
+# Output:
+#   The label containing exactly one subdomain-creation guide URL.
+#
+# Returns:
+#   0 after printing the decorated label.
+# ------------------------------------------------------------------------------
+_deployment_public_domain_prompt_label() {
+    local label="$1"
+
+    if [[ "$label" == *"$PUBLIC_DOMAIN_CREATE_INFO_URL"* ]]; then
+        printf '%s' "$label"
+    elif [[ "$label" == *")" ]]; then
+        printf '%s, create-info: %s)' \
+            "${label%)}" \
+            "$PUBLIC_DOMAIN_CREATE_INFO_URL"
+    else
+        printf '%s (create-info: %s)' \
+            "$label" \
+            "$PUBLIC_DOMAIN_CREATE_INFO_URL"
+    fi
+}
+
 # ------------------------------------------------------------------------------
 # _deployment_value_is_valid
 # ------------------------------------------------------------------------------
@@ -120,6 +156,8 @@ _deployment_value_is_valid() {
 #   $2 - Prompt label.
 #   $3 - Default value.
 #   $4 - Validation kind accepted by _deployment_value_is_valid.
+#        Domain validation automatically adds the public subdomain guide to
+#        the displayed label.
 #
 # Returns:
 #   0 after a valid value is assigned.
@@ -130,6 +168,10 @@ prompt_deployment_value() {
     local default_value="$3"
     local validation_kind="$4"
     local selected=""
+
+    if [ "$validation_kind" = "domain" ]; then
+        label="$(_deployment_public_domain_prompt_label "$label")"
+    fi
 
     while true; do
         read -r -p "${label} [${default_value}]: " selected

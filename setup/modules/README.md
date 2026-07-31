@@ -41,7 +41,9 @@ Discovers profiles, loads selected JSON metadata, and reloads public root
 ### `deployment-profile-prompts.sh`
 
 Owns the numbered choice and validated free-text primitives. Enum and boolean
-profile values never fall back to renderer-specific raw text prompts.
+profile values never fall back to renderer-specific raw text prompts. Values
+validated as public domains automatically show the shared Wiki subdomain-
+creation link, so new profile capabilities inherit the same operator guidance.
 
 ### `deployment-profile-inputs.sh`
 
