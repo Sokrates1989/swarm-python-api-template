@@ -150,7 +150,10 @@ def backend_payload(identity: KeycloakIdentity) -> dict[str, Any]:
         identity: Profile-derived Keycloak identity.
 
     Returns:
-        Keycloak client representation.
+        Keycloak client representation containing only fields owned by the
+        profile. Keycloak-derived redirect and Web-origin fields are omitted
+        because Keycloak 26 synthesizes them from ``rootUrl`` even when empty
+        arrays are submitted.
     """
 
     return {
@@ -169,9 +172,62 @@ def backend_payload(identity: KeycloakIdentity) -> dict[str, Any]:
         "fullScopeAllowed": False,
         "rootUrl": identity.api_root_url,
         "baseUrl": "/",
-        "redirectUris": [],
-        "webOrigins": [],
     }
+
+
+def _owned_field_matches(
+    current: dict[str, Any],
+    key: str,
+    value: Any,
+) -> bool:
+    """Compare one profile-owned field with its Keycloak representation.
+
+    Args:
+        current: Existing Keycloak representation.
+        key: Profile-owned field name.
+        value: Desired public field value.
+
+    Returns:
+        Whether Keycloak represents the desired value under the normal
+        missing-false and unordered-list equivalence rules.
+    """
+
+    if key == "attributes" and isinstance(value, dict):
+        current_attributes = current.get("attributes")
+        return isinstance(current_attributes, dict) and all(
+            current_attributes.get(name) == item
+            for name, item in value.items()
+        )
+    if value is False and current.get(key) is None:
+        return True
+    if value in ("", []) and current.get(key) is None:
+        return True
+    if isinstance(value, list):
+        current_value = current.get(key)
+        current_list = current_value if isinstance(current_value, list) else []
+        return sorted(current_list) == sorted(value)
+    return current.get(key) == value
+
+
+def owned_field_mismatches(
+    current: dict[str, Any],
+    desired: dict[str, Any],
+) -> tuple[str, ...]:
+    """List the exact public profile-owned fields that remain drifted.
+
+    Args:
+        current: Existing Keycloak representation.
+        desired: Profile-owned desired fields.
+
+    Returns:
+        Ordered field names whose desired values are not represented.
+    """
+
+    return tuple(
+        key
+        for key, value in desired.items()
+        if not _owned_field_matches(current, key, value)
+    )
 
 
 def _owned_fields_match(
@@ -188,30 +244,7 @@ def _owned_fields_match(
         Whether every desired field already has the requested value.
     """
 
-    for key, value in desired.items():
-        if key == "attributes" and isinstance(value, dict):
-            current_attributes = current.get("attributes")
-            if not isinstance(current_attributes, dict):
-                return False
-            if any(
-                current_attributes.get(name) != item
-                for name, item in value.items()
-            ):
-                return False
-        elif value is False and current.get(key) is None:
-            continue
-        elif value in ("", []) and current.get(key) is None:
-            continue
-        elif isinstance(value, list):
-            current_value = current.get(key)
-            current_list = (
-                current_value if isinstance(current_value, list) else []
-            )
-            if sorted(current_list) != sorted(value):
-                return False
-        elif not isinstance(value, list) and current.get(key) != value:
-            return False
-    return True
+    return not owned_field_mismatches(current, desired)
 
 
 def owned_fields_match(
@@ -461,6 +494,7 @@ __all__ = [
     "ensure_realm",
     "frontend_payload",
     "get_client_secret",
+    "owned_field_mismatches",
     "owned_fields_match",
     "realm_payload",
     "regenerate_client_secret",

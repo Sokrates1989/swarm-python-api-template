@@ -4,7 +4,8 @@ Module: keycloak_profile_stateful_support.py
 Description:
     Provides a small stateful Keycloak Admin API fake for cross-module
     bootstrap tests. The fake models only the realm, client, mapper, role,
-    public-metadata, and credential behavior owned by the executable profile.
+    public-metadata, and credential behavior owned by the executable profile,
+    including Keycloak 26's derived service-client browser fields.
 
 Dependencies:
     - Python standard library.
@@ -218,11 +219,34 @@ class StatefulKeycloakAdminClient:
             return 200, [] if current is None else [current]
         if method == "POST" and query is None:
             payload = self._require_mapping(body, "client create")
+            self._apply_keycloak_client_defaults(payload)
             client_id = str(payload["clientId"])
             payload["id"] = self._client_uuid(client_id)
             self.clients[client_id] = payload
             return 201, None
         return None
+
+    def _apply_keycloak_client_defaults(
+        self,
+        payload: dict[str, Any],
+    ) -> None:
+        """Model Keycloak 26 browser fields derived from a service root URL.
+
+        Args:
+            payload: Mutable client representation received by the fake.
+
+        Returns:
+            Nothing. The backend representation gains the same redirect and
+            origin defaults observed in Keycloak 26 read-back responses.
+        """
+
+        if payload.get("clientId") != self.identity.backend_client_id:
+            return
+        root_url = str(payload.get("rootUrl", "")).rstrip("/")
+        if not root_url:
+            return
+        payload.setdefault("redirectUris", [f"{root_url}/*"])
+        payload.setdefault("webOrigins", [root_url])
 
     def _client_uuid(self, client_id: str) -> str:
         """Return a deterministic UUID for one profile-owned client.
@@ -268,10 +292,12 @@ class StatefulKeycloakAdminClient:
             if method == "GET":
                 return 200, current
             if method == "PUT":
-                self.clients[client_id] = self._require_mapping(
+                replacement = self._require_mapping(
                     body,
                     "client update",
                 )
+                self._apply_keycloak_client_defaults(replacement)
+                self.clients[client_id] = replacement
                 return 204, None
         return None
 

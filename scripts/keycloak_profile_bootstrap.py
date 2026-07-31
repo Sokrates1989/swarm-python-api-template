@@ -39,6 +39,8 @@ from keycloak_profile_cli import (
     print_plan,
     print_target,
     prompt_admin_user,
+    prompt_bootstrap_values,
+    prompt_secret_safe_debug,
 )
 from keycloak_profile_reconciliation import (
     backend_payload as _backend_payload,
@@ -546,6 +548,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Apply the displayed sanitized plan without an interactive prompt.",
     )
+    parser.add_argument(
+        "--accept-profile-values",
+        action="store_true",
+        help=(
+            "Accept the already validated public site-profile values without "
+            "the interactive value-by-value review."
+        ),
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help=(
+            "Print secret-safe Admin API method/path/query-key/status traces. "
+            "Bodies, headers, query values, and credentials remain hidden."
+        ),
+    )
     return parser
 
 
@@ -564,11 +582,17 @@ def main(argv: list[str] | None = None) -> int:
         profile = load_executable_profile(args.root)
         identity = load_keycloak_identity(profile)
         print_target(profile, identity)
+        if not args.accept_profile_values:
+            prompt_bootstrap_values(identity)
+        debug = args.debug
+        if not args.accept_profile_values and not debug:
+            debug = prompt_secret_safe_debug()
         admin_user = args.admin_user or prompt_admin_user()
         client, docker_present, plan = authenticate_and_plan(
             identity,
             admin_user,
             replace_secret=args.replace_secret,
+            debug=debug,
         )
         print_plan(plan)
         if plan["blockers"]:

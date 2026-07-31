@@ -37,6 +37,7 @@ from keycloak_profile_client import load_keycloak_identity  # noqa: E402
 from keycloak_profile_reconciliation import (  # noqa: E402
     backend_payload,
     frontend_payload,
+    owned_field_mismatches,
     realm_payload,
 )
 from tests.keycloak_profile_stateful_support import (  # noqa: E402
@@ -159,9 +160,18 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             self._owned_client(self.identity.frontend_client_id),
             frontend_payload(self.identity),
         )
+        backend = self._owned_client(self.identity.backend_client_id)
         self.assertEqual(
-            self._owned_client(self.identity.backend_client_id),
-            backend_payload(self.identity),
+            owned_field_mismatches(backend, backend_payload(self.identity)),
+            (),
+        )
+        self.assertEqual(
+            backend["redirectUris"],
+            [f"{self.identity.api_root_url}/*"],
+        )
+        self.assertEqual(
+            backend["webOrigins"],
+            [self.identity.api_root_url],
         )
         self.assertEqual(self.client.assignment_roles, {"manage-users"})
         self.assertEqual(self.client.scope_roles, {"manage-users"})
@@ -187,7 +197,7 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             client_id: Public client identifier.
 
         Returns:
-            Profile-owned client representation.
+            Client representation without the fake's internal UUID.
         """
 
         current = dict(self.client.clients[client_id])

@@ -183,12 +183,18 @@ _profile_keycloak_summary() {
     echo "This updates the existing Keycloak deployment through its Admin API."
     echo "It does not deploy another Keycloak instance and does not change social"
     echo "identity providers or unrelated realm settings."
+    echo "The guided review asks for the active realm, clients, audience, and"
+    echo "service roots using the selected profile/deployment values as defaults."
+    echo "One-run identity drift is rejected because the WebApp and backend must"
+    echo "be built against the same public Keycloak identity."
     echo "After login, a read-only live-state plan is shown before Enter-default"
     echo "approval. Success requires Admin API read-back, issuer/JWKS verification,"
     echo "client-credentials proof, and a capability-derived authorization check"
     echo "before a missing Docker secret is created."
     echo "No test user or example role is created. The client-secret value is"
     echo "never displayed or stored in a file."
+    echo "Optional debug tracing prints only HTTP methods, Admin API paths,"
+    echo "query-key names, and status codes; credentials and payloads stay hidden."
 }
 
 # _profile_keycloak_reconcile

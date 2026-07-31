@@ -28,6 +28,7 @@ from keycloak_profile_reconciliation import (
     audience_mapper_payload,
     backend_payload,
     frontend_payload,
+    owned_field_mismatches,
     owned_fields_match,
     realm_payload,
 )
@@ -443,30 +444,62 @@ def _verify_realm_and_clients(
 
     identity = client.identity
     realm = _read_realm(client)
-    if realm is None or not owned_fields_match(
-        realm,
-        realm_payload(identity),
-    ):
+    desired_realm = realm_payload(identity)
+    if realm is None:
         raise KeycloakProfileError(
-            "Keycloak realm verification found unresolved drift."
+            "Keycloak realm verification found unresolved drift: realm missing."
         )
+    _require_owned_fields("realm", realm, desired_realm)
     frontend = _read_client(client, identity.frontend_client_id)
     backend = _read_client(client, identity.backend_client_id)
-    if frontend is None or not owned_fields_match(
+    if frontend is None:
+        raise KeycloakProfileError(
+            "Keycloak frontend client verification found unresolved drift: "
+            "client missing."
+        )
+    _require_owned_fields(
+        "frontend client",
         frontend[1],
         frontend_payload(identity),
-    ):
+    )
+    if backend is None:
         raise KeycloakProfileError(
-            "Keycloak frontend client verification found unresolved drift."
+            "Keycloak backend client verification found unresolved drift: "
+            "client missing."
         )
-    if backend is None or not owned_fields_match(
+    _require_owned_fields(
+        "backend client",
         backend[1],
         backend_payload(identity),
-    ):
-        raise KeycloakProfileError(
-            "Keycloak backend client verification found unresolved drift."
-        )
+    )
     return frontend, backend
+
+
+def _require_owned_fields(
+    label: str,
+    current: dict[str, Any],
+    desired: dict[str, Any],
+) -> None:
+    """Raise a secret-safe error naming every unresolved public field.
+
+    Args:
+        label: Operator-facing Keycloak component name.
+        current: Live Keycloak representation.
+        desired: Profile-owned public representation.
+
+    Returns:
+        Nothing when every owned field matches.
+
+    Raises:
+        KeycloakProfileError: If one or more profile-owned fields drift.
+    """
+
+    mismatches = owned_field_mismatches(current, desired)
+    if mismatches:
+        raise KeycloakProfileError(
+            f"Keycloak {label} verification found unresolved drift in "
+            f"profile-owned fields: {', '.join(mismatches)}."
+        )
 
 
 def _verify_public_metadata(client: KeycloakAdminClient) -> None:

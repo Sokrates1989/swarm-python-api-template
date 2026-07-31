@@ -47,6 +47,7 @@ from keycloak_profile_bootstrap import (  # noqa: E402
 from keycloak_profile_reconciliation import (  # noqa: E402
     backend_payload,
     frontend_payload,
+    owned_field_mismatches,
     realm_payload,
 )
 from keycloak_profile_roles import (  # noqa: E402
@@ -665,6 +666,25 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                     jwks,
                     message,
                 )
+
+    def test_backend_ignores_keycloak_derived_browser_fields(self) -> None:
+        """Accept Keycloak 26 redirect/origin defaults on service clients.
+
+        Returns:
+            Nothing.
+        """
+
+        desired = backend_payload(self.identity)
+        current = {
+            **desired,
+            "redirectUris": [f"{self.identity.api_root_url}/*"],
+            "webOrigins": [self.identity.api_root_url],
+        }
+
+        self.assertNotIn("redirectUris", desired)
+        self.assertNotIn("webOrigins", desired)
+        self.assertEqual(owned_field_mismatches(current, desired), ())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@ Description:
     Defines the profile-derived Keycloak identity and a small standard-library
     Admin/OIDC client. It normalizes only public site-config values and keeps
     administrator credentials, client credentials, and bearer tokens in
-    process memory.
+    process memory. Optional tracing exposes only safe request metadata.
 
 Dependencies:
     - Python standard library.
@@ -133,6 +133,7 @@ class KeycloakAdminClient:
     Attributes:
         identity: Public realm/client configuration.
         token: Short-lived admin bearer token retained only in process memory.
+        debug: Whether secret-safe request method/path/status tracing is active.
     """
 
     def __init__(
@@ -140,6 +141,8 @@ class KeycloakAdminClient:
         identity: KeycloakIdentity,
         admin_user: str,
         admin_password: str,
+        *,
+        debug: bool = False,
     ) -> None:
         """Authenticate the client against Keycloak's master realm.
 
@@ -147,12 +150,16 @@ class KeycloakAdminClient:
             identity: Profile-derived Keycloak identity.
             admin_user: Existing Keycloak administrator username.
             admin_password: Administrator password read without terminal echo.
+            debug: Emit request method, path, query-key names, and status only.
+                Request bodies, headers, query values, and credentials are
+                never included.
 
         Raises:
             KeycloakProfileError: If authentication or token response fails.
         """
 
         self.identity = identity
+        self.debug = debug
         self.token = self._request_admin_token(admin_user, admin_password)
 
     def _request_admin_token(self, username: str, password: str) -> str:
@@ -237,6 +244,7 @@ class KeycloakAdminClient:
             headers=headers,
         )
         status, raw = _read_http(request)
+        self._trace_response(method, path, query, status)
         if status not in expected:
             raise KeycloakProfileError(
                 f"Keycloak request {method} {path} returned HTTP {status}."
@@ -249,6 +257,35 @@ class KeycloakAdminClient:
             raise KeycloakProfileError(
                 f"Keycloak request {method} {path} returned invalid JSON."
             ) from error
+
+    def _trace_response(
+        self,
+        method: str,
+        path: str,
+        query: dict[str, str] | None,
+        status: int,
+    ) -> None:
+        """Print one secret-safe Admin API response trace when enabled.
+
+        Args:
+            method: HTTP request method.
+            path: Public Admin API path without server credentials.
+            query: Optional query mapping; only key names are displayed.
+            status: Observed HTTP status code.
+
+        Returns:
+            Nothing. Output is suppressed unless ``debug`` is true.
+        """
+
+        if not getattr(self, "debug", False):
+            return
+        query_note = ""
+        if query:
+            query_note = f" query-keys={','.join(sorted(query))}"
+        print(
+            f"[DEBUG] Keycloak Admin API {method} {path}"
+            f"{query_note} -> HTTP {status}"
+        )
 
     def public_json(self, url: str) -> dict[str, Any]:
         """Fetch one public Keycloak JSON document without admin credentials.

@@ -77,16 +77,34 @@ server through its Admin API. Realm, clients, callback URIs, browser origins,
 audience, protected identity, service-account client roles, and Docker secret
 target all come from the selected profile.
 
-The administrator password is read without echo by Python. After
-authentication, the operator sees a sanitized live-state plan and confirms
-with Enter by default. Apply success requires Admin API read-back plus public
-issuer and JWKS verification. The confidential client secret moves directly
+Before credentials, the operator walks through the active server, realm,
+display name, client IDs, service roots, and audience with the selected
+profile/deployment values as Enter-default answers. A one-run identity change
+is rejected because independently built WebApp and backend artifacts must use
+the same realm and client IDs; change those contracts through the site config
+and matching release profiles instead. The administrator username and hidden
+password prompts remain adjacent.
+
+The operator may enable secret-safe debug tracing. It prints only Admin API
+methods, paths, query-key names, and HTTP status codes—never request bodies,
+headers, query values, tokens, passwords, or client secrets. Strict read-back
+errors also name the exact profile-owned fields that remain drifted.
+
+After authentication, the operator sees a sanitized live-state plan and
+confirms with Enter by default. Apply success requires Admin API read-back plus
+public issuer and JWKS verification. The confidential client secret moves directly
 from Keycloak process memory to a client-credentials proof. When the declared
 roles grant realm-user access, the token must also pass a read-only Admin API
 request. Only then is the same value sent to `docker secret create` standard
 input. Docker inspection failures abort instead of being treated as an absent
 secret. Existing Docker secrets are reported as present but unverified
 because Swarm cannot reveal their value.
+
+Keycloak 26 derives redirect URIs and Web origins from a confidential
+service client's root URL. Those browser-only fields are deliberately outside
+the backend service-account client's owned verification set because standard
+and implicit browser flows remain disabled. Security-relevant service-client
+flow, authenticator, scope, root, audience, and role fields remain strict.
 Explicit rotation requires the selected stack to be stopped, regenerates and
 proves the confidential-client secret in Keycloak, stages a recovery Docker
 secret, and then replaces the exact declared Docker secret. Replacement

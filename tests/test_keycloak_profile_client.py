@@ -15,6 +15,8 @@ from __future__ import annotations
 import sys
 import unittest
 import urllib.parse
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -74,11 +76,41 @@ def client_fixture() -> KeycloakAdminClient:
     client = object.__new__(KeycloakAdminClient)
     client.identity = identity_fixture()
     client.token = "unused-admin-token"
+    client.debug = False
     return client
 
 
 class KeycloakProfileClientTests(unittest.TestCase):
     """Exercise credential proof and public URL safety boundaries."""
+
+    def test_debug_trace_excludes_bodies_headers_and_query_values(self) -> None:
+        """Expose method/path/status evidence without credential material.
+
+        Returns:
+            Nothing.
+        """
+
+        client = client_fixture()
+        client.debug = True
+        output = StringIO()
+        with patch(
+            "keycloak_profile_client._read_http",
+            return_value=(200, b"{}"),
+        ), redirect_stdout(output):
+            client.request(
+                "POST",
+                "/admin/realms/example/clients",
+                body={"clientSecret": "hidden-body-value"},
+                query={"clientId": "hidden-query-value"},
+            )
+
+        trace = output.getvalue()
+        self.assertIn("POST /admin/realms/example/clients", trace)
+        self.assertIn("query-keys=clientId", trace)
+        self.assertIn("HTTP 200", trace)
+        self.assertNotIn("hidden-body-value", trace)
+        self.assertNotIn("hidden-query-value", trace)
+        self.assertNotIn("unused-admin-token", trace)
 
     def test_client_credentials_proof_posts_exact_secret_in_body(self) -> None:
         """Send the Keycloak-returned value only in the token request body.

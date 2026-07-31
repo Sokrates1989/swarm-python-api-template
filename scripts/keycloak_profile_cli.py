@@ -3,9 +3,10 @@ Module: keycloak_profile_cli.py
 
 Description:
     Owns the interactive, secret-safe operator dialogue for generic Keycloak
-    profile bootstrap. It prints public desired state and sanitized plans,
-    reads the administrator password without echo, and delegates all mutation
-    to the bootstrap coordinator.
+    profile bootstrap. It guides the operator through public profile values,
+    offers redacted request tracing, prints sanitized plans, reads the
+    administrator password without echo, and delegates all mutation to the
+    bootstrap coordinator.
 
 Dependencies:
     - Python standard library.
@@ -78,6 +79,83 @@ def print_target(
     print("No users, passwords, example roles, or social providers are created.")
     print("The confidential secret comes from Keycloak's real client response;")
     print("its value is never displayed or written to a file.")
+
+
+def _prompt_declared_value(label: str, expected: str) -> None:
+    """Ask for one public value while preventing one-run identity drift.
+
+    Args:
+        label: Operator-facing field label.
+        expected: Exact profile/deployment-derived public value.
+
+    Returns:
+        Nothing when Enter or the exact declared value is supplied.
+
+    Raises:
+        KeycloakProfileError: If the entered value differs from the selected
+            site's cross-repository identity contract.
+    """
+
+    answer = input(f"{label} [{expected}]: ").strip()
+    if answer and answer != expected:
+        raise KeycloakProfileError(
+            f"{label} is fixed by the selected site profile. Expected "
+            f"{expected!r}; update the site config and matching application "
+            "release profiles before bootstrapping a different identity."
+        )
+
+
+def prompt_bootstrap_values(identity: KeycloakIdentity) -> None:
+    """Walk through the public bootstrap values with active defaults.
+
+    Args:
+        identity: Complete profile/deployment-derived Keycloak identity.
+
+    Returns:
+        Nothing after every declared value is explicitly accepted.
+
+    Raises:
+        KeycloakProfileError: If an answer attempts a one-run identity change.
+
+    Note:
+        Root URLs already reflect operator choices from the shared deployment
+        setup. Realm and client IDs are cross-repository build contracts, so a
+        bootstrap-only override would create an unusable deployment.
+    """
+
+    print("")
+    print("Review Keycloak bootstrap values")
+    print("--------------------------------")
+    print("Press Enter to accept each active profile/deployment value.")
+    print("Identity changes must be made through the shared site profile and")
+    print("matching WebApp/backend release profiles, not only for this run.")
+    print("")
+    fields = (
+        ("Keycloak server URL", identity.server_url),
+        ("Realm name", identity.realm),
+        ("Realm display name", identity.realm_display_name),
+        ("Frontend client ID", identity.frontend_client_id),
+        ("Backend client ID", identity.backend_client_id),
+        ("Frontend client root URL", identity.frontend_root_url),
+        ("Backend API client root URL", identity.api_root_url),
+        ("Backend audience", identity.audience),
+    )
+    for label, expected in fields:
+        _prompt_declared_value(label, expected)
+
+
+def prompt_secret_safe_debug() -> bool:
+    """Ask whether Admin API method/path/status tracing should be enabled.
+
+    Returns:
+        True only for an explicit ``y`` or ``yes`` answer. Request bodies,
+        headers, query values, and credentials remain excluded from tracing.
+    """
+
+    answer = input(
+        "Enable secret-safe Keycloak API request tracing? [y/N]: "
+    ).strip()
+    return answer.lower() in {"y", "yes"}
 
 
 def prompt_admin_user(default: str = "admin") -> str:
@@ -159,6 +237,7 @@ def authenticate_and_plan(
     admin_user: str,
     *,
     replace_secret: bool,
+    debug: bool = False,
 ) -> tuple[KeycloakAdminClient, bool, dict[str, object]]:
     """Authenticate once and inspect live state without mutation.
 
@@ -166,6 +245,7 @@ def authenticate_and_plan(
         identity: Profile-derived Keycloak identity.
         admin_user: Existing Keycloak administrator username.
         replace_secret: Whether the requested plan includes rotation.
+        debug: Emit secret-safe Admin API request traces when true.
 
     Returns:
         Authenticated client, Docker-secret presence, and sanitized plan.
@@ -182,7 +262,12 @@ def authenticate_and_plan(
     if not password:
         raise KeycloakProfileError("Keycloak admin password is required.")
     print("\nAuthenticating and inspecting the existing Keycloak server...")
-    client = KeycloakAdminClient(identity, admin_user, password)
+    client = KeycloakAdminClient(
+        identity,
+        admin_user,
+        password,
+        debug=debug,
+    )
     password = ""
     docker_present = docker_secret_exists(identity.docker_secret)
     plan = build_reconciliation_plan(
@@ -233,4 +318,6 @@ __all__ = [
     "print_plan",
     "print_target",
     "prompt_admin_user",
+    "prompt_bootstrap_values",
+    "prompt_secret_safe_debug",
 ]

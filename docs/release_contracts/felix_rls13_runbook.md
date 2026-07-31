@@ -64,8 +64,9 @@ realm `felix`, candidate clients, callbacks, origins, audience, and target Docke
 secret name from `site-configs/felix.json`. The stack name remains `felix`;
 stack and authentication identity are independent. Re-running the action is
 idempotent: it preserves unrelated realm settings and social identity
-providers while reconciling the declared clients. The legacy realm `felix`
-is protected and is never a candidate bootstrap target.
+providers while reconciling the declared clients. The separate legacy realm
+`felixappnew`, its declared legacy client, and its origin remain protected and
+are never candidate bootstrap targets.
 
 The administrator password is entered without terminal echo. The confidential
 backend secret is not printed or written to `.env`; when its Docker secret is
@@ -106,8 +107,18 @@ Let's Encrypt mode.
 ## Bootstrap/update the realm
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
-Press Enter to accept the displayed target, enter the existing Keycloak admin
-username, and enter its password at the hidden Python prompt.
+Review the server, realm, display name, frontend/backend client IDs, frontend
+and backend roots, and audience through their Enter-default prompts. These
+answers confirm the selected site/deployment contract; a different one-run
+identity is rejected because the WebApp and backend must be rebuilt against
+the same realm/client values. Optionally enable secret-safe request tracing,
+then enter the existing Keycloak admin username and its password at the
+immediately following hidden Python prompt.
+
+Tracing contains only HTTP methods, Admin API paths, query-key names, and
+status codes. Bodies, headers, query values, tokens, passwords, and client
+secrets are never logged. Any strict read-back failure names its remaining
+profile-owned fields.
 
 The shared action ensures:
 
