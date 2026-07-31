@@ -22,7 +22,8 @@ In particular:
 - `routing` and `exposure` select the Traefik overlay network, provider
   constraint label, resolver, or direct ports;
 - `auth.provider` controls authentication actions;
-- `auth` contains Keycloak identity, protected legacy values, and exact
+- `auth` contains Keycloak identity, selectable realm defaults, application
+  roles, secret-free temporary test users, protected legacy values, and exact
   service-account client roles;
 - `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
   secrets; and
@@ -76,19 +77,26 @@ Exposes realm bootstrap only when a strict executable profile declares
 `auth.provider=keycloak`. It calls
 `scripts/keycloak_profile_bootstrap.py`, which updates the existing Keycloak
 server through its Admin API. The profile owns the trusted server, defaults,
-callback templates, protected identity, realm/mapper policy, service-account
-roles, and Docker-secret target. Active realm, clients, audience, and service
-roots come from the validated deployment environment.
+callback templates, protected identity, realm/mapper policy, application
+roles, secret-free temporary test-user declarations, service-account roles,
+and Docker-secret target. Active realm, realm booleans, clients, audience,
+test-user lifecycle, and service roots come from the validated deployment
+environment.
 
 Before credentials, the operator walks through the active server, realm,
-display name, client IDs, service roots, and audience with the selected
-profile/deployment values as Enter-default answers. Entered realm, display
-name, client IDs, audience, and service roots are validated, persisted to the
-ignored root `.env`, and used to rebuild `swarm-stack.yml` before credentials
-are requested. The server URL remains the tracked credential trust anchor and
-cannot be redirected from this password-bearing dialogue. The administrator
-username and hidden password prompts remain adjacent. Independently built
-WebApp/mobile artifacts must use the selected realm and client identity.
+display name, client IDs, service roots, audience, all allowlisted realm
+booleans, and the temporary-test-user lifecycle with the selected
+profile/deployment values as Enter-default answers. When the previous audience
+matched the previous backend client ID, entering a new backend ID also changes
+the proposed audience default; the audience remains independently editable for
+profiles that deliberately use a separate resource identifier. Selections are
+validated, persisted to the ignored root `.env`, and used to rebuild
+`swarm-stack.yml` before credentials are requested. Shared wizard reruns retain
+all of those selections. The server URL remains the tracked credential trust
+anchor and cannot be redirected from this password-bearing dialogue. The
+administrator username and hidden password prompts remain adjacent.
+Independently built WebApp/mobile artifacts must use the selected realm and
+client identity.
 Changing the realm or backend client while its Docker secret already exists
 keeps fail-closed behavior: stop the stack and use the explicit rotation
 action so the proven new credential replaces the prior binding.
@@ -98,15 +106,23 @@ methods, paths, query-key names, and HTTP status codes—never request bodies,
 headers, query values, tokens, passwords, or client secrets. Strict read-back
 errors also name the exact profile-owned fields that remain drifted.
 
-After authentication, the operator sees a sanitized live-state plan and
-confirms with Enter by default. Apply success requires Admin API read-back plus
-public issuer and JWKS verification. The confidential client secret moves directly
-from Keycloak process memory to a client-credentials proof. When the declared
-roles grant realm-user access, the token must also pass a read-only Admin API
-request. Only then is the same value sent to `docker secret create` standard
-input. Docker inspection failures abort instead of being treated as an absent
-secret. Existing Docker secrets are reported as present but unverified
-because Swarm cannot reveal their value.
+After authentication, the operator sees a sanitized live-state plan. Enabled
+test users missing either the account or its password credential then receive
+hidden, confirmation-checked passwords that are never persisted or printed,
+followed by the Enter-default apply
+confirmation. Apply success requires Admin API read-back plus public issuer
+and JWKS verification.
+Application roles are reconciled and explicitly scoped into the public client
+while its full-scope switch remains disabled. Turning temporary users off does
+not delete accounts automatically: retained test identities block the plan
+until the operator removes them, and the dialogue warns, "Once you enter
+production mode, remember to delete those users." The confidential client
+secret moves directly from Keycloak process memory to a client-credentials
+proof. When the declared roles grant realm-user access, the token must also
+pass a read-only Admin API request. Only then is the same value sent to
+`docker secret create` standard input. Docker inspection failures abort instead
+of being treated as an absent secret. Existing Docker secrets are reported as
+present but unverified because Swarm cannot reveal their value.
 
 Keycloak 26 derives redirect URIs and Web origins from a confidential
 service client's root URL. Those browser-only fields are deliberately outside

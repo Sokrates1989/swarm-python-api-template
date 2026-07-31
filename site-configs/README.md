@@ -87,15 +87,17 @@ host path. Missing or empty values fall back to the deployment checkout. The
 operator may choose another safe absolute path, which the ignored root `.env`
 preserves for later reconfiguration.
 
-For Keycloak profiles, `auth.serverUrl`, protected legacy identity, realm
-policy, callbacks, mapper policy, forbidden users, service-account roles, and
-the Docker-secret target remain tracked safety policy. Realm name/display
-name, frontend/backend client IDs, audience, and active frontend/API roots are
-editable deployment values. The bootstrap persists them to root `.env` and
-rebuilds the stack. The server URL is deliberately not an interactive override
-because the following administrator password must only be sent to the tracked
-credential destination. WebApp/mobile artifacts must be built with the active
-realm and client IDs.
+For Keycloak profiles, `auth.serverUrl`, protected legacy identity, callbacks,
+mapper policy, application-role declarations, secret-free temporary test-user
+declarations, forbidden users, service-account roles, and the Docker-secret
+target remain tracked safety policy. Realm name/display name, the allowlisted
+realm booleans, temporary-test-user lifecycle switch, frontend/backend client
+IDs, audience, and active frontend/API roots are editable deployment values.
+The bootstrap persists them to root `.env` and rebuilds the stack. The server
+URL is deliberately not an interactive override because the following
+administrator password must only be sent to the tracked credential
+destination. WebApp/mobile artifacts must be built with the active realm and
+client IDs.
 
 `services.web` controls the optional WebApp service. When true, `web.image`,
 `web.resources`, and the `routing.web*` fields define that service. No code
@@ -113,8 +115,9 @@ The same rule applies to:
   including a direct pgAdmin port;
 - API and WebApp images, versions, replicas, and memory;
 - Keycloak realm, clients, callbacks, origins, audience, protected legacy
-  identity, exact realm settings, audience-mapper name, forbidden default
-  usernames, and backend service-account client roles;
+  identity, exact realm settings, application realm roles, temporary test-user
+  declarations, audience-mapper name, forbidden default usernames, and backend
+  service-account client roles;
 - required and optional Docker secret identifiers; and
 - enabled capability environment and secret mounts.
 
@@ -131,6 +134,10 @@ forbidden in site configs and root `.env`.
 For `auth.provider=keycloak`, schema 5 also requires:
 
 - `realmDisplayName` and the exact boolean `realmSettings` allowlist;
+- `realmRoles`, containing unique application role names and descriptions;
+- `bootstrapTestUsersEnabled`, which supplies the initial deployment default;
+- `bootstrapTestUsers`, containing secret-free identities, exact declared
+  application-role assignments, and mandatory production-cleanup markers;
 - `audienceMapperName`;
 - `forbiddenDefaultUsernames`, which may be empty but must contain unique safe
   names; and
@@ -142,14 +149,28 @@ frontend and confidential backend.
 
 The bootstrap authenticates to the existing server, prints a read-only
 sanitized plan, applies only after confirmation, then verifies Admin API
-read-back, issuer, JWKS, audience mapper, exact declared role groups, and
-forbidden-user absence. Exact role verification covers both direct
-service-account assignments and the backend client's dedicated role-scope
-mappings, including rejection of roles on undeclared clients. A missing
-client-secret Docker secret is created only after Keycloak returns the real
-credential and accepts it in a client-credentials grant. Profiles declaring a
-built-in realm-management user-read role additionally require the resulting
-token to authorize a read-only realm-user Admin API request.
+read-back, issuer, JWKS, audience mapper, application roles, temporary users,
+exact declared service-account role groups, and forbidden-user absence. With
+the frontend client's full-scope switch disabled, all declared application
+roles are added to its dedicated realm-role scope so assigned roles can reach
+tokens. Exact service-account verification covers both direct assignments and
+the backend client's dedicated role-scope mappings, including rejection of
+roles on undeclared clients. A missing client-secret Docker secret is created
+only after Keycloak returns the real credential and accepts it in a
+client-credentials grant. Profiles declaring a built-in realm-management
+user-read role additionally require the resulting token to authorize a
+read-only realm-user Admin API request.
+
+Test-user passwords never belong in JSON or `.env`. When an enabled user or its
+password credential is missing, the bootstrap asks for that password without
+terminal echo after the authenticated plan and sends it directly to Keycloak.
+Disabling test-user
+management never silently deletes accounts. Existing declared test users are
+reported as production-cleanup blockers until the operator deletes them in
+Keycloak and reruns the plan. Application roles remain the production
+authorization contract after those temporary identities are gone. A disabled
+realm may be reconciled, but it must be enabled for a bootstrap run that needs
+to create or rotate and prove the confidential client secret.
 
 `_template.json` is the canonical schema-5 new-app starting point. Copy it to
 `<profile-id>.json`, replace its example public identity and image values, add

@@ -108,6 +108,32 @@
       "verifyEmail": true,
       "loginWithEmailAllowed": true
     },
+    "realmRoles": [
+      {
+        "name": "user",
+        "description": "Standard application user"
+      },
+      {
+        "name": "admin",
+        "description": "Application administrator"
+      }
+    ],
+    "bootstrapTestUsersEnabled": false,
+    "bootstrapTestUsers": [
+      {
+        "username": "test-user",
+        "email": "test-user@example.invalid",
+        "firstName": "Test",
+        "lastName": "User",
+        "enabled": true,
+        "emailVerified": true,
+        "temporaryPassword": false,
+        "realmRoles": [
+          "user"
+        ],
+        "productionCleanupRequired": true
+      }
+    ],
     "frontendClientId": "example-app-frontend",
     "audience": "example-app-backend",
     "audienceMapperName": "backend-audience",

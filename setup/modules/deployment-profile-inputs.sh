@@ -300,13 +300,44 @@ _collect_database() {
 }
 
 # ------------------------------------------------------------------------------
-# _derive_shared_deployment_values
+# _derive_keycloak_deployment_values
 # ------------------------------------------------------------------------------
-# Derives non-prompted values used by both environment writer adapters.
-# Existing executable Keycloak choices are retained across wizard reruns.
+# Retains every persisted Keycloak choice across shared wizard reruns.
 #
 # Returns:
-#   0 after setting secret prefix, CORS, and stack metadata globals.
+#   0 after exporting the active Keycloak deployment selections.
+# ------------------------------------------------------------------------------
+_derive_keycloak_deployment_values() {
+    KEYCLOAK_BASE_URL="$(_deployment_existing_value KEYCLOAK_BASE_URL "${APP_KEYCLOAK_BASE_URL:-}")"
+    KEYCLOAK_ISSUER_URL="$(_deployment_existing_value KEYCLOAK_ISSUER_URL "${APP_KEYCLOAK_ISSUER_URL:-}")"
+    KEYCLOAK_REALM="$(_deployment_existing_value KEYCLOAK_REALM "${APP_KEYCLOAK_REALM:-}")"
+    KEYCLOAK_REALM_DISPLAY_NAME="$(_deployment_existing_value KEYCLOAK_REALM_DISPLAY_NAME "${APP_KEYCLOAK_REALM_DISPLAY_NAME:-}")"
+    KEYCLOAK_REALM_ENABLED="$(_deployment_existing_value KEYCLOAK_REALM_ENABLED "${APP_KEYCLOAK_REALM_ENABLED:-true}")"
+    KEYCLOAK_REGISTRATION_ALLOWED="$(_deployment_existing_value KEYCLOAK_REGISTRATION_ALLOWED "${APP_KEYCLOAK_REGISTRATION_ALLOWED:-false}")"
+    KEYCLOAK_RESET_PASSWORD_ALLOWED="$(_deployment_existing_value KEYCLOAK_RESET_PASSWORD_ALLOWED "${APP_KEYCLOAK_RESET_PASSWORD_ALLOWED:-true}")"
+    KEYCLOAK_REMEMBER_ME="$(_deployment_existing_value KEYCLOAK_REMEMBER_ME "${APP_KEYCLOAK_REMEMBER_ME:-true}")"
+    KEYCLOAK_VERIFY_EMAIL="$(_deployment_existing_value KEYCLOAK_VERIFY_EMAIL "${APP_KEYCLOAK_VERIFY_EMAIL:-true}")"
+    KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED="$(_deployment_existing_value KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED "${APP_KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED:-true}")"
+    KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED="$(_deployment_existing_value KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED "${APP_KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED:-false}")"
+    KEYCLOAK_AUDIENCE="$(_deployment_existing_value KEYCLOAK_AUDIENCE "${APP_KEYCLOAK_AUDIENCE:-}")"
+    KEYCLOAK_FRONTEND_CLIENT_ID="$(_deployment_existing_value KEYCLOAK_FRONTEND_CLIENT_ID "${APP_KEYCLOAK_FRONTEND_CLIENT_ID:-}")"
+    KEYCLOAK_BACKEND_CLIENT_ID="$(_deployment_existing_value KEYCLOAK_BACKEND_CLIENT_ID "${APP_KEYCLOAK_BACKEND_CLIENT_ID:-}")"
+    export KEYCLOAK_BASE_URL KEYCLOAK_ISSUER_URL KEYCLOAK_REALM
+    export KEYCLOAK_REALM_DISPLAY_NAME KEYCLOAK_REALM_ENABLED
+    export KEYCLOAK_REGISTRATION_ALLOWED KEYCLOAK_RESET_PASSWORD_ALLOWED
+    export KEYCLOAK_REMEMBER_ME KEYCLOAK_VERIFY_EMAIL
+    export KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED
+    export KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED KEYCLOAK_AUDIENCE
+    export KEYCLOAK_FRONTEND_CLIENT_ID KEYCLOAK_BACKEND_CLIENT_ID
+}
+
+# ------------------------------------------------------------------------------
+# _derive_shared_deployment_values
+# ------------------------------------------------------------------------------
+# Derives common stack values after every capability-specific prompt section.
+#
+# Returns:
+#   0 after exporting shared and optional Keycloak deployment selections.
 # ------------------------------------------------------------------------------
 _derive_shared_deployment_values() {
     local profile_origin="${APP_ROUTING_WEB_BASE_URL:-${APP_ROUTING_API_BASE_URL:-}}"
@@ -333,16 +364,8 @@ _derive_shared_deployment_values() {
     export STACK_FAMILY STACK_ROLE PRIMARY_SERVICE
     if [ "${APP_IS_EXECUTABLE:-false}" = "true" ]; then
         AUTH_PROVIDER="${APP_AUTH_PROVIDER:-none}"
-        KEYCLOAK_BASE_URL="$(_deployment_existing_value KEYCLOAK_BASE_URL "${APP_KEYCLOAK_BASE_URL:-}")"
-        KEYCLOAK_ISSUER_URL="$(_deployment_existing_value KEYCLOAK_ISSUER_URL "${APP_KEYCLOAK_ISSUER_URL:-}")"
-        KEYCLOAK_REALM="$(_deployment_existing_value KEYCLOAK_REALM "${APP_KEYCLOAK_REALM:-}")"
-        KEYCLOAK_REALM_DISPLAY_NAME="$(_deployment_existing_value KEYCLOAK_REALM_DISPLAY_NAME "${APP_KEYCLOAK_REALM_DISPLAY_NAME:-}")"
-        KEYCLOAK_AUDIENCE="$(_deployment_existing_value KEYCLOAK_AUDIENCE "${APP_KEYCLOAK_AUDIENCE:-}")"
-        KEYCLOAK_FRONTEND_CLIENT_ID="$(_deployment_existing_value KEYCLOAK_FRONTEND_CLIENT_ID "${APP_KEYCLOAK_FRONTEND_CLIENT_ID:-}")"
-        KEYCLOAK_BACKEND_CLIENT_ID="$(_deployment_existing_value KEYCLOAK_BACKEND_CLIENT_ID "${APP_KEYCLOAK_BACKEND_CLIENT_ID:-}")"
-        export AUTH_PROVIDER KEYCLOAK_BASE_URL KEYCLOAK_ISSUER_URL KEYCLOAK_REALM
-        export KEYCLOAK_REALM_DISPLAY_NAME KEYCLOAK_AUDIENCE
-        export KEYCLOAK_FRONTEND_CLIENT_ID KEYCLOAK_BACKEND_CLIENT_ID
+        export AUTH_PROVIDER
+        _derive_keycloak_deployment_values
     fi
 }
 

@@ -76,6 +76,13 @@ DEPLOYMENT_KEYS = (
     "KEYCLOAK_ISSUER_URL",
     "KEYCLOAK_REALM",
     "KEYCLOAK_REALM_DISPLAY_NAME",
+    "KEYCLOAK_REALM_ENABLED",
+    "KEYCLOAK_REGISTRATION_ALLOWED",
+    "KEYCLOAK_RESET_PASSWORD_ALLOWED",
+    "KEYCLOAK_REMEMBER_ME",
+    "KEYCLOAK_VERIFY_EMAIL",
+    "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED",
+    "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
     "KEYCLOAK_AUDIENCE",
     "KEYCLOAK_FRONTEND_CLIENT_ID",
     "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -121,6 +128,13 @@ KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
         "KEYCLOAK_ISSUER_URL",
         "KEYCLOAK_REALM",
         "KEYCLOAK_REALM_DISPLAY_NAME",
+        "KEYCLOAK_REALM_ENABLED",
+        "KEYCLOAK_REGISTRATION_ALLOWED",
+        "KEYCLOAK_RESET_PASSWORD_ALLOWED",
+        "KEYCLOAK_REMEMBER_ME",
+        "KEYCLOAK_VERIFY_EMAIL",
+        "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED",
+        "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
         "KEYCLOAK_AUDIENCE",
         "KEYCLOAK_FRONTEND_CLIENT_ID",
         "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -130,7 +144,24 @@ KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
 # Additive generated-environment fields accepted from pre-upgrade `.env` files.
 OPTIONAL_DEPLOYMENT_DEFAULTS = {
     "KEYCLOAK_REALM_DISPLAY_NAME": "",
+    "KEYCLOAK_REALM_ENABLED": "",
+    "KEYCLOAK_REGISTRATION_ALLOWED": "",
+    "KEYCLOAK_RESET_PASSWORD_ALLOWED": "",
+    "KEYCLOAK_REMEMBER_ME": "",
+    "KEYCLOAK_VERIFY_EMAIL": "",
+    "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED": "",
+    "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED": "",
 }
+
+# Public root-environment keys corresponding to profile-owned realm settings.
+KEYCLOAK_REALM_SETTING_ENV_KEYS = (
+    ("enabled", "KEYCLOAK_REALM_ENABLED"),
+    ("registrationAllowed", "KEYCLOAK_REGISTRATION_ALLOWED"),
+    ("resetPasswordAllowed", "KEYCLOAK_RESET_PASSWORD_ALLOWED"),
+    ("rememberMe", "KEYCLOAK_REMEMBER_ME"),
+    ("verifyEmail", "KEYCLOAK_VERIFY_EMAIL"),
+    ("loginWithEmailAllowed", "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED"),
+)
 
 
 class ExecutableProfileError(ValueError):
@@ -334,6 +365,48 @@ def config_path(root: Path, config_id: str) -> Path:
     return (root / "site-configs" / f"{config_id}.json").resolve()
 
 
+def _keycloak_deployment_defaults(
+    auth: Mapping[str, object],
+    provider: str,
+) -> dict[str, str]:
+    """Derive editable Keycloak defaults for one generated environment.
+
+    Args:
+        auth: Parsed authentication profile mapping.
+        provider: Selected authentication provider.
+
+    Returns:
+        Complete Keycloak subset, empty for non-Keycloak providers.
+    """
+
+    enabled = provider == "keycloak"
+    realm_settings = auth.get("realmSettings", {})
+    normalized = realm_settings if isinstance(realm_settings, Mapping) else {}
+    values = {
+        "KEYCLOAK_BASE_URL": str(auth.get("serverUrl", "")),
+        "KEYCLOAK_ISSUER_URL": str(auth.get("issuerUrl", "")),
+        "KEYCLOAK_REALM": str(auth.get("realm", "")),
+        "KEYCLOAK_REALM_DISPLAY_NAME": str(auth.get("realmDisplayName", "")),
+        "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED": (
+            str(bool(auth.get("bootstrapTestUsersEnabled", False))).lower()
+            if enabled
+            else ""
+        ),
+        "KEYCLOAK_AUDIENCE": str(auth.get("audience", "")),
+        "KEYCLOAK_FRONTEND_CLIENT_ID": str(auth.get("frontendClientId", "")),
+        "KEYCLOAK_BACKEND_CLIENT_ID": str(
+            auth.get("adminClientId", auth.get("audience", ""))
+        ),
+    }
+    for setting_name, environment_key in KEYCLOAK_REALM_SETTING_ENV_KEYS:
+        values[environment_key] = (
+            str(bool(normalized.get(setting_name, False))).lower()
+            if enabled
+            else ""
+        )
+    return values
+
+
 def fixed_deployment_values(
     data: Mapping[str, object],
     config_id: str,
@@ -357,7 +430,7 @@ def fixed_deployment_values(
     environment = mapping(data["environment"], "environment")
     auth = mapping(data.get("auth", {"provider": "none"}), "auth")
     provider = str(auth.get("provider", "none"))
-    return {
+    values = {
         "PROFILE_SCHEMA_VERSION": str(data["version"]),
         "DEPLOYMENT_PROFILE_ID": config_id,
         "APP_ID": text(data["appId"], "appId"),
@@ -370,24 +443,13 @@ def fixed_deployment_values(
         ),
         "BACKEND_DATA_PROFILE": str(database["type"]),
         "AUTH_PROVIDER": provider,
-        "KEYCLOAK_BASE_URL": str(auth.get("serverUrl", "")),
-        "KEYCLOAK_ISSUER_URL": str(auth.get("issuerUrl", "")),
-        "KEYCLOAK_REALM": str(auth.get("realm", "")),
-        "KEYCLOAK_REALM_DISPLAY_NAME": str(
-            auth.get("realmDisplayName", "")
-        ),
-        "KEYCLOAK_AUDIENCE": str(auth.get("audience", "")),
-        "KEYCLOAK_FRONTEND_CLIENT_ID": str(
-            auth.get("frontendClientId", "")
-        ),
-        "KEYCLOAK_BACKEND_CLIENT_ID": str(
-            auth.get("adminClientId", auth.get("audience", ""))
-        ),
         "STACK_FAMILY": str(stack["family"]),
         "STACK_ROLE": str(stack["role"]),
         "PRIMARY_SERVICE": str(stack["primaryService"]),
         "DB_TYPE": str(database["type"]),
     }
+    values.update(_keycloak_deployment_defaults(auth, provider))
+    return values
 
 
 def immutable_deployment_values(
@@ -421,6 +483,7 @@ __all__ = [
     "FALSE_DEBUG_KEYS",
     "IMAGE_PATTERN",
     "KEYCLOAK_DEPLOYMENT_KEYS",
+    "KEYCLOAK_REALM_SETTING_ENV_KEYS",
     "MEMORY_PATTERN",
     "NAME_PATTERN",
     "SECRET_PATTERN",

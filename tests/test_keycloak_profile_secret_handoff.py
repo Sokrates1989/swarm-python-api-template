@@ -98,6 +98,7 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
             "verify_reconciled_state": boundaries["verifyState"],
             "KeycloakAdminClient": Mock(return_value=admin_client),
             "ensure_realm": Mock(return_value="kept"),
+            "ensure_realm_roles": Mock(return_value="keep=4"),
             "_resolve_client_uuid": Mock(return_value="backend-uuid"),
             "ensure_client": Mock(
                 side_effect=[
@@ -106,7 +107,9 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
                 ]
             ),
             "ensure_audience_mapper": Mock(return_value="kept"),
+            "ensure_frontend_realm_role_scope": Mock(return_value="kept"),
             "ensure_service_account_roles": Mock(return_value="kept"),
+            "ensure_bootstrap_test_users": Mock(return_value="keep=4"),
             "get_client_secret": boundaries["getSecret"],
             "regenerate_client_secret": boundaries["rotateSecret"],
             "write_docker_secret": boundaries["writeSecret"],

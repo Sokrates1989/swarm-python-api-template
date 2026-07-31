@@ -82,6 +82,13 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        # These tests isolate client, mapper, service-account, and protected
+        # identity behavior. Application-role/test-user state has its own
+        # stateful module and integration coverage.
+        self.profile_data["auth"]["realmRoles"] = []
+        self.profile_data["auth"]["bootstrapTestUsersEnabled"] = False
+        self.profile_data["auth"]["bootstrapTestUsers"] = []
+        self.profile_data["auth"]["forbiddenDefaultUsernames"] = ["test"]
         (config_directory / "felix.json").write_text(
             json.dumps(self.profile_data, indent=2) + "\n",
             encoding="utf-8",

@@ -31,8 +31,10 @@ import keycloak_profile_bootstrap as bootstrap  # noqa: E402
 from keycloak_profile_cli import (  # noqa: E402
     prompt_admin_user,
     prompt_bootstrap_values,
+    prompt_bootstrap_test_user_passwords,
     prompt_secret_safe_debug,
 )
+from keycloak_profile_client import KeycloakProfileError  # noqa: E402
 
 
 class KeycloakProfileCliTests(unittest.TestCase):
@@ -56,8 +58,18 @@ class KeycloakProfileCliTests(unittest.TestCase):
             frontend_root_url="https://app.example.com",
             api_root_url="https://api.example.com",
             audience="example-backend",
+            realm_settings=(
+                ("enabled", True),
+                ("registrationAllowed", False),
+                ("resetPasswordAllowed", True),
+                ("rememberMe", True),
+                ("verifyEmail", True),
+                ("loginWithEmailAllowed", True),
+            ),
+            bootstrap_test_users_enabled=False,
+            bootstrap_test_users=(),
         )
-        with patch("builtins.input", side_effect=[""] * 7), patch(
+        with patch("builtins.input", side_effect=[""] * 13), patch(
             "builtins.print"
         ):
             defaults = prompt_bootstrap_values(identity)
@@ -72,6 +84,12 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "https://selected.example.com",
                 "https://api-selected.example.com",
                 "selected-audience",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
             ],
         ), patch("builtins.print"):
             selected = prompt_bootstrap_values(identity)
@@ -81,6 +99,87 @@ class KeycloakProfileCliTests(unittest.TestCase):
         self.assertEqual(selected.backend_client_id, "selected-backend")
         self.assertEqual(selected.audience, "selected-audience")
         self.assertEqual(selected.server_url, identity.server_url)
+
+    def test_missing_test_user_password_is_confirmed_without_echo(self) -> None:
+        """Collect only planned creation credentials and reject a mismatch.
+
+        Returns:
+            Nothing.
+        """
+
+        plan = {
+            "bootstrapTestUserActions": {
+                "test-user": "create",
+                "test-admin": "keep",
+                "test-manager": "set-password",
+            }
+        }
+        with patch(
+            "keycloak_profile_cli.getpass.getpass",
+            side_effect=[
+                "admin-secret",
+                "admin-secret",
+                "runtime-secret",
+                "runtime-secret",
+            ],
+        ):
+            passwords = prompt_bootstrap_test_user_passwords(
+                SimpleNamespace(),
+                plan,
+            )
+        self.assertEqual(
+            passwords,
+            {
+                "test-manager": "admin-secret",
+                "test-user": "runtime-secret",
+            },
+        )
+
+        with patch(
+            "keycloak_profile_cli.getpass.getpass",
+            side_effect=["one", "different"],
+        ), self.assertRaisesRegex(KeycloakProfileError, "differs"):
+            prompt_bootstrap_test_user_passwords(SimpleNamespace(), plan)
+
+    def test_changed_backend_client_becomes_matching_audience_default(
+        self,
+    ) -> None:
+        """Derive the audience default from a newly entered backend client ID.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(
+            server_url="https://keycloak.example.com",
+            realm="example",
+            realm_display_name="Example",
+            frontend_client_id="example-frontend",
+            backend_client_id="example-backend",
+            frontend_root_url="https://app.example.com",
+            api_root_url="https://api.example.com",
+            audience="example-backend",
+            realm_settings=(
+                ("enabled", True),
+                ("registrationAllowed", False),
+                ("resetPasswordAllowed", True),
+                ("rememberMe", True),
+                ("verifyEmail", True),
+                ("loginWithEmailAllowed", True),
+            ),
+            bootstrap_test_users_enabled=False,
+            bootstrap_test_users=(),
+        )
+        answers = ["", "", "", "selected-backend", "", "", ""] + [
+            ""
+        ] * 6
+        with patch("builtins.input", side_effect=answers), patch(
+            "builtins.print"
+        ):
+            selected = prompt_bootstrap_values(identity)
+
+        self.assertEqual(selected.backend_client_id, "selected-backend")
+        self.assertEqual(selected.audience, "selected-backend")
 
     def test_debug_trace_requires_explicit_yes(self) -> None:
         """Keep secret-safe request tracing opt-in.
@@ -174,6 +273,11 @@ class KeycloakProfileCliTests(unittest.TestCase):
             ),
             patch.object(
                 bootstrap,
+                "prompt_bootstrap_test_user_passwords",
+                side_effect=lambda *_args: events.append("user-passwords") or {},
+            ),
+            patch.object(
+                bootstrap,
                 "confirm_apply",
                 side_effect=lambda *_args: events.append("confirm") or True,
             ),
@@ -204,6 +308,7 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "username",
                 "password",
                 "plan",
+                "user-passwords",
                 "confirm",
                 "apply",
                 "completion",

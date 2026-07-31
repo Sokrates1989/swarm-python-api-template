@@ -82,6 +82,15 @@ class KeycloakProfileConfigurationTests(unittest.TestCase):
             frontend_root_url="https://selected-felix.fe-wi.com",
             api_root_url="https://api.selected-felix.fe-wi.com",
             audience="felix-backend",
+            realm_settings=(
+                ("enabled", True),
+                ("registrationAllowed", True),
+                ("resetPasswordAllowed", False),
+                ("rememberMe", False),
+                ("verifyEmail", False),
+                ("loginWithEmailAllowed", True),
+            ),
+            bootstrap_test_users_enabled=False,
         )
 
     def test_selected_values_persist_and_drive_runtime_and_stack(self) -> None:
@@ -104,6 +113,18 @@ class KeycloakProfileConfigurationTests(unittest.TestCase):
         self.assertEqual(identity.frontend_client_id, "felix-frontend")
         self.assertEqual(identity.backend_client_id, "felix-backend")
         self.assertEqual(identity.audience, "felix-backend")
+        self.assertEqual(
+            dict(identity.realm_settings),
+            {
+                "enabled": True,
+                "registrationAllowed": True,
+                "resetPasswordAllowed": False,
+                "rememberMe": False,
+                "verifyEmail": False,
+                "loginWithEmailAllowed": True,
+            },
+        )
+        self.assertFalse(identity.bootstrap_test_users_enabled)
         self.assertEqual(
             identity.issuer_url,
             "https://keycloak.fe-wi.com/realms/felix-selected",

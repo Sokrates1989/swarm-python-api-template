@@ -19,6 +19,9 @@ import urllib.parse
 from typing import Any
 
 from keycloak_profile_client import KeycloakIdentity
+from tests.keycloak_profile_stateful_access_support import (
+    StatefulApplicationAccess,
+)
 
 
 Response = tuple[int, Any]
@@ -51,6 +54,8 @@ class StatefulKeycloakAdminClient:
         self.mappers: dict[str, list[dict[str, Any]]] = {}
         self.assignment_roles: set[str] = set()
         self.scope_roles: set[str] = set()
+        self.frontend_scope_roles: set[str] = set()
+        self.application_access = StatefulApplicationAccess(identity)
         self.requests: list[RequestRecord] = []
         self.public_requests: list[str] = []
         self.events: list[str] = []
@@ -102,7 +107,8 @@ class StatefulKeycloakAdminClient:
                 accepted by the caller.
         """
 
-        self.requests.append((method, path, copy.deepcopy(body), query))
+        recorded_body = self._recordable_body(path, body)
+        self.requests.append((method, path, recorded_body, query))
         status, payload = self._dispatch(method, path, body, query)
         if status not in expected:
             raise AssertionError(
@@ -110,6 +116,23 @@ class StatefulKeycloakAdminClient:
                 f"expected {expected}."
             )
         return status, copy.deepcopy(payload)
+
+    @staticmethod
+    def _recordable_body(path: str, body: Any) -> Any:
+        """Copy a request body without retaining runtime credential values.
+
+        Args:
+            path: Absolute Admin API request path.
+            body: Optional request body.
+
+        Returns:
+            Defensive body copy, with password-reset values redacted.
+        """
+
+        copied = copy.deepcopy(body)
+        if path.endswith("/reset-password") and isinstance(copied, dict):
+            copied["value"] = "<redacted>"
+        return copied
 
     def _dispatch(
         self,
@@ -137,7 +160,9 @@ class StatefulKeycloakAdminClient:
             self._handle_realm,
             self._handle_client_collection,
             self._handle_mapper,
+            self._handle_frontend_role_scope,
             self._handle_roles,
+            self.application_access.handle,
             self._handle_secret,
             self._handle_client_representation,
             self._handle_users,
@@ -380,6 +405,47 @@ class StatefulKeycloakAdminClient:
             return self._handle_direct_mapping(method, body, self.assignment_roles)
         if path == paths["scope"]:
             return self._handle_direct_mapping(method, body, self.scope_roles)
+        return None
+
+    def _handle_frontend_role_scope(
+        self,
+        method: str,
+        path: str,
+        body: Any,
+        query: dict[str, str] | None,
+    ) -> Response | None:
+        """Read or add application realm roles in the frontend client scope.
+
+        Args:
+            method: HTTP method.
+            path: Requested Admin API path.
+            body: Optional realm-role representation list.
+            query: Optional query mapping, which must be absent.
+
+        Returns:
+            Frontend role-scope response, or ``None`` for another route.
+        """
+
+        frontend = self.clients.get(self.identity.frontend_client_id)
+        if frontend is None or query is not None:
+            return None
+        target = (
+            f"{self.clients_root}/{frontend['id']}/scope-mappings/realm"
+        )
+        if path != target:
+            return None
+        if method == "GET":
+            return 200, [
+                self.application_access.realm_roles[name]
+                for name in sorted(self.frontend_scope_roles)
+            ]
+        if method == "POST":
+            if not isinstance(body, list):
+                raise AssertionError("Frontend role scope body must be a list.")
+            self.frontend_scope_roles.update(
+                str(role["name"]) for role in body
+            )
+            return 204, None
         return None
 
     def _role_paths(self, backend_uuid: str) -> dict[str, str]:

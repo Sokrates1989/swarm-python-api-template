@@ -109,14 +109,28 @@ Let's Encrypt mode.
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
 Review the server, realm, display name, frontend/backend client IDs, frontend
-and backend roots, and audience through their Enter-default prompts. Entered
-values replace the defaults, are validated against protected legacy identity,
-persist to root `.env`, and rebuild `swarm-stack.yml` before authentication.
+and backend roots, audience, all six managed realm settings, and the temporary
+test-user lifecycle through their Enter-default prompts. Entered values replace
+the defaults, are validated against protected legacy identity, persist to root
+`.env`, and rebuild `swarm-stack.yml` before authentication. If the prior
+audience matched the prior backend client ID, entering a different backend ID
+also becomes the proposed audience; accept it or enter a deliberately distinct
+resource-server audience.
 The Keycloak server is shown as a fixed tracked credential trust anchor.
 WebApp/mobile artifacts must be built with the selected realm and client IDs.
 Optionally enable secret-safe request tracing, then enter the existing
 Keycloak admin username and its password at the immediately following hidden
 Python prompt.
+
+The profile declares the application roles `user`, `admin`, `manager`, and
+`service-provider`, plus four temporary role-specific users. When an enabled
+user or its password credential is missing, enter and confirm its password at
+the hidden prompts shown after the authenticated live-state plan. Passwords are
+sent only to Keycloak and never enter JSON, `.env`, logs, plans, or summaries. Every run
+with temporary users enabled warns: **Once you enter production mode, remember
+to delete those users.** To enter production mode, disable the test-user
+lifecycle, explicitly delete the four declared users from Keycloak, and rerun
+the bootstrap until its cleanup blockers are gone. Application roles remain.
 
 If an existing Docker client secret belongs to a previously selected realm or
 backend client, stop the Felix stack and use the explicit Keycloak secret
@@ -137,6 +151,10 @@ values replace the corresponding realm/client/root names below):
   allowlist;
 - confidential service client `felix-new-backend` exists;
 - frontend access tokens receive audience `felix-new-backend`; and
+- application realm roles `user`, `admin`, `manager`, and `service-provider`
+  exist and are included in the restricted frontend client role scope;
+- when enabled, temporary users `test-user`, `test-admin`, `test-manager`, and
+  `test-service-provider` exist with their exact declared application roles;
 - the backend service account receives only the declared
   `realm-management/manage-users` client role needed for identity deletion;
 - broader undeclared role grants fail closed for manual review; and

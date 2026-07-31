@@ -10,13 +10,15 @@ Description:
 Dependencies:
     - Python standard library.
     - Executable profile, Keycloak CLI/client/configuration/reconciliation,
-      role/verification, and Docker secret bridge modules.
+      application-access, role-scope, service-account role/verification, and
+      Docker secret bridge modules.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Callable
 
@@ -41,7 +43,16 @@ from keycloak_profile_cli import (
     print_target,
     prompt_admin_user,
     prompt_bootstrap_values,
+    prompt_bootstrap_test_user_passwords,
     prompt_secret_safe_debug,
+)
+from keycloak_profile_application_access import (
+    KeycloakApplicationAccessError,
+    ensure_bootstrap_test_users,
+    ensure_realm_roles,
+)
+from keycloak_profile_realm_role_scope import (
+    ensure_frontend_realm_role_scope,
 )
 from keycloak_profile_reconciliation import (
     backend_payload as _backend_payload,
@@ -139,7 +150,7 @@ def _require_rotation_stack_stopped(
 def _reconcile_clients(
     client: KeycloakAdminClient,
     identity: KeycloakIdentity,
-) -> tuple[str, str, str, str, str, str]:
+) -> tuple[str, str, str, str, str, str, str]:
     """Reconcile both clients, audience mapper, and exact service-account roles.
 
     Args:
@@ -147,11 +158,13 @@ def _reconcile_clients(
         identity: Profile-derived Keycloak identity.
 
     Returns:
-        Frontend UUID, frontend action, backend UUID, backend action, mapper
-        action, and role action encoded as a six-item tuple.
+        Frontend UUID/action, backend UUID/action, mapper action, frontend
+        realm-role scope action, and service-account role action.
 
     Raises:
         KeycloakProfileError: If client or mapper reconciliation fails.
+        KeycloakApplicationAccessError: If frontend application-role scope is
+            malformed or cannot be reconciled.
         KeycloakRoleError: If service-account role state is unsafe.
     """
 
@@ -164,6 +177,10 @@ def _reconcile_clients(
         _backend_payload(identity),
     )
     mapper_action = ensure_audience_mapper(client, frontend_uuid)
+    frontend_role_scope_action = ensure_frontend_realm_role_scope(
+        client,
+        frontend_uuid,
+    )
     roles_action = ensure_service_account_roles(client, backend_uuid)
     return (
         frontend_uuid,
@@ -171,6 +188,7 @@ def _reconcile_clients(
         backend_uuid,
         backend_action,
         mapper_action,
+        frontend_role_scope_action,
         roles_action,
     )
 
@@ -278,46 +296,69 @@ def _apply_and_verify_keycloak(
     client: KeycloakAdminClient,
     identity: KeycloakIdentity,
     realm_action: str,
+    bootstrap_test_user_passwords: Mapping[str, str],
     progress: Callable[[str], None] | None,
-) -> tuple[str, str, str, str, str, str]:
+) -> tuple[str, str, str, str, str, str, str, str, str]:
     """Apply every declared Keycloak component and verify observed state.
 
     Args:
         client: Authenticated Keycloak Admin client.
         identity: Profile-derived Keycloak identity.
         realm_action: Already completed realm action.
+        bootstrap_test_user_passwords: Runtime-only passwords for users needing
+            creation or password-credential recovery.
         progress: Optional secret-free progress callback.
 
     Returns:
-        Realm, frontend, backend, mapper, and role actions plus backend UUID.
+        Realm, application-role, frontend, backend, mapper, service-account
+        role, and test-user actions plus backend UUID.
 
     Raises:
         KeycloakProfileError: If reconciliation or verification fails.
+        KeycloakApplicationAccessError: If application role, role-scope, or
+            temporary-user state cannot be reconciled and verified.
         KeycloakRoleError: If service-account role state is unsafe.
     """
 
-    _report(progress, "[2/7] Reconciling public PKCE frontend client...")
+    _report(progress, "[2/10] Reconciling application realm roles...")
+    realm_roles_action = ensure_realm_roles(client)
+    _report(progress, f"      Application realm roles: {realm_roles_action}")
+    _report(progress, "[3/10] Reconciling public PKCE frontend client...")
     (
         _,
         frontend_action,
         backend_uuid,
         backend_action,
         mapper_action,
+        frontend_role_scope_action,
         roles_action,
     ) = _reconcile_clients(client, identity)
     _report(progress, f"      Frontend client: {frontend_action}")
-    _report(progress, f"[3/7] Backend service client: {backend_action}")
-    _report(progress, f"[4/7] Audience mapper: {mapper_action}")
-    _report(progress, f"[5/7] Service-account roles: {roles_action}")
-    _report(progress, "[6/7] Verifying Admin API state, issuer, and JWKS...")
+    _report(progress, f"[4/10] Backend service client: {backend_action}")
+    _report(progress, f"[5/10] Audience mapper: {mapper_action}")
+    _report(
+        progress,
+        f"[6/10] Frontend application-role scope: {frontend_role_scope_action}",
+    )
+    _report(progress, f"[7/10] Service-account roles: {roles_action}")
+    _report(progress, "[8/10] Reconciling temporary bootstrap test users...")
+    test_users_action = ensure_bootstrap_test_users(
+        client,
+        bootstrap_test_user_passwords,
+    )
+    _report(progress, f"      Bootstrap test users: {test_users_action}")
+    _report(progress, "[9/10] Verifying Admin API state, issuer, and JWKS...")
     verify_reconciled_state(client)
     _report(progress, "      Keycloak state verification: passed")
     return (
         realm_action,
+        realm_roles_action,
         frontend_action,
         backend_action,
         mapper_action,
+        frontend_role_scope_action,
         roles_action,
+        test_users_action,
         backend_uuid,
     )
 
@@ -353,7 +394,7 @@ def _report_secret_bridge(
 def _build_summary(
     profile: ExecutableProfile,
     identity: KeycloakIdentity,
-    actions: tuple[str, str, str, str, str, str],
+    actions: tuple[str, str, str, str, str, str, str, str, str],
     docker_action: str,
     binding_verified: bool,
 ) -> dict[str, object]:
@@ -362,7 +403,8 @@ def _build_summary(
     Args:
         profile: Active executable profile.
         identity: Profile-derived Keycloak identity.
-        actions: Realm, frontend, backend, mapper, role actions and backend UUID.
+        actions: Realm, application-role, frontend, backend, mapper, frontend
+            role-scope, service-account role, and test-user actions plus UUID.
         docker_action: Docker secret bridge action.
         binding_verified: Whether the secret was proven and written this run.
 
@@ -370,23 +412,152 @@ def _build_summary(
         JSON-compatible summary without credentials.
     """
 
-    realm, frontend, backend, mapper, roles, _ = actions
+    (
+        realm,
+        realm_roles,
+        frontend,
+        backend,
+        mapper,
+        frontend_role_scope,
+        roles,
+        test_users,
+        _,
+    ) = actions
     return {
         "profile": profile.config_id,
         "realm": identity.realm,
         "realmAction": realm,
+        "realmRolesAction": realm_roles,
         "frontendClient": identity.frontend_client_id,
         "frontendAction": frontend,
         "backendClient": identity.backend_client_id,
         "backendAction": backend,
         "audience": identity.audience,
         "audienceMapperAction": mapper,
+        "frontendRealmRoleScopeAction": frontend_role_scope,
         "serviceAccountRolesAction": roles,
+        "bootstrapTestUsersAction": test_users,
         "dockerSecret": identity.docker_secret,
         "dockerSecretAction": docker_action,
         "keycloakStateVerified": True,
         "dockerSecretBindingVerified": binding_verified,
     }
+
+
+def _current_docker_secret_state(
+    identity: KeycloakIdentity,
+    planned_state: bool | None,
+) -> bool:
+    """Read Docker secret state and reject changes since planning.
+
+    Args:
+        identity: Active profile-derived Keycloak identity.
+        planned_state: Optional state captured for the displayed plan.
+
+    Returns:
+        Current Docker-secret presence.
+
+    Raises:
+        KeycloakProfileError: If state changed after the displayed plan.
+        KeycloakSecretBridgeError: If Docker inspection fails.
+    """
+
+    current = docker_secret_exists(identity.docker_secret)
+    if planned_state is not None and planned_state != current:
+        raise KeycloakProfileError(
+            "Docker secret state changed after the displayed plan; rerun "
+            "Keycloak bootstrap."
+        )
+    return current
+
+
+def _bridge_reconciled_secret(
+    profile: ExecutableProfile,
+    identity: KeycloakIdentity,
+    client: KeycloakAdminClient,
+    actions: tuple[str, str, str, str, str, str, str, str, str],
+    *,
+    docker_secret_present: bool,
+    replace_secret: bool,
+    progress: Callable[[str], None] | None,
+) -> tuple[str, bool]:
+    """Bridge the reconciled backend credential and report proof state.
+
+    Args:
+        profile: Active executable profile.
+        identity: Active profile-derived Keycloak identity.
+        client: Authenticated Keycloak Admin client.
+        actions: Completed Keycloak reconciliation actions and backend UUID.
+        docker_secret_present: Current Docker-secret presence.
+        replace_secret: Whether explicit rotation was requested.
+        progress: Optional secret-free progress callback.
+
+    Returns:
+        Docker action and whether this run proved the exact stored binding.
+
+    Raises:
+        KeycloakProfileError: If Keycloak cannot provide or prove a credential.
+        KeycloakSecretBridgeError: If Docker cannot write the credential.
+    """
+
+    _report(progress, "[10/10] Reconciling the Docker client-secret bridge...")
+    docker_action = _bridge_client_secret(
+        profile,
+        identity,
+        client,
+        actions[8],
+        actions[3],
+        docker_secret_present=docker_secret_present,
+        replace_secret=replace_secret,
+    )
+    binding_verified = docker_action in {"created", "replaced"}
+    _report_secret_bridge(progress, binding_verified)
+    return docker_action, binding_verified
+
+
+def _prepare_keycloak_apply(
+    profile: ExecutableProfile,
+    client: KeycloakAdminClient,
+    *,
+    planned_docker_state: bool | None,
+    replace_secret: bool,
+    progress: Callable[[str], None] | None,
+) -> tuple[KeycloakIdentity, bool, str]:
+    """Revalidate the plan boundary and reconcile realm state first.
+
+    Args:
+        profile: Active executable profile.
+        client: Authenticated Keycloak Admin client.
+        planned_docker_state: Optional state captured for the displayed plan.
+        replace_secret: Whether explicit rotation was requested.
+        progress: Optional secret-free progress callback.
+
+    Returns:
+        Active identity, current Docker-secret presence, and realm action.
+
+    Raises:
+        KeycloakProfileError: If the plan is blocked or state changed.
+        KeycloakApplicationAccessError: If the plan finds malformed
+            application role or temporary-user state.
+        KeycloakRoleError: If live service-account roles are unsafe.
+        KeycloakSecretBridgeError: If Docker state cannot be inspected.
+    """
+
+    identity = client.identity
+    docker_present = _current_docker_secret_state(
+        identity,
+        planned_docker_state,
+    )
+    _require_applicable_plan(
+        client,
+        docker_secret_present=docker_present,
+        replace_secret=replace_secret,
+    )
+    _require_rotation_stack_stopped(profile, replace_secret=replace_secret)
+    _report(progress, "[1/10] Reconciling realm settings...")
+    realm_action = ensure_realm(client)
+    _report(progress, f"      Realm: {realm_action}")
+    return identity, docker_present, realm_action
 
 
 def reconcile_authenticated(
@@ -396,6 +567,7 @@ def reconcile_authenticated(
     replace_secret: bool,
     docker_secret_present: bool | None = None,
     progress: Callable[[str], None] | None = None,
+    bootstrap_test_user_passwords: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Reconcile and verify state through one authenticated Admin client.
 
@@ -405,39 +577,27 @@ def reconcile_authenticated(
         replace_secret: Rotate and replace the client secret when true.
         docker_secret_present: Optional preflight result reused from planning.
         progress: Optional secret-free progress callback.
+        bootstrap_test_user_passwords: Runtime-only passwords keyed by test
+            usernames requiring creation or credential recovery.
 
     Returns:
         Secret-free action summary.
 
     Raises:
         KeycloakProfileError: If Keycloak state is unsafe or unavailable.
+        KeycloakApplicationAccessError: If application role or user state is
+            unsafe or cannot be verified.
         KeycloakRoleError: If service-account roles exceed the declaration.
         KeycloakSecretBridgeError: If Docker state is unsafe or unavailable.
     """
 
-    identity = client.identity
-    current_docker_state = docker_secret_exists(identity.docker_secret)
-    if (
-        docker_secret_present is not None
-        and docker_secret_present != current_docker_state
-    ):
-        raise KeycloakProfileError(
-            "Docker secret state changed after the displayed plan; rerun "
-            "Keycloak bootstrap."
-        )
-    docker_secret_present = current_docker_state
-    _require_applicable_plan(
-        client,
-        docker_secret_present=docker_secret_present,
-        replace_secret=replace_secret,
-    )
-    _require_rotation_stack_stopped(
+    identity, docker_secret_present, realm_action = _prepare_keycloak_apply(
         profile,
+        client,
+        planned_docker_state=docker_secret_present,
         replace_secret=replace_secret,
+        progress=progress,
     )
-    _report(progress, "[1/7] Reconciling realm settings...")
-    realm_action = ensure_realm(client)
-    _report(progress, f"      Realm: {realm_action}")
     _, docker_present = _preflight_secret_state(
         profile,
         identity,
@@ -449,22 +609,18 @@ def reconcile_authenticated(
         client,
         identity,
         realm_action,
+        bootstrap_test_user_passwords or {},
         progress,
     )
-    backend_action = actions[2]
-    backend_uuid = actions[5]
-    _report(progress, "[7/7] Reconciling the Docker client-secret bridge...")
-    docker_action = _bridge_client_secret(
+    docker_action, binding_verified = _bridge_reconciled_secret(
         profile,
         identity,
         client,
-        backend_uuid,
-        backend_action,
+        actions,
         docker_secret_present=docker_present,
         replace_secret=replace_secret,
+        progress=progress,
     )
-    binding_verified = docker_action in {"created", "replaced"}
-    _report_secret_bridge(progress, binding_verified)
     return _build_summary(
         profile,
         identity,
@@ -481,6 +637,7 @@ def reconcile(
     *,
     replace_secret: bool,
     progress: Callable[[str], None] | None = None,
+    bootstrap_test_user_passwords: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Authenticate, reconcile, and strictly verify the selected profile.
 
@@ -490,12 +647,17 @@ def reconcile(
         admin_password: Administrator password retained only in memory.
         replace_secret: Rotate and replace the client secret when true.
         progress: Optional secret-free progress callback.
+        bootstrap_test_user_passwords: Runtime-only passwords for test-user
+            creation or credential recovery. Interactive callers collect these
+            after the live plan.
 
     Returns:
         Secret-free action and verification summary.
 
     Raises:
         KeycloakProfileError: If Keycloak state is unsafe or unavailable.
+        KeycloakApplicationAccessError: If application role or user state is
+            unsafe or cannot be verified.
         KeycloakRoleError: If service-account roles exceed the declaration.
         KeycloakSecretBridgeError: If Docker state is unsafe or unavailable.
     """
@@ -507,6 +669,7 @@ def reconcile(
         client,
         replace_secret=replace_secret,
         progress=progress,
+        bootstrap_test_user_passwords=bootstrap_test_user_passwords,
     )
 
 
@@ -625,6 +788,55 @@ def _review_bootstrap_configuration(
     return profile, identity
 
 
+def _apply_interactive_plan(
+    profile: ExecutableProfile,
+    identity: KeycloakIdentity,
+    client: KeycloakAdminClient,
+    plan: Mapping[str, object],
+    docker_present: bool,
+    args: argparse.Namespace,
+) -> dict[str, object] | None:
+    """Collect runtime passwords, confirm, and apply one displayed plan.
+
+    Args:
+        profile: Active executable profile.
+        identity: Active profile-derived Keycloak identity.
+        client: Authenticated Keycloak Admin client used for the plan.
+        plan: Sanitized live-state plan already shown to the operator.
+        docker_present: Docker-secret state captured for that plan.
+        args: Parsed CLI options controlling confirmation and rotation.
+
+    Returns:
+        Secret-free bootstrap summary, or ``None`` when cancelled.
+
+    Raises:
+        KeycloakProfileError: If runtime password collection or apply fails.
+        KeycloakApplicationAccessError: If roles or users cannot reconcile.
+        KeycloakRoleError: If service-account role state is unsafe.
+        KeycloakSecretBridgeError: If Docker secret operations fail.
+    """
+
+    passwords = prompt_bootstrap_test_user_passwords(identity, plan)
+    if not confirm_apply(args.yes):
+        passwords.clear()
+        print("Keycloak bootstrap cancelled; no changes were applied.")
+        return None
+    print("")
+    print("Applying and verifying")
+    print("----------------------")
+    try:
+        return reconcile_authenticated(
+            profile,
+            client,
+            replace_secret=args.replace_secret,
+            docker_secret_present=docker_present,
+            progress=print,
+            bootstrap_test_user_passwords=passwords,
+        )
+    finally:
+        passwords.clear()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run profile-driven Keycloak reconciliation.
 
@@ -660,24 +872,22 @@ def main(argv: list[str] | None = None) -> int:
             raise KeycloakProfileError(
                 "Resolve every displayed blocker before bootstrap."
             )
-        if not confirm_apply(args.yes):
-            print("Keycloak bootstrap cancelled; no changes were applied.")
-            return 0
-        print("")
-        print("Applying and verifying")
-        print("----------------------")
-        summary = reconcile_authenticated(
+        summary = _apply_interactive_plan(
             profile,
+            identity,
             client,
-            replace_secret=args.replace_secret,
-            docker_secret_present=docker_present,
-            progress=print,
+            plan,
+            docker_present,
+            args,
         )
+        if summary is None:
+            return 0
         print_completion(identity, summary)
         return 0
     except (
         ExecutableProfileError,
         KeycloakProfileError,
+        KeycloakApplicationAccessError,
         KeycloakRoleError,
         KeycloakSecretBridgeError,
         OSError,

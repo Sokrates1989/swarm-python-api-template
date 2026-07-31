@@ -183,6 +183,36 @@ discover_app_configs() {
     done
 }
 
+# ------------------------------------------------------------------------------
+# _load_keycloak_profile_defaults
+# ------------------------------------------------------------------------------
+# Loads the public Keycloak defaults used by every authentication-capable app.
+#
+# Arguments:
+#   $1 - Selected site-profile JSON path.
+#
+# Returns:
+#   0 after populating APP_KEYCLOAK_* globals.
+# ------------------------------------------------------------------------------
+_load_keycloak_profile_defaults() {
+    local config_file="$1"
+
+    APP_KEYCLOAK_BASE_URL="$(_jq_or_default "$config_file" '.auth.serverUrl' "")"
+    APP_KEYCLOAK_ISSUER_URL="$(_jq_or_default "$config_file" '.auth.issuerUrl' "")"
+    APP_KEYCLOAK_REALM="$(_jq_or_default "$config_file" '.auth.realm' "")"
+    APP_KEYCLOAK_REALM_DISPLAY_NAME="$(_jq_or_default "$config_file" '.auth.realmDisplayName' "")"
+    APP_KEYCLOAK_REALM_ENABLED="$(_jq_or_default "$config_file" '.auth.realmSettings.enabled' "true")"
+    APP_KEYCLOAK_REGISTRATION_ALLOWED="$(_jq_or_default "$config_file" '.auth.realmSettings.registrationAllowed' "false")"
+    APP_KEYCLOAK_RESET_PASSWORD_ALLOWED="$(_jq_or_default "$config_file" '.auth.realmSettings.resetPasswordAllowed' "true")"
+    APP_KEYCLOAK_REMEMBER_ME="$(_jq_or_default "$config_file" '.auth.realmSettings.rememberMe' "true")"
+    APP_KEYCLOAK_VERIFY_EMAIL="$(_jq_or_default "$config_file" '.auth.realmSettings.verifyEmail' "true")"
+    APP_KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED="$(_jq_or_default "$config_file" '.auth.realmSettings.loginWithEmailAllowed' "true")"
+    APP_KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED="$(_jq_or_default "$config_file" '.auth.bootstrapTestUsersEnabled' "false")"
+    APP_KEYCLOAK_AUDIENCE="$(_jq_or_default "$config_file" '.auth.audience' "")"
+    APP_KEYCLOAK_FRONTEND_CLIENT_ID="$(_jq_or_default "$config_file" '.auth.frontendClientId' "")"
+    APP_KEYCLOAK_BACKEND_CLIENT_ID="$(_jq_or_default "$config_file" '.auth.adminClientId' "")"
+}
+
 # ==============================================================================
 # load_app_config
 # ==============================================================================
@@ -256,13 +286,7 @@ load_app_config() {
     # destination; executable profiles may persist validated realm/client
     # deployment selections in the ignored root environment.
     APP_AUTH_PROVIDER="$(_jq_or_default "$config_file" '.auth.provider' "none")"
-    APP_KEYCLOAK_BASE_URL="$(_jq_or_default "$config_file" '.auth.serverUrl' "")"
-    APP_KEYCLOAK_ISSUER_URL="$(_jq_or_default "$config_file" '.auth.issuerUrl' "")"
-    APP_KEYCLOAK_REALM="$(_jq_or_default "$config_file" '.auth.realm' "")"
-    APP_KEYCLOAK_REALM_DISPLAY_NAME="$(_jq_or_default "$config_file" '.auth.realmDisplayName' "")"
-    APP_KEYCLOAK_AUDIENCE="$(_jq_or_default "$config_file" '.auth.audience' "")"
-    APP_KEYCLOAK_FRONTEND_CLIENT_ID="$(_jq_or_default "$config_file" '.auth.frontendClientId' "")"
-    APP_KEYCLOAK_BACKEND_CLIENT_ID="$(_jq_or_default "$config_file" '.auth.adminClientId' "")"
+    _load_keycloak_profile_defaults "$config_file"
 
     # Secret-handling metadata (optional). Profiles whose Docker secrets use
     # Profiles with literal, unprefixed secret names declare their own secrets
@@ -504,6 +528,36 @@ _load_stack_env_fields() {
     export SECRET_PREFIX="$(_root_env_value "$env_file" SECRETS_PREFIX)"
 }
 
+# ------------------------------------------------------------------------------
+# _load_executable_keycloak_env_fields
+# ------------------------------------------------------------------------------
+# Reloads public Keycloak deployment selections from a generated root `.env`.
+#
+# Arguments:
+#   $1 - Existing root `.env` file path.
+#
+# Returns:
+#   0 after exporting all editable Keycloak deployment fields.
+# ------------------------------------------------------------------------------
+_load_executable_keycloak_env_fields() {
+    local env_file="$1"
+
+    export KEYCLOAK_BASE_URL="$(_root_env_value "$env_file" KEYCLOAK_BASE_URL)"
+    export KEYCLOAK_ISSUER_URL="$(_root_env_value "$env_file" KEYCLOAK_ISSUER_URL)"
+    export KEYCLOAK_REALM="$(_root_env_value "$env_file" KEYCLOAK_REALM)"
+    export KEYCLOAK_REALM_DISPLAY_NAME="$(_root_env_value "$env_file" KEYCLOAK_REALM_DISPLAY_NAME)"
+    export KEYCLOAK_REALM_ENABLED="$(_root_env_value "$env_file" KEYCLOAK_REALM_ENABLED)"
+    export KEYCLOAK_REGISTRATION_ALLOWED="$(_root_env_value "$env_file" KEYCLOAK_REGISTRATION_ALLOWED)"
+    export KEYCLOAK_RESET_PASSWORD_ALLOWED="$(_root_env_value "$env_file" KEYCLOAK_RESET_PASSWORD_ALLOWED)"
+    export KEYCLOAK_REMEMBER_ME="$(_root_env_value "$env_file" KEYCLOAK_REMEMBER_ME)"
+    export KEYCLOAK_VERIFY_EMAIL="$(_root_env_value "$env_file" KEYCLOAK_VERIFY_EMAIL)"
+    export KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED="$(_root_env_value "$env_file" KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED)"
+    export KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED="$(_root_env_value "$env_file" KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED)"
+    export KEYCLOAK_AUDIENCE="$(_root_env_value "$env_file" KEYCLOAK_AUDIENCE)"
+    export KEYCLOAK_FRONTEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_FRONTEND_CLIENT_ID)"
+    export KEYCLOAK_BACKEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_BACKEND_CLIENT_ID)"
+}
+
 # _load_executable_env_fields
 # Exports shared public app, database, Keycloak, WebApp, and pgAdmin settings.
 #
@@ -529,13 +583,7 @@ _load_executable_env_fields() {
     export WEB_BASE_URL="$(_root_env_value "$env_file" WEB_BASE_URL)"
     export WEB_DOMAIN="$(_root_env_value "$env_file" WEB_DOMAIN)"
     export CORS_ORIGINS="$(_root_env_value "$env_file" CORS_ORIGINS)"
-    export KEYCLOAK_BASE_URL="$(_root_env_value "$env_file" KEYCLOAK_BASE_URL)"
-    export KEYCLOAK_ISSUER_URL="$(_root_env_value "$env_file" KEYCLOAK_ISSUER_URL)"
-    export KEYCLOAK_REALM="$(_root_env_value "$env_file" KEYCLOAK_REALM)"
-    export KEYCLOAK_REALM_DISPLAY_NAME="$(_root_env_value "$env_file" KEYCLOAK_REALM_DISPLAY_NAME)"
-    export KEYCLOAK_AUDIENCE="$(_root_env_value "$env_file" KEYCLOAK_AUDIENCE)"
-    export KEYCLOAK_FRONTEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_FRONTEND_CLIENT_ID)"
-    export KEYCLOAK_BACKEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_BACKEND_CLIENT_ID)"
+    _load_executable_keycloak_env_fields "$env_file"
     export DB_HOST="$(_root_env_value "$env_file" DB_HOST)"
     export DB_PORT="$(_root_env_value "$env_file" DB_PORT)"
     export DB_NAME="$(_root_env_value "$env_file" DB_NAME)"

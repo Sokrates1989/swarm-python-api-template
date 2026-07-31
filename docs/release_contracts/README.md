@@ -36,6 +36,9 @@ The contract records these reviewed release defaults and boundaries:
 - candidate API `api.felix-app.fe-wi.com`;
 - shared existing realm `felix`;
 - clients/audience `felix-new-frontend` and `felix-new-backend`;
+- application roles `user`, `admin`, `manager`, and `service-provider`;
+- four profile-declared temporary test identities, enabled by default for the
+  candidate bootstrap and requiring explicit production cleanup;
 - legacy host `felix.app.fe-wi.com`;
 - protected separate legacy realm `felixappnew` plus protected legacy clients
   and origin state inside the shared `felix` realm;
@@ -43,10 +46,13 @@ The contract records these reviewed release defaults and boundaries:
 - explicit approval before legacy forwarding.
 
 The shared bootstrap may replace the realm/display name, managed client IDs,
-audience, and service roots with validated deployment-instance values in the
-ignored root `.env`. Such choices must match the WebApp/mobile artifacts used
-for that deployment. The tracked Keycloak server and protected legacy identity
-remain immutable safety boundaries.
+audience, allowlisted realm booleans, temporary-user lifecycle, and service
+roots with validated deployment-instance values in the ignored root `.env`.
+Such choices must match the WebApp/mobile artifacts used for that deployment.
+Role and test-user identity declarations remain tracked, while passwords for
+missing accounts or password credentials exist only as hidden runtime input.
+The tracked Keycloak server and
+protected legacy identity remain immutable safety boundaries.
 
 JSON cannot contain comments, so this README owns safe-editing guidance.
 Never add passwords, tokens, private keys, client-secret values, generated

@@ -37,6 +37,7 @@ from executable_profile_environment import (  # noqa: E402
     load_config_defaults,
     write_deployment_env,
 )
+from executable_profile_support import DEPLOYMENT_KEYS  # noqa: E402
 from executable_stack_renderer import (  # noqa: E402
     render_stack,
     validate_rendered_stack,
@@ -150,6 +151,29 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             force=True,
         )
         return load_executable_profile(self.root)
+
+    def test_tracked_environment_example_matches_felix_defaults(self) -> None:
+        """Keep the public reference complete and synchronized with its profile.
+
+        Returns:
+            Nothing.
+        """
+
+        lines = (REPOSITORY_ROOT / ".env.example").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        pairs = [
+            line.partition("=")[:3:2]
+            for line in lines
+            if line and not line.startswith("#")
+        ]
+        _, defaults = load_config_defaults(
+            REPOSITORY_ROOT,
+            "felix",
+        )
+
+        self.assertEqual(tuple(key for key, _ in pairs), DEPLOYMENT_KEYS)
+        self.assertEqual(dict(pairs), defaults)
 
     def test_felix_values_are_data_and_render_one_full_stack(self) -> None:
         """Render Felix WebApp and backend solely from its tracked profile.
@@ -436,7 +460,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertIs(backend["serviceAccountsEnabled"], True)
 
     def test_keycloak_bootstrap_policy_is_normalized_from_profile(self) -> None:
-        """Normalize realm, mapper, and forbidden-user policy as typed data.
+        """Normalize realm, roles, test users, and mapper policy as typed data.
 
         Returns:
             Nothing.
@@ -458,11 +482,25 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             identity.forbidden_default_usernames,
             ("test",),
         )
+        self.assertEqual(
+            tuple(role.name for role in identity.realm_roles),
+            ("user", "admin", "manager", "service-provider"),
+        )
+        self.assertTrue(identity.bootstrap_test_users_enabled)
+        self.assertEqual(
+            tuple(user.username for user in identity.bootstrap_test_users),
+            (
+                "test-user",
+                "test-admin",
+                "test-manager",
+                "test-service-provider",
+            ),
+        )
 
     def test_keycloak_bootstrap_policy_rejects_invalid_schema_values(
         self,
     ) -> None:
-        """Reject unsupported realm, mapper, and forbidden-user policy data.
+        """Reject unsafe realm, role, test-user, and client policy data.
 
         Returns:
             Nothing.
@@ -477,8 +515,18 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             "test",
             "test",
         ]
-        disabled_realm = copy.deepcopy(self.felix_config)
-        disabled_realm["auth"]["realmSettings"]["enabled"] = False
+        invalid_realm_toggle = copy.deepcopy(self.felix_config)
+        invalid_realm_toggle["auth"]["realmSettings"]["enabled"] = "yes"
+        test_user_secret = copy.deepcopy(self.felix_config)
+        test_user_secret["auth"]["bootstrapTestUsers"][0]["password"] = "bad"
+        unknown_test_role = copy.deepcopy(self.felix_config)
+        unknown_test_role["auth"]["bootstrapTestUsers"][0]["realmRoles"] = [
+            "undeclared"
+        ]
+        unsafe_cleanup = copy.deepcopy(self.felix_config)
+        unsafe_cleanup["auth"]["bootstrapTestUsers"][0][
+            "productionCleanupRequired"
+        ] = False
         missing_roles = copy.deepcopy(self.felix_config)
         del missing_roles["auth"]["serviceAccountClientRoles"]
         shared_client = copy.deepcopy(self.felix_config)
@@ -500,7 +548,10 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             (invalid_settings, "realmSettings contains unsupported fields"),
             (invalid_mapper, "audienceMapperName is unsafe"),
             (invalid_users, "forbiddenDefaultUsernames must be unique"),
-            (disabled_realm, "realmSettings.enabled must be true"),
+            (invalid_realm_toggle, "realmSettings.enabled must be boolean"),
+            (test_user_secret, "contains unsupported fields: password"),
+            (unknown_test_role, "reference undeclared realm roles"),
+            (unsafe_cleanup, "must require production cleanup"),
             (missing_roles, "missing required keys: serviceAccountClientRoles"),
             (shared_client, "frontendClientId and auth.adminClientId must differ"),
             (reserved_client, "must not use built-in clients"),
@@ -515,6 +566,21 @@ class ExecutableSiteProfileTests(unittest.TestCase):
                     message,
                 ):
                     load_config_defaults(self.root, "felix")
+
+    def test_disabled_realm_is_a_valid_operator_owned_default(self) -> None:
+        """Allow profiles to default the managed realm to disabled.
+
+        Returns:
+            Nothing.
+        """
+
+        disabled = copy.deepcopy(self.felix_config)
+        disabled["auth"]["realmSettings"]["enabled"] = False
+        self._write_config("felix", disabled)
+
+        _, defaults = load_config_defaults(self.root, "felix")
+
+        self.assertEqual(defaults["KEYCLOAK_REALM_ENABLED"], "false")
 
     def test_operator_deployment_defaults_can_be_overridden(self) -> None:
         """Allow validated stack, routing, image, and resource choices.

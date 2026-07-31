@@ -59,6 +59,11 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
         self.assertEqual(candidate["realm"], "felix")
         self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
         self.assertEqual(candidate["backendAudience"], "felix-new-backend")
+        self.assertEqual(
+            candidate["applicationRealmRoles"],
+            ["user", "admin", "manager", "service-provider"],
+        )
+        self.assertIs(candidate["bootstrapTestUsersDefaultEnabled"], True)
         self.assertEqual(boundary["candidateStackName"], "felix")
         self.assertNotEqual(boundary["candidateHost"], boundary["legacyHost"])
         self.assertNotIn(candidate["realm"], protected["protectedRealms"])
@@ -126,6 +131,18 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
         )
         self.assertEqual(candidate["backendAudience"], auth["audience"])
         self.assertEqual(
+            candidate["applicationRealmRoles"],
+            [role["name"] for role in auth["realmRoles"]],
+        )
+        self.assertEqual(
+            candidate["bootstrapTestUsersDefaultEnabled"],
+            auth["bootstrapTestUsersEnabled"],
+        )
+        self.assertEqual(
+            candidate["bootstrapTestUsernames"],
+            [user["username"] for user in auth["bootstrapTestUsers"]],
+        )
+        self.assertEqual(
             candidate["backendServiceAccountClientRoles"],
             auth["serviceAccountClientRoles"],
         )
@@ -167,8 +184,10 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
             "scripts/executable_profile_runtime.py",
             "scripts/executable_stack_renderer.py",
             "scripts/keycloak_profile_bootstrap.py",
+            "scripts/keycloak_profile_application_access.py",
             "scripts/keycloak_profile_cli.py",
             "scripts/keycloak_profile_client.py",
+            "scripts/keycloak_profile_realm_role_scope.py",
             "scripts/keycloak_profile_reconciliation.py",
             "scripts/keycloak_profile_roles.py",
             "scripts/keycloak_profile_secret_bridge.py",

@@ -13,6 +13,7 @@ Dependencies:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 
 from executable_profile_support import (
@@ -46,6 +47,253 @@ KEYCLOAK_RESERVED_MANAGED_CLIENT_IDS = {
     "realm-management",
     "security-admin-console",
 }
+
+# Complete schema-5 Keycloak authentication contract. Keeping this declaration
+# separate makes the orchestration entry point a readable sequence of checks.
+KEYCLOAK_AUTH_REQUIRED_FIELDS = {
+    "provider",
+    "serverUrl",
+    "issuerUrl",
+    "jwksUrl",
+    "realm",
+    "realmDisplayName",
+    "realmSettings",
+    "frontendClientId",
+    "audience",
+    "audienceMapperName",
+    "adminClientId",
+    "redirectUris",
+    "webOrigins",
+    "realmRoles",
+    "bootstrapTestUsersEnabled",
+    "bootstrapTestUsers",
+    "forbiddenDefaultUsernames",
+    "serviceAccountClientRoles",
+}
+
+EMAIL_PATTERN = re.compile(
+    r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?"
+)
+
+
+def _validate_realm_roles(auth: Mapping[str, object]) -> set[str]:
+    """Validate profile-owned application realm-role declarations.
+
+    Args:
+        auth: Profile authentication mapping.
+
+    Returns:
+        Unique declared realm-role names.
+
+    Raises:
+        ExecutableProfileError: If role metadata is malformed or duplicated.
+    """
+
+    role_names: list[str] = []
+    for index, raw_role in enumerate(
+        sequence(auth["realmRoles"], "auth.realmRoles")
+    ):
+        field = f"auth.realmRoles[{index}]"
+        role = mapping(raw_role, field)
+        allowed = {"name", "description"}
+        require_keys(role, allowed, field)
+        unsupported = sorted(set(role) - allowed)
+        if unsupported:
+            raise ExecutableProfileError(
+                f"{field} contains unsupported fields: "
+                + ", ".join(unsupported)
+            )
+        name = text(role["name"], f"auth.realmRoles[{index}].name")
+        description = text(
+            role["description"],
+            f"auth.realmRoles[{index}].description",
+        )
+        if not NAME_PATTERN.fullmatch(name):
+            raise ExecutableProfileError(
+                f"auth.realmRoles[{index}].name is unsafe."
+            )
+        if len(description) > 256:
+            raise ExecutableProfileError(
+                f"auth.realmRoles[{index}].description is too long."
+            )
+        role_names.append(name)
+    if len(role_names) != len(set(role_names)):
+        raise ExecutableProfileError("auth.realmRoles names must be unique.")
+    return set(role_names)
+
+
+def _validate_test_user_identity(
+    user: Mapping[str, object],
+    index: int,
+) -> tuple[str, str]:
+    """Validate one test user's public identity and lifecycle booleans.
+
+    Args:
+        user: Secret-free test-user mapping.
+        index: Position used in precise validation errors.
+
+    Returns:
+        Validated username and email.
+
+    Raises:
+        ExecutableProfileError: If public metadata or cleanup policy is unsafe.
+    """
+
+    field = f"auth.bootstrapTestUsers[{index}]"
+    username = text(user["username"], f"{field}.username")
+    email = text(user["email"], f"{field}.email")
+    text(user["firstName"], f"{field}.firstName")
+    text(user["lastName"], f"{field}.lastName")
+    if not NAME_PATTERN.fullmatch(username):
+        raise ExecutableProfileError(f"{field}.username is unsafe.")
+    if not EMAIL_PATTERN.fullmatch(email):
+        raise ExecutableProfileError(f"{field}.email is invalid.")
+    boolean_fields = (
+        "enabled",
+        "emailVerified",
+        "temporaryPassword",
+        "productionCleanupRequired",
+    )
+    invalid = [
+        name for name in boolean_fields if not isinstance(user[name], bool)
+    ]
+    if invalid:
+        raise ExecutableProfileError(f"{field}.{invalid[0]} must be boolean.")
+    if user["productionCleanupRequired"] is not True:
+        raise ExecutableProfileError(
+            "Every bootstrap test user must require production cleanup."
+        )
+    return username, email
+
+
+def _validate_test_user_roles(
+    user: Mapping[str, object],
+    index: int,
+    realm_roles: set[str],
+) -> None:
+    """Validate one test user's exact application-role references.
+
+    Args:
+        user: Secret-free test-user mapping.
+        index: Position used in precise validation errors.
+        realm_roles: Declared application realm-role names.
+
+    Raises:
+        ExecutableProfileError: If assignments are empty, duplicated, or
+            reference undeclared roles.
+    """
+
+    field = f"auth.bootstrapTestUsers[{index}].realmRoles"
+    assigned = [
+        text(value, f"{field}[{role_index}]")
+        for role_index, value in enumerate(
+            sequence(user["realmRoles"], field)
+        )
+    ]
+    if not assigned or len(assigned) != len(set(assigned)):
+        raise ExecutableProfileError(
+            "Bootstrap test-user realm roles must be non-empty and unique."
+        )
+    unknown = sorted(set(assigned) - realm_roles)
+    if unknown:
+        raise ExecutableProfileError(
+            "Bootstrap test users reference undeclared realm roles: "
+            + ", ".join(unknown)
+        )
+
+
+def _validate_bootstrap_test_user(
+    raw_user: object,
+    index: int,
+    realm_roles: set[str],
+) -> tuple[str, str]:
+    """Validate one complete secret-free bootstrap test-user declaration.
+
+    Args:
+        raw_user: Parsed candidate declaration.
+        index: Position used in precise validation errors.
+        realm_roles: Declared application realm-role names.
+
+    Returns:
+        Validated username and email.
+
+    Raises:
+        ExecutableProfileError: If the declaration is malformed or unsafe.
+    """
+
+    field = f"auth.bootstrapTestUsers[{index}]"
+    user = mapping(raw_user, field)
+    required = {
+        "username",
+        "email",
+        "firstName",
+        "lastName",
+        "enabled",
+        "emailVerified",
+        "temporaryPassword",
+        "realmRoles",
+        "productionCleanupRequired",
+    }
+    require_keys(user, required, field)
+    unsupported = sorted(set(user) - required)
+    if unsupported:
+        raise ExecutableProfileError(
+            f"{field} contains unsupported fields: "
+            + ", ".join(unsupported)
+        )
+    identity = _validate_test_user_identity(user, index)
+    _validate_test_user_roles(user, index, realm_roles)
+    return identity
+
+
+def _validate_bootstrap_test_users(
+    auth: Mapping[str, object],
+    realm_roles: set[str],
+    forbidden_usernames: set[str],
+) -> None:
+    """Validate all secret-free test-user identities and uniqueness rules.
+
+    Args:
+        auth: Profile authentication mapping.
+        realm_roles: Validated application realm-role names.
+        forbidden_usernames: Explicitly forbidden default usernames.
+
+    Raises:
+        ExecutableProfileError: If declarations or aggregate policy are unsafe.
+    """
+
+    enabled = auth["bootstrapTestUsersEnabled"]
+    if not isinstance(enabled, bool):
+        raise ExecutableProfileError(
+            "auth.bootstrapTestUsersEnabled must be boolean."
+        )
+    identities = [
+        _validate_bootstrap_test_user(raw_user, index, realm_roles)
+        for index, raw_user in enumerate(
+            sequence(auth["bootstrapTestUsers"], "auth.bootstrapTestUsers")
+        )
+    ]
+    usernames = [username for username, _ in identities]
+    emails = [email for _, email in identities]
+    if enabled and not usernames:
+        raise ExecutableProfileError(
+            "Enabled bootstrap test users require at least one declaration."
+        )
+    if len(usernames) != len(set(usernames)):
+        raise ExecutableProfileError(
+            "auth.bootstrapTestUsers usernames must be unique."
+        )
+    if len(emails) != len(set(emails)):
+        raise ExecutableProfileError(
+            "auth.bootstrapTestUsers emails must be unique."
+        )
+    overlap = sorted(set(usernames) & forbidden_usernames)
+    if overlap:
+        raise ExecutableProfileError(
+            "Bootstrap test users cannot also be forbidden: "
+            + ", ".join(overlap)
+        )
 
 
 def _protected_values(
@@ -210,10 +458,6 @@ def _validate_bootstrap_policy(auth: Mapping[str, object]) -> None:
             raise ExecutableProfileError(
                 f"auth.realmSettings.{name} must be boolean."
             )
-    if settings["enabled"] is not True:
-        raise ExecutableProfileError(
-            "auth.realmSettings.enabled must be true for deployment."
-        )
     forbidden = [
         text(value, f"auth.forbiddenDefaultUsernames[{index}]")
         for index, value in enumerate(
@@ -231,6 +475,8 @@ def _validate_bootstrap_policy(auth: Mapping[str, object]) -> None:
         raise ExecutableProfileError(
             "auth.forbiddenDefaultUsernames contains an unsafe username."
         )
+    realm_roles = _validate_realm_roles(auth)
+    _validate_bootstrap_test_users(auth, realm_roles, set(forbidden))
 
 
 def _validate_urls(
@@ -315,27 +561,7 @@ def validate_keycloak_auth(
         ExecutableProfileError: If public OIDC identity is incomplete or unsafe.
     """
 
-    require_keys(
-        auth,
-        {
-            "provider",
-            "serverUrl",
-            "issuerUrl",
-            "jwksUrl",
-            "realm",
-            "realmDisplayName",
-            "realmSettings",
-            "frontendClientId",
-            "audience",
-            "audienceMapperName",
-            "adminClientId",
-            "redirectUris",
-            "webOrigins",
-            "forbiddenDefaultUsernames",
-            "serviceAccountClientRoles",
-        },
-        "auth",
-    )
+    require_keys(auth, KEYCLOAK_AUTH_REQUIRED_FIELDS, "auth")
     realm = text(auth["realm"], "auth.realm")
     if not NAME_PATTERN.fullmatch(realm):
         raise ExecutableProfileError("auth.realm is unsafe.")

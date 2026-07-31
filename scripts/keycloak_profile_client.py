@@ -9,7 +9,7 @@ Description:
 
 Dependencies:
     - Python standard library.
-    - scripts/executable_profile.py.
+    - Executable-profile support and application-access identity models.
 """
 
 from __future__ import annotations
@@ -18,11 +18,19 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from executable_profile import ExecutableProfile
-from executable_profile_support import mapping
+from executable_profile_support import (
+    KEYCLOAK_REALM_SETTING_ENV_KEYS,
+    mapping,
+)
+from keycloak_profile_application_access import (
+    KeycloakBootstrapTestUser,
+    KeycloakRealmRole,
+)
 
 
 class KeycloakProfileError(RuntimeError):
@@ -94,6 +102,10 @@ class KeycloakIdentity:
         realm: Realm name.
         realm_display_name: Human-readable realm name.
         realm_settings: Exact profile-owned realm boolean settings.
+        realm_roles: Application realm roles declared by the site profile.
+        bootstrap_test_users_enabled: Whether declared temporary users should
+            exist for this deployment.
+        bootstrap_test_users: Secret-free temporary user identities and roles.
         frontend_client_id: Public PKCE client identifier.
         backend_client_id: Confidential service client identifier.
         audience: Audience added to frontend access tokens.
@@ -125,6 +137,9 @@ class KeycloakIdentity:
     api_root_url: str
     docker_secret: str
     service_account_client_roles: tuple[tuple[str, tuple[str, ...]], ...]
+    realm_roles: tuple[KeycloakRealmRole, ...] = ()
+    bootstrap_test_users_enabled: bool = False
+    bootstrap_test_users: tuple[KeycloakBootstrapTestUser, ...] = ()
 
 
 class KeycloakAdminClient:
@@ -606,6 +621,141 @@ def _service_account_roles(
     )
 
 
+def _active_boolean(
+    deployment: Mapping[str, str],
+    environment_key: str,
+    fallback: bool,
+) -> bool:
+    """Read one editable boolean with a pre-upgrade profile fallback.
+
+    Args:
+        deployment: Validated generated deployment environment.
+        environment_key: Public root-environment key.
+        fallback: Tracked profile default used when an older ``.env`` omits
+            the explicit value.
+
+    Returns:
+        Active boolean selection.
+    """
+
+    value = deployment.get(environment_key, "")
+    if value == "":
+        return fallback
+    return value == "true"
+
+
+def _realm_settings(
+    raw: dict[str, Any],
+    deployment: Mapping[str, str],
+) -> tuple[tuple[str, bool], ...]:
+    """Combine tracked realm defaults with editable deployment selections.
+
+    Args:
+        raw: Validated Keycloak authentication mapping.
+        deployment: Validated generated deployment environment.
+
+    Returns:
+        Ordered Keycloak realm-setting pairs.
+    """
+
+    configured = raw["realmSettings"]
+    return tuple(
+        (
+            setting_name,
+            _active_boolean(
+                deployment,
+                environment_key,
+                bool(configured[setting_name]),
+            ),
+        )
+        for setting_name, environment_key in KEYCLOAK_REALM_SETTING_ENV_KEYS
+    )
+
+
+def _realm_roles(raw: dict[str, Any]) -> tuple[KeycloakRealmRole, ...]:
+    """Normalize application realm-role declarations.
+
+    Args:
+        raw: Validated Keycloak authentication mapping.
+
+    Returns:
+        Immutable realm-role definitions in profile order.
+    """
+
+    return tuple(
+        KeycloakRealmRole(
+            name=str(role["name"]),
+            description=str(role["description"]),
+        )
+        for role in raw["realmRoles"]
+    )
+
+
+def _bootstrap_test_users(
+    raw: dict[str, Any],
+) -> tuple[KeycloakBootstrapTestUser, ...]:
+    """Normalize secret-free temporary test-user declarations.
+
+    Args:
+        raw: Validated Keycloak authentication mapping.
+
+    Returns:
+        Immutable test-user definitions in profile order.
+    """
+
+    return tuple(
+        KeycloakBootstrapTestUser(
+            username=str(user["username"]),
+            email=str(user["email"]),
+            first_name=str(user["firstName"]),
+            last_name=str(user["lastName"]),
+            enabled=bool(user["enabled"]),
+            email_verified=bool(user["emailVerified"]),
+            temporary_password=bool(user["temporaryPassword"]),
+            realm_roles=tuple(str(role) for role in user["realmRoles"]),
+            production_cleanup_required=bool(
+                user["productionCleanupRequired"]
+            ),
+        )
+        for user in raw["bootstrapTestUsers"]
+    )
+
+
+def _identity_policy_values(
+    raw: dict[str, Any],
+    deployment: Mapping[str, str],
+) -> dict[str, object]:
+    """Build profile-owned and editable policy fields for an identity.
+
+    Args:
+        raw: Validated Keycloak authentication mapping.
+        deployment: Validated generated deployment environment.
+
+    Returns:
+        Keyword values for the normalized identity model.
+    """
+
+    return {
+        "realm_display_name": (
+            deployment["KEYCLOAK_REALM_DISPLAY_NAME"]
+            or str(raw["realmDisplayName"])
+        ),
+        "realm_settings": _realm_settings(raw, deployment),
+        "realm_roles": _realm_roles(raw),
+        "bootstrap_test_users_enabled": _active_boolean(
+            deployment,
+            "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+            bool(raw["bootstrapTestUsersEnabled"]),
+        ),
+        "bootstrap_test_users": _bootstrap_test_users(raw),
+        "audience_mapper_name": str(raw["audienceMapperName"]),
+        "forbidden_default_usernames": tuple(
+            str(value) for value in raw["forbiddenDefaultUsernames"]
+        ),
+        "service_account_client_roles": _service_account_roles(raw),
+    }
+
+
 def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
     """Normalize realm policy plus active deployment identity.
 
@@ -644,27 +794,15 @@ def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
         issuer_url=issuer_url,
         jwks_url=f"{issuer_url}/protocol/openid-connect/certs",
         realm=deployment["KEYCLOAK_REALM"],
-        realm_display_name=(
-            deployment["KEYCLOAK_REALM_DISPLAY_NAME"]
-            or str(raw["realmDisplayName"])
-        ),
-        realm_settings=tuple(
-            (str(name), bool(value))
-            for name, value in raw["realmSettings"].items()
-        ),
         frontend_client_id=deployment["KEYCLOAK_FRONTEND_CLIENT_ID"],
         backend_client_id=deployment["KEYCLOAK_BACKEND_CLIENT_ID"],
         audience=deployment["KEYCLOAK_AUDIENCE"],
-        audience_mapper_name=str(raw["audienceMapperName"]),
         redirect_uris=redirect_uris,
         web_origins=web_origins,
-        forbidden_default_usernames=tuple(
-            str(value) for value in raw["forbiddenDefaultUsernames"]
-        ),
         frontend_root_url=deployment_web_root,
         api_root_url=profile.deployment["API_BASE_URL"].rstrip("/"),
         docker_secret=_backend_secret_name(profile),
-        service_account_client_roles=_service_account_roles(raw),
+        **_identity_policy_values(raw, deployment),
     )
 
 

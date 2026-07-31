@@ -17,6 +17,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,6 +40,9 @@ from keycloak_profile_reconciliation import (  # noqa: E402
     frontend_payload,
     owned_field_mismatches,
     realm_payload,
+)
+from keycloak_profile_verification import (  # noqa: E402
+    build_reconciliation_plan,
 )
 from tests.keycloak_profile_stateful_support import (  # noqa: E402
     StatefulKeycloakAdminClient,
@@ -126,6 +130,10 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
                 replace_secret=False,
                 docker_secret_present=False,
                 progress=progress.append,
+                bootstrap_test_user_passwords={
+                    user.username: f"runtime-only-{user.username}"
+                    for user in self.identity.bootstrap_test_users
+                },
             )
         return summary, progress
 
@@ -140,10 +148,16 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         """
 
         self.assertEqual(summary["realmAction"], "created")
+        self.assertEqual(summary["realmRolesAction"], "create=4")
         self.assertEqual(summary["frontendAction"], "created")
         self.assertEqual(summary["backendAction"], "created")
         self.assertEqual(summary["audienceMapperAction"], "created")
+        self.assertEqual(
+            summary["frontendRealmRoleScopeAction"],
+            "assigned",
+        )
         self.assertEqual(summary["serviceAccountRolesAction"], "updated")
+        self.assertEqual(summary["bootstrapTestUsersAction"], "create=4")
         self.assertEqual(summary["dockerSecretAction"], "created")
         self.assertIs(summary["keycloakStateVerified"], True)
         self.assertIs(summary["dockerSecretBindingVerified"], True)
@@ -176,6 +190,27 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.assignment_roles, {"manage-users"})
         self.assertEqual(self.client.scope_roles, {"manage-users"})
         self.assertEqual(
+            set(self.client.application_access.realm_roles),
+            {"user", "admin", "manager", "service-provider"},
+        )
+        self.assertEqual(
+            self.client.frontend_scope_roles,
+            {"user", "admin", "manager", "service-provider"},
+        )
+        self.assertEqual(
+            set(self.client.application_access.users),
+            {
+                "test-user",
+                "test-admin",
+                "test-manager",
+                "test-service-provider",
+            },
+        )
+        self.assertEqual(
+            self.client.application_access.passwords_set,
+            set(self.client.application_access.users),
+        )
+        self.assertEqual(
             self.client.events,
             ["secret-read", "proof", "write"],
         )
@@ -204,6 +239,111 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         current.pop("id")
         return current
 
+    def test_disabling_test_users_requires_explicit_production_cleanup(
+        self,
+    ) -> None:
+        """Block production desired state until temporary users are removed.
+
+        Returns:
+            Nothing.
+        """
+
+        self._run_bootstrap()
+        self.client.identity = replace(
+            self.identity,
+            bootstrap_test_users_enabled=False,
+        )
+
+        plan = build_reconciliation_plan(
+            self.client,
+            docker_secret_present=True,
+            replace_secret=False,
+        )
+
+        cleanup = [
+            blocker
+            for blocker in plan["blockers"]
+            if "Delete bootstrap test user before production" in blocker
+        ]
+        self.assertEqual(len(cleanup), 4)
+
+    def test_disabled_realm_blocks_a_new_secret_proof(self) -> None:
+        """Require an enabled realm while creating the backend credential.
+
+        Returns:
+            Nothing.
+        """
+
+        settings = tuple(
+            (name, False if name == "enabled" else value)
+            for name, value in self.identity.realm_settings
+        )
+        self.client.identity = replace(
+            self.identity,
+            realm_settings=settings,
+        )
+
+        plan = build_reconciliation_plan(
+            self.client,
+            docker_secret_present=False,
+            replace_secret=False,
+        )
+
+        self.assertIn(
+            "Enable the realm for one bootstrap run before creating or "
+            "rotating the proven Docker client secret.",
+            plan["blockers"],
+        )
+
+    def test_repeated_bootstrap_keeps_roles_users_and_frontend_scope(self) -> None:
+        """Require application-access reconciliation to be idempotent.
+
+        Returns:
+            Nothing.
+        """
+
+        self._run_bootstrap()
+        summary, _ = self._run_bootstrap()
+
+        self.assertEqual(summary["realmAction"], "kept")
+        self.assertEqual(summary["realmRolesAction"], "keep=4")
+        self.assertEqual(summary["frontendAction"], "kept")
+        self.assertEqual(summary["backendAction"], "kept")
+        self.assertEqual(summary["audienceMapperAction"], "kept")
+        self.assertEqual(summary["frontendRealmRoleScopeAction"], "kept")
+        self.assertEqual(summary["serviceAccountRolesAction"], "kept")
+        self.assertEqual(summary["bootstrapTestUsersAction"], "keep=4")
+
+    def test_existing_user_without_password_is_recovered(self) -> None:
+        """Detect and repair a partial user-creation result on a later run.
+
+        Returns:
+            Nothing.
+        """
+
+        self._run_bootstrap()
+        self.client.application_access.passwords_set.remove("test-manager")
+
+        plan = build_reconciliation_plan(
+            self.client,
+            docker_secret_present=True,
+            replace_secret=False,
+        )
+
+        self.assertEqual(
+            plan["bootstrapTestUserActions"]["test-manager"],
+            "set-password",
+        )
+        summary, _ = self._run_bootstrap()
+        self.assertEqual(
+            summary["bootstrapTestUsersAction"],
+            "keep=3, set-password=1",
+        )
+        self.assertIn(
+            "test-manager",
+            self.client.application_access.passwords_set,
+        )
+
     def _assert_secret_hygiene(
         self,
         summary: dict[str, object],
@@ -223,8 +363,10 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         request_urls = "\n".join(
             path for _, path, _, _ in self.client.requests
         )
+        recorded_requests = json.dumps(self.client.requests)
         self.assertNotIn(self.secret, visible)
         self.assertNotIn(self.secret, request_urls)
+        self.assertNotIn("runtime-only-", recorded_requests)
 
     def test_missing_realm_is_verified_before_real_secret_write(self) -> None:
         """Create, verify, prove, and bridge a complete fresh realm.

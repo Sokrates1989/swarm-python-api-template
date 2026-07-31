@@ -225,15 +225,21 @@ Version 5.0 adds a strict full-stack contract:
 | `routing` / `exposure` | API/WebApp hosts, health paths, direct ports, and distinct Traefik network/provider-label/resolver defaults |
 | `services.web` | Adds the optional WebApp service when true |
 | `web` | WebApp image, version, replicas, and memory |
-| `auth` | Keycloak identity, callbacks, protected legacy values, and service-account roles |
+| `auth` | Keycloak identity, selectable realm defaults, callbacks, application roles, secret-free temporary users, protected legacy values, and service-account roles |
 | `environment` / `envKeys` | Exact public runtime allowlist |
 | `secretMounts` | Exact file-backed Docker secret mappings |
 | `capabilities` | Optional environment and secret mounts |
 
 No app-specific module is permitted. A new app receives the same behavior by
 copying `_template.json` to a schema-5 profile and replacing only its data.
-Keycloak protected identity and service-account roles, the Traefik certificate
-resolver, direct service ports, and optional pgAdmin are also profile fields.
+Keycloak protected identity, application roles, secret-free temporary test
+users, and service-account roles are profile fields, as are the Traefik
+certificate resolver, direct service ports, and optional pgAdmin. Realm booleans and
+the test-user lifecycle are operator-selectable public `.env` values; test-user
+passwords are requested without echo only when an enabled account or its
+password credential is missing. The bootstrap reminds the operator to remove
+temporary identities before production and blocks a disabled lifecycle while
+declared users still exist.
 
 Site configs store safe defaults and allowed capabilities. Final
 deployment-instance selections such as domain, proxy, SSL ownership, image

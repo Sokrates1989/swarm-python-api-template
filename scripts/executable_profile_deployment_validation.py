@@ -36,11 +36,40 @@ from executable_profile_support import (
     NAME_PATTERN,
     SEMVER_PATTERN,
     ExecutableProfileError,
+    KEYCLOAK_REALM_SETTING_ENV_KEYS,
     immutable_deployment_values,
     mapping,
     sequence,
     text,
 )
+
+
+def _validate_keycloak_boolean_values(
+    values: Mapping[str, str],
+) -> None:
+    """Validate editable realm and test-user toggle values.
+
+    Empty values are accepted only as a migration bridge for root ``.env``
+    files generated before these public settings became editable. The active
+    identity then falls back to the tracked profile default, and the next
+    guided bootstrap writes explicit values.
+
+    Args:
+        values: Complete generated deployment environment.
+
+    Raises:
+        ExecutableProfileError: If a populated toggle is not boolean text.
+    """
+
+    keys = [
+        *(key for _, key in KEYCLOAK_REALM_SETTING_ENV_KEYS),
+        "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+    ]
+    for key in keys:
+        if values[key] not in {"", "true", "false"}:
+            raise ExecutableProfileError(
+                f".env {key} must be true or false."
+            )
 
 
 def _protected_auth_values(
@@ -133,6 +162,8 @@ def _validate_keycloak_deployment(
         "KEYCLOAK_ISSUER_URL",
         "KEYCLOAK_REALM",
         "KEYCLOAK_REALM_DISPLAY_NAME",
+        *(key for _, key in KEYCLOAK_REALM_SETTING_ENV_KEYS),
+        "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
         "KEYCLOAK_AUDIENCE",
         "KEYCLOAK_FRONTEND_CLIENT_ID",
         "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -143,6 +174,7 @@ def _validate_keycloak_deployment(
                 "Non-Keycloak deployments must not declare Keycloak identity."
             )
         return
+    _validate_keycloak_boolean_values(values)
     base_url = values["KEYCLOAK_BASE_URL"].rstrip("/")
     realm = values["KEYCLOAK_REALM"]
     validate_origin(base_url, ".env KEYCLOAK_BASE_URL")

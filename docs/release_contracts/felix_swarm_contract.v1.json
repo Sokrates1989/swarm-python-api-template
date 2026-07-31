@@ -19,6 +19,19 @@
     "frontendClientId": "felix-new-frontend",
     "backendAudience": "felix-new-backend",
     "backendAdminClientId": "felix-new-backend",
+    "applicationRealmRoles": [
+      "user",
+      "admin",
+      "manager",
+      "service-provider"
+    ],
+    "bootstrapTestUsersDefaultEnabled": true,
+    "bootstrapTestUsernames": [
+      "test-user",
+      "test-admin",
+      "test-manager",
+      "test-service-provider"
+    ],
     "backendServiceAccountClientRoles": {
       "realm-management": [
         "manage-users"

@@ -108,6 +108,82 @@
       "verifyEmail": true,
       "loginWithEmailAllowed": true
     },
+    "realmRoles": [
+      {
+        "name": "user",
+        "description": "Standard Felix application user"
+      },
+      {
+        "name": "admin",
+        "description": "Felix application administrator"
+      },
+      {
+        "name": "manager",
+        "description": "Felix booking and service manager"
+      },
+      {
+        "name": "service-provider",
+        "description": "Felix booking service provider"
+      }
+    ],
+    "bootstrapTestUsersEnabled": true,
+    "bootstrapTestUsers": [
+      {
+        "username": "test-user",
+        "email": "test-user@example.invalid",
+        "firstName": "Test",
+        "lastName": "User",
+        "enabled": true,
+        "emailVerified": true,
+        "temporaryPassword": false,
+        "realmRoles": [
+          "user"
+        ],
+        "productionCleanupRequired": true
+      },
+      {
+        "username": "test-admin",
+        "email": "test-admin@example.invalid",
+        "firstName": "Test",
+        "lastName": "Administrator",
+        "enabled": true,
+        "emailVerified": true,
+        "temporaryPassword": false,
+        "realmRoles": [
+          "user",
+          "admin"
+        ],
+        "productionCleanupRequired": true
+      },
+      {
+        "username": "test-manager",
+        "email": "test-manager@example.invalid",
+        "firstName": "Test",
+        "lastName": "Manager",
+        "enabled": true,
+        "emailVerified": true,
+        "temporaryPassword": false,
+        "realmRoles": [
+          "user",
+          "manager"
+        ],
+        "productionCleanupRequired": true
+      },
+      {
+        "username": "test-service-provider",
+        "email": "test-service-provider@example.invalid",
+        "firstName": "Test",
+        "lastName": "Service Provider",
+        "enabled": true,
+        "emailVerified": true,
+        "temporaryPassword": false,
+        "realmRoles": [
+          "user",
+          "service-provider"
+        ],
+        "productionCleanupRequired": true
+      }
+    ],
     "frontendClientId": "felix-new-frontend",
     "audience": "felix-new-backend",
     "audienceMapperName": "backend-audience",

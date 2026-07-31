@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import getpass
 import json
+from collections.abc import Mapping
 
 from executable_profile import ExecutableProfile
 from keycloak_profile_configuration import KeycloakBootstrapValues
@@ -26,8 +27,44 @@ from keycloak_profile_client import (
     KeycloakIdentity,
     KeycloakProfileError,
 )
+from keycloak_profile_application_access import required_test_user_passwords
 from keycloak_profile_secret_bridge import docker_secret_exists
 from keycloak_profile_verification import build_reconciliation_plan
+
+
+def _print_application_access_target(identity: KeycloakIdentity) -> None:
+    """Print declared application roles and temporary-user policy.
+
+    Args:
+        identity: Active normalized Keycloak identity.
+
+    Returns:
+        Nothing.
+    """
+
+    print("Forbidden default users:")
+    usernames = identity.forbidden_default_usernames
+    for username in usernames or ("none",):
+        print(f"  - {username}")
+    print("Application realm roles:")
+    if identity.realm_roles:
+        for role in identity.realm_roles:
+            print(f"  - {role.name}: {role.description}")
+    else:
+        print("  - none")
+    state = "enabled" if identity.bootstrap_test_users_enabled else "disabled"
+    print(f"Bootstrap test users: {state}")
+    for user in identity.bootstrap_test_users:
+        print(f"  - {user.username}: {', '.join(user.realm_roles)}")
+    print("")
+    if identity.bootstrap_test_users_enabled:
+        print("[WARN] Temporary bootstrap test users are enabled.")
+        print(
+            "[WARN] Once you enter production mode, remember to delete "
+            "those users."
+        )
+    else:
+        print("No temporary bootstrap test users will be created.")
 
 
 def print_target(
@@ -73,11 +110,8 @@ def print_target(
     print("Backend service-account client roles:")
     for client_id, roles in identity.service_account_client_roles:
         print(f"  - {client_id}: {', '.join(roles)}")
-    print("Forbidden default users:")
-    for username in identity.forbidden_default_usernames:
-        print(f"  - {username}")
-    print("")
-    print("No users, passwords, example roles, or social providers are created.")
+    _print_application_access_target(identity)
+    print("Application roles are profile-owned; social providers remain unchanged.")
     print("The confidential secret comes from Keycloak's real client response;")
     print("its value is never displayed or written to a file.")
 
@@ -95,6 +129,135 @@ def _prompt_value(label: str, default: str) -> str:
 
     answer = input(f"{label} [{default}]: ").strip()
     return answer or default
+
+
+def _prompt_boolean(label: str, default: bool) -> bool:
+    """Return an explicit yes/no selection with an Enter default.
+
+    Args:
+        label: Operator-facing realm or test-user setting.
+        default: Boolean selected when Enter is pressed.
+
+    Returns:
+        Operator-selected boolean.
+    """
+
+    hint = "Y/n" if default else "y/N"
+    while True:
+        answer = input(f"{label} [{hint}]: ").strip().lower()
+        if not answer:
+            return default
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+        print("Please enter y, n, or press Enter for the displayed default.")
+
+
+def _prompt_realm_settings(
+    identity: KeycloakIdentity,
+) -> tuple[tuple[str, bool], ...]:
+    """Collect every profile-owned realm boolean from the operator.
+
+    Args:
+        identity: Active identity providing deployment or profile defaults.
+
+    Returns:
+        Ordered realm-setting names and selected boolean values.
+    """
+
+    print("")
+    print("Realm settings")
+    print("--------------")
+    configured = dict(identity.realm_settings)
+    labels = (
+        ("enabled", "Realm enabled"),
+        ("registrationAllowed", "Allow user registration"),
+        ("resetPasswordAllowed", "Allow password reset"),
+        ("rememberMe", "Show Remember Me"),
+        ("verifyEmail", "Require verified email"),
+        ("loginWithEmailAllowed", "Allow login with email"),
+    )
+    return tuple(
+        (name, _prompt_boolean(label, configured[name]))
+        for name, label in labels
+    )
+
+
+def _prompt_bootstrap_test_user_lifecycle(identity: KeycloakIdentity) -> bool:
+    """Choose whether profile-declared temporary users should be maintained.
+
+    Args:
+        identity: Active identity containing secret-free user declarations.
+
+    Returns:
+        True when the bootstrap should create or maintain declared test users.
+        False when no users are declared or the operator disables them.
+    """
+
+    if not identity.bootstrap_test_users:
+        return False
+    print("")
+    print("Profile-declared temporary test users:")
+    for user in identity.bootstrap_test_users:
+        print(f"  - {user.username}: {', '.join(user.realm_roles)}")
+    selected = _prompt_boolean(
+        "Create/update these bootstrap test users",
+        identity.bootstrap_test_users_enabled,
+    )
+    if selected:
+        print(
+            "[WARN] Once you enter production mode, remember to delete "
+            "those users."
+        )
+    return selected
+
+
+def _prompt_public_identity_values(
+    identity: KeycloakIdentity,
+) -> dict[str, str]:
+    """Collect realm, client, root-URL, and audience values.
+
+    Args:
+        identity: Active identity providing Enter-default values.
+
+    Returns:
+        Public selected values keyed for bootstrap-value construction.
+    """
+
+    realm = _prompt_value("Realm name", identity.realm)
+    realm_display_name = _prompt_value(
+        "Realm display name",
+        identity.realm_display_name,
+    )
+    frontend_client_id = _prompt_value(
+        "Frontend client ID",
+        identity.frontend_client_id,
+    )
+    backend_client_id = _prompt_value(
+        "Backend client ID",
+        identity.backend_client_id,
+    )
+    frontend_root_url = _prompt_value(
+        "Frontend client root URL",
+        identity.frontend_root_url,
+    )
+    api_root_url = _prompt_value(
+        "Backend API client root URL",
+        identity.api_root_url,
+    )
+    audience_default = identity.audience
+    if identity.audience == identity.backend_client_id:
+        audience_default = backend_client_id
+    return {
+        "realm": realm,
+        "realm_display_name": realm_display_name,
+        "frontend_client_id": frontend_client_id,
+        "backend_client_id": backend_client_id,
+        "frontend_root_url": frontend_root_url,
+        "api_root_url": api_root_url,
+        "audience": _prompt_value("Backend audience", audience_default),
+    }
 
 
 def prompt_bootstrap_values(
@@ -123,31 +286,66 @@ def prompt_bootstrap_values(
     print("WebApp/mobile builds must use the same realm and client identity.")
     print("")
     print(f"Keycloak server URL (fixed trust anchor): {identity.server_url}")
+    selected = _prompt_public_identity_values(identity)
+    realm_settings = _prompt_realm_settings(identity)
+    bootstrap_test_users_enabled = _prompt_bootstrap_test_user_lifecycle(
+        identity
+    )
     return KeycloakBootstrapValues(
         server_url=identity.server_url,
-        realm=_prompt_value("Realm name", identity.realm),
-        realm_display_name=_prompt_value(
-            "Realm display name",
-            identity.realm_display_name,
-        ),
-        frontend_client_id=_prompt_value(
-            "Frontend client ID",
-            identity.frontend_client_id,
-        ),
-        backend_client_id=_prompt_value(
-            "Backend client ID",
-            identity.backend_client_id,
-        ),
-        frontend_root_url=_prompt_value(
-            "Frontend client root URL",
-            identity.frontend_root_url,
-        ),
-        api_root_url=_prompt_value(
-            "Backend API client root URL",
-            identity.api_root_url,
-        ),
-        audience=_prompt_value("Backend audience", identity.audience),
+        realm=selected["realm"],
+        realm_display_name=selected["realm_display_name"],
+        realm_settings=realm_settings,
+        bootstrap_test_users_enabled=bootstrap_test_users_enabled,
+        frontend_client_id=selected["frontend_client_id"],
+        backend_client_id=selected["backend_client_id"],
+        frontend_root_url=selected["frontend_root_url"],
+        api_root_url=selected["api_root_url"],
+        audience=selected["audience"],
     )
+
+
+def prompt_bootstrap_test_user_passwords(
+    identity: KeycloakIdentity,
+    plan: Mapping[str, object],
+) -> dict[str, str]:
+    """Read passwords needed for planned test-user creation or recovery.
+
+    Args:
+        identity: Active profile-derived Keycloak identity.
+        plan: Sanitized live-state plan containing test-user actions.
+
+    Returns:
+        Runtime-only passwords keyed by username requiring a credential.
+
+    Raises:
+        KeycloakProfileError: If a password is empty or confirmation differs.
+    """
+
+    raw_actions = plan.get("bootstrapTestUserActions", {})
+    actions = raw_actions if isinstance(raw_actions, Mapping) else {}
+    usernames = required_test_user_passwords(actions)
+    if not usernames:
+        return {}
+    print("")
+    print("Temporary test-user credentials")
+    print("--------------------------------")
+    print("Passwords are read without echo and are sent only to Keycloak.")
+    print("They are never written to the profile, .env, plan, or summary.")
+    passwords: dict[str, str] = {}
+    for username in usernames:
+        password = getpass.getpass(f"Password for test user {username}: ")
+        confirmation = getpass.getpass(f"Confirm password for {username}: ")
+        if not password:
+            raise KeycloakProfileError(
+                f"Password for test user {username!r} is required."
+            )
+        if password != confirmation:
+            raise KeycloakProfileError(
+                f"Password confirmation for test user {username!r} differs."
+            )
+        passwords[username] = password
+    return passwords
 
 
 def prompt_secret_safe_debug() -> bool:
@@ -190,10 +388,13 @@ def print_plan(plan: dict[str, object]) -> None:
 
     labels = (
         ("Realm", "realm"),
+        ("Application roles", "realmRoles"),
         ("Frontend client", "frontendClient"),
         ("Backend client", "backendClient"),
         ("Audience mapper", "audienceMapper"),
+        ("Frontend role scope", "frontendRealmRoleScope"),
         ("Service-account roles", "serviceAccountRoles"),
+        ("Bootstrap test users", "bootstrapTestUsers"),
         ("Docker secret", "dockerSecret"),
     )
     print("")
@@ -306,6 +507,13 @@ def print_completion(
         "Admin console: "
         f"{identity.server_url}/admin/master/console/#/{identity.realm}"
     )
+    if identity.bootstrap_test_users_enabled:
+        print("")
+        print("[WARN] Temporary bootstrap test users remain enabled.")
+        print(
+            "[WARN] Once you enter production mode, remember to delete "
+            "those users."
+        )
     if summary.get("dockerSecretBindingVerified") is False:
         print(
             "Docker secret binding: present but not readable by Swarm. Use "
@@ -325,5 +533,6 @@ __all__ = [
     "print_target",
     "prompt_admin_user",
     "prompt_bootstrap_values",
+    "prompt_bootstrap_test_user_passwords",
     "prompt_secret_safe_debug",
 ]

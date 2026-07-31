@@ -18,7 +18,8 @@ Felix differs only through profile data:
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
 - Keycloak realm/client defaults `felix`, `felix-new-frontend`, and
-  `felix-new-backend`, with protected legacy identity and realm policy; and
+  `felix-new-backend`, with protected legacy identity, selectable realm
+  settings, application roles, and temporary test identities; and
 - exact Docker secret identifiers and file mounts.
 
 Felix recommends `storage.dataRoot: /swarm/prod/felix`. Pressing Enter at the
@@ -52,25 +53,43 @@ deployment. The app menu uses the public Admin API of that existing server; it
 never deploys another Keycloak instance and never depends on the local
 development `keycloak` repository.
 
-The shared bootstrap reads realm policy, callback templates, audience-mapper
-policy, forbidden default usernames, protected legacy identity, backend
-service-account roles, the fixed Keycloak server trust anchor, and the
-confidential-client Docker secret target from this JSON. Realm/display name,
-managed client IDs, audience, and active service roots use these profile values
-as defaults but may be changed in the guided bootstrap. Valid selections are
-persisted to the ignored root `.env` and rebuild the generated stack. It
-reconciles only the allowlisted `realmSettings` fields and preserves all other
-realm settings, unrelated clients, and social identity providers.
+The shared bootstrap reads callback templates, audience-mapper policy,
+application-role and temporary test-user declarations, forbidden default
+usernames, protected legacy identity, backend service-account roles, the fixed
+Keycloak server trust anchor, and the confidential-client Docker secret target
+from this JSON. Realm/display name, all six allowlisted realm booleans, managed
+client IDs, test-user lifecycle, audience, and active service roots use these
+profile values as defaults but may be changed in the guided bootstrap. Valid
+selections are persisted to the ignored root `.env` and rebuild the generated
+stack. It preserves all other realm settings, unrelated clients, and social
+identity providers.
 Every declared frontend callback is also admitted as a post-logout redirect,
 including the native `felixkc:/callback`, while browser origins additionally
 receive their Web wildcard.
 The separate legacy `felixappnew` realm and declared legacy client/origin
-remain protected. For Felix, the only declared
-backend grant is `realm-management/manage-users`; undeclared broader grants
-in either the service-account assignment or the backend client's dedicated
-scope, direct realm roles other than Keycloak's generated default role,
-roles on undeclared clients, and the default `test` user block automatic
-apply.
+remain protected. For Felix, the only declared backend grant is
+`realm-management/manage-users`; undeclared broader grants in either the
+service-account assignment or the backend client's dedicated scope, direct
+realm roles other than Keycloak's generated default role, roles on undeclared
+clients, and the unmanaged default `test` user block automatic apply.
+
+The profile declares the production-facing application roles `user`, `admin`,
+`manager`, and `service-provider`. The bootstrap creates or updates those roles
+and adds them to the restricted frontend client's realm-role scope. These role
+names are a forward-looking authorization contract; the current Felix API and
+Flutter clients must still add feature-level enforcement as booking behavior
+is implemented.
+
+The initial profile default also enables four temporary identities:
+`test-user`, `test-admin`, `test-manager`, and `test-service-provider`. Their
+role assignments and public metadata are tracked, but their passwords are not.
+For a missing user or password credential, the bootstrap prompts twice for a
+hidden password after showing the authenticated plan and sends it only to
+Keycloak. Every bootstrap
+summary repeats: **Once you enter production mode, remember to delete those
+users.** Turning the lifecycle switch off does not auto-delete identities; the
+plan blocks until all four are explicitly removed from Keycloak. The managed
+application roles remain after that cleanup.
 
 Administrator password and backend client secret are never printed, written
 to `.env`, put in command arguments, or saved to a repository file. The

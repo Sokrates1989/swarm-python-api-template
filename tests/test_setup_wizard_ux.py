@@ -140,6 +140,13 @@ class SetupWizardUxTests(unittest.TestCase):
         keys = (
             "KEYCLOAK_REALM",
             "KEYCLOAK_REALM_DISPLAY_NAME",
+            "KEYCLOAK_REALM_ENABLED",
+            "KEYCLOAK_REGISTRATION_ALLOWED",
+            "KEYCLOAK_RESET_PASSWORD_ALLOWED",
+            "KEYCLOAK_REMEMBER_ME",
+            "KEYCLOAK_VERIFY_EMAIL",
+            "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED",
+            "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
             "KEYCLOAK_AUDIENCE",
             "KEYCLOAK_FRONTEND_CLIENT_ID",
             "KEYCLOAK_BACKEND_CLIENT_ID",

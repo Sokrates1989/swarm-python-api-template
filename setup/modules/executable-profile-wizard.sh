@@ -43,6 +43,36 @@ _executable_profile_python() {
 }
 
 # ------------------------------------------------------------------------------
+# _append_keycloak_configuration_arguments
+# ------------------------------------------------------------------------------
+# Adds every editable public Keycloak field to the Python writer arguments.
+#
+# Arguments:
+#   $1 - Bash array variable name owned by the caller.
+#
+# Returns:
+#   0 after extending the array.
+# ------------------------------------------------------------------------------
+_append_keycloak_configuration_arguments() {
+    local -n target="$1"
+
+    target+=(--set "KEYCLOAK_BASE_URL=${KEYCLOAK_BASE_URL}")
+    target+=(--set "KEYCLOAK_ISSUER_URL=${KEYCLOAK_ISSUER_URL}")
+    target+=(--set "KEYCLOAK_REALM=${KEYCLOAK_REALM}")
+    target+=(--set "KEYCLOAK_REALM_DISPLAY_NAME=${KEYCLOAK_REALM_DISPLAY_NAME}")
+    target+=(--set "KEYCLOAK_REALM_ENABLED=${KEYCLOAK_REALM_ENABLED}")
+    target+=(--set "KEYCLOAK_REGISTRATION_ALLOWED=${KEYCLOAK_REGISTRATION_ALLOWED}")
+    target+=(--set "KEYCLOAK_RESET_PASSWORD_ALLOWED=${KEYCLOAK_RESET_PASSWORD_ALLOWED}")
+    target+=(--set "KEYCLOAK_REMEMBER_ME=${KEYCLOAK_REMEMBER_ME}")
+    target+=(--set "KEYCLOAK_VERIFY_EMAIL=${KEYCLOAK_VERIFY_EMAIL}")
+    target+=(--set "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED=${KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED}")
+    target+=(--set "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED=${KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED}")
+    target+=(--set "KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE}")
+    target+=(--set "KEYCLOAK_FRONTEND_CLIENT_ID=${KEYCLOAK_FRONTEND_CLIENT_ID}")
+    target+=(--set "KEYCLOAK_BACKEND_CLIENT_ID=${KEYCLOAK_BACKEND_CLIENT_ID}")
+}
+
+# ------------------------------------------------------------------------------
 # _profile_configuration_arguments
 # ------------------------------------------------------------------------------
 # Converts normalized shared-wizard globals into explicit Python CLI overrides.
@@ -62,13 +92,7 @@ _profile_configuration_arguments() {
     arguments+=(--set "WEB_BASE_URL=${WEB_BASE_URL}")
     arguments+=(--set "WEB_DOMAIN=${WEB_DOMAIN}")
     arguments+=(--set "CORS_ORIGINS=${CORS_ORIGINS}")
-    arguments+=(--set "KEYCLOAK_BASE_URL=${KEYCLOAK_BASE_URL}")
-    arguments+=(--set "KEYCLOAK_ISSUER_URL=${KEYCLOAK_ISSUER_URL}")
-    arguments+=(--set "KEYCLOAK_REALM=${KEYCLOAK_REALM}")
-    arguments+=(--set "KEYCLOAK_REALM_DISPLAY_NAME=${KEYCLOAK_REALM_DISPLAY_NAME}")
-    arguments+=(--set "KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE}")
-    arguments+=(--set "KEYCLOAK_FRONTEND_CLIENT_ID=${KEYCLOAK_FRONTEND_CLIENT_ID}")
-    arguments+=(--set "KEYCLOAK_BACKEND_CLIENT_ID=${KEYCLOAK_BACKEND_CLIENT_ID}")
+    _append_keycloak_configuration_arguments "$1"
     arguments+=(--set "DB_MODE=${DB_MODE}")
     arguments+=(--set "DB_HOST=${DB_HOST}")
     arguments+=(--set "DB_PORT=${DB_PORT}")

@@ -3,13 +3,15 @@ Module: keycloak_profile_verification.py
 
 Description:
     Builds a secret-free, read-only Keycloak reconciliation plan and verifies
-    the resulting realm, clients, audience mapper, service-account roles,
-    issuer, JWKS, and forbidden default-user policy. Success requires observed
-    state, not only successful mutation response codes.
+    the resulting realm, clients, audience mapper, application roles,
+    frontend role scope, temporary users, service-account roles, issuer, JWKS,
+    and forbidden default-user policy. Success requires observed state, not
+    only successful mutation response codes.
 
 Dependencies:
     - Python standard library.
-    - Keycloak profile client, reconciliation, and role modules.
+    - Keycloak profile client, reconciliation, application-access, scope, and
+      service-account role modules.
 """
 
 from __future__ import annotations
@@ -24,6 +26,13 @@ from keycloak_profile_client import (
     realm_path,
     resolve_client_uuid,
 )
+from keycloak_profile_application_access import (
+    bootstrap_test_user_blockers,
+    inspect_bootstrap_test_users,
+    inspect_realm_roles,
+    summarize_actions,
+    verify_application_access,
+)
 from keycloak_profile_reconciliation import (
     audience_mapper_payload,
     backend_payload,
@@ -31,6 +40,10 @@ from keycloak_profile_reconciliation import (
     owned_field_mismatches,
     owned_fields_match,
     realm_payload,
+)
+from keycloak_profile_realm_role_scope import (
+    inspect_frontend_realm_role_scope,
+    verify_frontend_realm_role_scope,
 )
 from keycloak_profile_roles import (
     KeycloakRoleError,
@@ -254,6 +267,7 @@ def _plan_blockers(
     realm_exists: bool,
     backend_action: str,
     unexpected_roles: tuple[str, ...],
+    test_user_actions: dict[str, str],
     docker_secret_present: bool,
     replace_secret: bool,
 ) -> list[str]:
@@ -264,6 +278,7 @@ def _plan_blockers(
         realm_exists: Whether the selected realm already exists.
         backend_action: Planned backend client action.
         unexpected_roles: Undeclared qualified service-account roles.
+        test_user_actions: Profile test-user live-state actions.
         docker_secret_present: Whether the declared Docker secret exists.
         replace_secret: Whether explicit rotation was requested.
 
@@ -280,6 +295,13 @@ def _plan_blockers(
         f"Remove undeclared service-account role explicitly: {role}"
         for role in unexpected_roles
     )
+    blockers.extend(bootstrap_test_user_blockers(test_user_actions))
+    realm_enabled = dict(client.identity.realm_settings)["enabled"]
+    if not realm_enabled and (replace_secret or not docker_secret_present):
+        blockers.append(
+            "Enable the realm for one bootstrap run before creating or "
+            "rotating the proven Docker client secret."
+        )
     if (
         backend_action == "create"
         and docker_secret_present
@@ -337,6 +359,92 @@ def _role_ready_uuid(
     return backend[0]
 
 
+def _application_access_plan(
+    client: KeycloakAdminClient,
+    *,
+    realm_exists: bool,
+    frontend_uuid: str | None,
+) -> tuple[dict[str, object], dict[str, str]]:
+    """Inspect application roles, frontend scope, and temporary users.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        realm_exists: Whether application access endpoints are available.
+        frontend_uuid: Existing public-client UUID, or ``None`` when missing.
+
+    Returns:
+        Sanitized plan fields and the detailed test-user action map used for
+        cleanup blockers.
+
+    Raises:
+        KeycloakApplicationAccessError: If live role or user data is malformed.
+    """
+
+    realm_roles = inspect_realm_roles(client, realm_exists=realm_exists)
+    test_users = inspect_bootstrap_test_users(
+        client,
+        realm_exists=realm_exists,
+    )
+    return (
+        {
+            "realmRoles": summarize_actions(realm_roles),
+            "realmRoleActions": realm_roles,
+            "frontendRealmRoleScope": inspect_frontend_realm_role_scope(
+                client,
+                frontend_uuid,
+            ),
+            "bootstrapTestUsers": summarize_actions(test_users),
+            "bootstrapTestUserActions": test_users,
+        },
+        test_users,
+    )
+
+
+def _managed_client_plan(
+    client: KeycloakAdminClient,
+    *,
+    realm_exists: bool,
+) -> tuple[dict[str, str], str | None, str, tuple[str, ...]]:
+    """Inspect both managed clients, mapper, and service-account roles.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        realm_exists: Whether client endpoints are currently available.
+
+    Returns:
+        Sanitized client plan fields, frontend UUID, backend action, and
+        undeclared service-account roles used for blockers.
+
+    Raises:
+        KeycloakProfileError: If client or mapper state is malformed.
+        KeycloakRoleError: If service-account roles cannot be inspected safely.
+    """
+
+    identity = client.identity
+    frontend, backend = _read_plan_clients(client, realm_exists)
+    frontend_uuid = None if frontend is None else frontend[0]
+    role_action, unexpected_roles = _role_plan(client, backend)
+    frontend_action = _component_action(
+        None if frontend is None else frontend[1],
+        frontend_payload(identity),
+    )
+    backend_action = _component_action(
+        None if backend is None else backend[1],
+        backend_payload(identity),
+    )
+    return (
+        {
+            "frontendClient": frontend_action,
+            "backendClient": backend_action,
+            "audienceMapper": _read_mapper_action(client, frontend_uuid),
+            "serviceAccountRoles": role_action,
+        },
+        frontend_uuid,
+        backend_action,
+        unexpected_roles,
+    )
+
+
 def build_reconciliation_plan(
     client: KeycloakAdminClient,
     *,
@@ -355,46 +463,42 @@ def build_reconciliation_plan(
 
     Raises:
         KeycloakProfileError: If live state is malformed.
+        KeycloakApplicationAccessError: If application role or user state is
+            malformed.
         KeycloakRoleError: If role state cannot be inspected safely.
     """
 
     identity = client.identity
     current_realm = _read_realm(client)
+    realm_exists = current_realm is not None
     realm_action = _component_action(
         current_realm,
         realm_payload(identity),
     )
-    frontend, backend = _read_plan_clients(
+    client_plan, frontend_uuid, backend_action, unexpected_roles = (
+        _managed_client_plan(
+            client,
+            realm_exists=realm_exists,
+        )
+    )
+    application_plan, test_user_actions = _application_access_plan(
         client,
-        current_realm is not None,
-    )
-    frontend_uuid = None if frontend is None else frontend[0]
-    role_action, unexpected_roles = _role_plan(
-        client,
-        backend,
-    )
-    frontend_action = _component_action(
-        None if frontend is None else frontend[1],
-        frontend_payload(identity),
-    )
-    backend_action = _component_action(
-        None if backend is None else backend[1],
-        backend_payload(identity),
+        realm_exists=realm_exists,
+        frontend_uuid=frontend_uuid,
     )
     blockers = _plan_blockers(
         client,
-        realm_exists=current_realm is not None,
+        realm_exists=realm_exists,
         backend_action=backend_action,
         unexpected_roles=unexpected_roles,
+        test_user_actions=test_user_actions,
         docker_secret_present=docker_secret_present,
         replace_secret=replace_secret,
     )
     return {
         "realm": realm_action,
-        "frontendClient": frontend_action,
-        "backendClient": backend_action,
-        "audienceMapper": _read_mapper_action(client, frontend_uuid),
-        "serviceAccountRoles": role_action,
+        **client_plan,
+        **application_plan,
         "dockerSecret": _secret_plan_action(
             docker_secret_present,
             replace_secret,
@@ -530,6 +634,19 @@ def _verify_public_metadata(client: KeycloakAdminClient) -> None:
         )
 
 
+def _realm_is_enabled(identity: KeycloakIdentity) -> bool:
+    """Return the selected realm-enabled setting.
+
+    Args:
+        identity: Active profile-derived Keycloak identity.
+
+    Returns:
+        Whether public OIDC metadata and token issuance should be available.
+    """
+
+    return dict(identity.realm_settings)["enabled"]
+
+
 def verify_reconciled_state(
     client: KeycloakAdminClient,
 ) -> dict[str, bool]:
@@ -549,7 +666,9 @@ def verify_reconciled_state(
 
     frontend, backend = _verify_realm_and_clients(client)
     _verify_mapper(client, frontend[0])
+    verify_frontend_realm_role_scope(client, frontend[0])
     verify_service_account_roles(client, backend[0])
+    verify_application_access(client)
     forbidden = find_forbidden_users(client)
     if forbidden:
         raise KeycloakProfileError(
@@ -557,16 +676,21 @@ def verify_reconciled_state(
             + ", ".join(forbidden)
             + "."
         )
-    _verify_public_metadata(client)
+    realm_enabled = _realm_is_enabled(client.identity)
+    if realm_enabled:
+        _verify_public_metadata(client)
     return {
         "realmSettings": True,
         "frontendPkceClient": True,
         "backendServiceClient": True,
         "audienceMapper": True,
         "serviceAccountRoles": True,
+        "applicationRealmRoles": True,
+        "bootstrapTestUsers": True,
         "noForbiddenDefaultUsers": True,
-        "issuer": True,
-        "jwks": True,
+        "issuer": realm_enabled,
+        "jwks": realm_enabled,
+        "realmDisabledByOperator": not realm_enabled,
     }
 
 

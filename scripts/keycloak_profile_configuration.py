@@ -22,7 +22,10 @@ from urllib.parse import urlparse
 
 from executable_profile import ExecutableProfile, load_executable_profile
 from executable_profile_environment import write_deployment_env
-from executable_profile_support import ExecutableProfileError
+from executable_profile_support import (
+    KEYCLOAK_REALM_SETTING_ENV_KEYS,
+    ExecutableProfileError,
+)
 from executable_stack_renderer import (
     compose_check,
     render_stack,
@@ -43,6 +46,8 @@ class KeycloakBootstrapValues:
         server_url: Tracked Keycloak credential trust anchor.
         realm: Operator-selected realm name.
         realm_display_name: Operator-selected human-readable realm name.
+        realm_settings: Operator-selected realm boolean settings.
+        bootstrap_test_users_enabled: Whether profile test users should exist.
         frontend_client_id: Operator-selected public PKCE client ID.
         backend_client_id: Operator-selected confidential service client ID.
         frontend_root_url: Operator-selected WebApp origin.
@@ -53,6 +58,8 @@ class KeycloakBootstrapValues:
     server_url: str
     realm: str
     realm_display_name: str
+    realm_settings: tuple[tuple[str, bool], ...]
+    bootstrap_test_users_enabled: bool
     frontend_client_id: str
     backend_client_id: str
     frontend_root_url: str
@@ -77,6 +84,10 @@ class KeycloakBootstrapValues:
             server_url=identity.server_url,
             realm=identity.realm,
             realm_display_name=identity.realm_display_name,
+            realm_settings=identity.realm_settings,
+            bootstrap_test_users_enabled=(
+                identity.bootstrap_test_users_enabled
+            ),
             frontend_client_id=identity.frontend_client_id,
             backend_client_id=identity.backend_client_id,
             frontend_root_url=identity.frontend_root_url,
@@ -164,10 +175,13 @@ def deployment_updates(
     frontend_root = values.frontend_root_url.rstrip("/")
     api_root = values.api_root_url.rstrip("/")
     realm = values.realm.strip()
-    return {
+    updates = {
         "KEYCLOAK_ISSUER_URL": f"{server_url}/realms/{realm}",
         "KEYCLOAK_REALM": realm,
         "KEYCLOAK_REALM_DISPLAY_NAME": values.realm_display_name.strip(),
+        "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED": str(
+            values.bootstrap_test_users_enabled
+        ).lower(),
         "KEYCLOAK_AUDIENCE": values.audience.strip(),
         "KEYCLOAK_FRONTEND_CLIENT_ID": values.frontend_client_id.strip(),
         "KEYCLOAK_BACKEND_CLIENT_ID": values.backend_client_id.strip(),
@@ -177,6 +191,12 @@ def deployment_updates(
         "API_BASE_URL": api_root,
         "DOMAIN": _url_hostname(api_root, "Backend API client root URL"),
     }
+    selected_settings = dict(values.realm_settings)
+    for setting_name, environment_key in KEYCLOAK_REALM_SETTING_ENV_KEYS:
+        updates[environment_key] = str(
+            selected_settings[setting_name]
+        ).lower()
+    return updates
 
 
 def _compose_check_content(root: Path, content: str) -> None:
