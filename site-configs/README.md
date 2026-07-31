@@ -13,6 +13,12 @@ repository-relative Compose assets for a specialized topology; the profile
 remains the only dispatch boundary and shared scripts must not hard-code the
 asset or application name.
 
+For every public profile declaring `services.web: true`, the shared wizard
+asks for the WebApp domain before the API domain. A persisted or profile
+`routing.domain` remains the API default. If neither provides one, the wizard
+derives `api.<entered-web-domain>` after collecting the WebApp answer. Public
+API-only profiles continue to ask directly for their API domain.
+
 ## Version map
 
 The repository currently accepts these profile-format versions:

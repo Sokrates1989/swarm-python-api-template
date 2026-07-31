@@ -140,6 +140,49 @@ show_selected_deployment_profile() {
 }
 
 # ------------------------------------------------------------------------------
+# _collect_public_domains
+# ------------------------------------------------------------------------------
+# Collects WebApp and API public identities in their dependency order. A
+# persisted or profile-declared API domain remains authoritative. When no API
+# default exists for a WebApp stack, the entered WebApp domain supplies the
+# conventional `api.<web-domain>` default.
+#
+# Returns:
+#   0 after setting public API and optional WebApp domains and base URLs.
+# ------------------------------------------------------------------------------
+_collect_public_domains() {
+    local default_domain=""
+    local default_web_domain=""
+
+    WEB_DOMAIN=""
+    WEB_BASE_URL=""
+    if [ "${APP_REQUIRES_WEB:-false}" = "true" ]; then
+        default_web_domain="$(_deployment_existing_value \
+            WEB_DOMAIN \
+            "${APP_ROUTING_WEB_DOMAIN:-}")"
+        prompt_deployment_value \
+            WEB_DOMAIN \
+            "WebApp domain (e.g. app.example.com)" \
+            "$default_web_domain" \
+            "domain"
+        WEB_BASE_URL="https://${WEB_DOMAIN}"
+    fi
+
+    default_domain="$(_deployment_existing_value \
+        DOMAIN \
+        "${APP_ROUTING_DOMAIN:-}")"
+    if [ -z "$default_domain" ] && [ -n "$WEB_DOMAIN" ]; then
+        default_domain="api.${WEB_DOMAIN}"
+    fi
+    prompt_deployment_value \
+        DOMAIN \
+        "API domain (e.g. api.example.com)" \
+        "$default_domain" \
+        "domain"
+    API_BASE_URL="https://${DOMAIN}"
+}
+
+# ------------------------------------------------------------------------------
 # _collect_stack_and_domains
 # ------------------------------------------------------------------------------
 # Collects deployment stack and applicable public/internal routing identity.
@@ -148,8 +191,6 @@ show_selected_deployment_profile() {
 #   0 after setting stack, API/Web routing, and optional internal network.
 # ------------------------------------------------------------------------------
 _collect_stack_and_domains() {
-    local default_domain=""
-    local default_web_domain=""
     local default_internal_network=""
 
     prompt_deployment_value \
@@ -183,29 +224,7 @@ _collect_stack_and_domains() {
         return 0
     fi
 
-    default_domain="$(_deployment_existing_value \
-        DOMAIN \
-        "${APP_ROUTING_DOMAIN:-}")"
-    prompt_deployment_value \
-        DOMAIN \
-        "API domain (e.g. api.example.com)" \
-        "$default_domain" \
-        "domain"
-    API_BASE_URL="https://${DOMAIN}"
-
-    WEB_DOMAIN=""
-    WEB_BASE_URL=""
-    if [ "${APP_REQUIRES_WEB:-false}" = "true" ]; then
-        default_web_domain="$(_deployment_existing_value \
-            WEB_DOMAIN \
-            "${APP_ROUTING_WEB_DOMAIN:-}")"
-        prompt_deployment_value \
-            WEB_DOMAIN \
-            "WebApp domain (e.g. app.example.com)" \
-            "$default_web_domain" \
-            "domain"
-        WEB_BASE_URL="https://${WEB_DOMAIN}"
-    fi
+    _collect_public_domains
 }
 
 # ------------------------------------------------------------------------------

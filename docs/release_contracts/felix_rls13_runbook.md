@@ -86,7 +86,7 @@ If no root `.env` exists:
 
 1. choose **Run setup wizard**;
 2. select **Felix Backend and WebApp**;
-3. confirm or change the stack name plus API and WebApp domains;
+3. confirm or change the stack name, WebApp domain, and then API domain;
 4. choose local or external PostgreSQL through the numbered database menu;
 5. choose Traefik or direct published ports and the correct TLS ownership;
 6. choose the real Traefik overlay network from the discovered numbered list;

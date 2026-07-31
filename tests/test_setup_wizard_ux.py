@@ -214,6 +214,86 @@ class SetupWizardUxTests(unittest.TestCase):
         self.assertIn("pgAdmin domain", services)
         self.assertIn("Mongo Express domain", services)
 
+    def test_web_domain_precedes_and_can_default_api_domain(self) -> None:
+        """Collect a WebApp identity before its conventionally derived API.
+
+        Explicit persisted or profile API defaults remain authoritative; the
+        derivation is used only when both sources are empty.
+
+        Returns:
+            Nothing.
+        """
+
+        inputs = INPUTS_MODULE.read_text(encoding="utf-8")
+        public_collector = inputs[
+            inputs.index("_collect_public_domains()") : inputs.index(
+                "# _collect_stack_and_domains"
+            )
+        ]
+
+        self.assertLess(
+            public_collector.index("WebApp domain"),
+            public_collector.index("API domain"),
+        )
+        self.assertIn(
+            '[ -z "$default_domain" ] && [ -n "$WEB_DOMAIN" ]',
+            public_collector,
+        )
+        self.assertIn(
+            'default_domain="api.${WEB_DOMAIN}"',
+            public_collector,
+        )
+
+    @unittest.skipIf(
+        sys.platform.startswith("win") or shutil.which("bash") is None,
+        "Native Bash domain-default smoke test runs on Linux hosts.",
+    )
+    def test_web_answer_drives_missing_api_default(self) -> None:
+        """Derive the API prompt default from the entered WebApp domain.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {shlex_quote(PROMPTS_MODULE)}
+source {shlex_quote(INPUTS_MODULE)}
+PROJECT_ROOT=/tmp/nonexistent-deployment-profile-test
+APP_REQUIRES_WEB=true
+APP_ROUTING_WEB_DOMAIN=
+APP_ROUTING_DOMAIN=
+declare -a calls=()
+prompt_deployment_value() {{
+    local target_name="$1"
+    local default_value="$3"
+    calls+=("${{target_name}}:${{default_value}}")
+    if [ "$target_name" = "WEB_DOMAIN" ]; then
+        printf -v "$target_name" '%s' 'felix-app.fe-wi.com'
+    else
+        printf -v "$target_name" '%s' "$default_value"
+    fi
+}}
+_collect_public_domains
+printf 'CALLS=%s\n' "$(IFS=,; echo "${{calls[*]}}")"
+printf 'DOMAINS=%s|%s\n' "$WEB_DOMAIN" "$DOMAIN"
+"""
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "CALLS=WEB_DOMAIN:,DOMAIN:api.felix-app.fe-wi.com",
+            completed.stdout,
+        )
+        self.assertIn(
+            "DOMAINS=felix-app.fe-wi.com|api.felix-app.fe-wi.com",
+            completed.stdout,
+        )
+
     def test_data_root_uses_profile_or_checkout_default(self) -> None:
         """Use an optional profile default and retain an explicit choice.
 
