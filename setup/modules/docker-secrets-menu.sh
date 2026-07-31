@@ -533,6 +533,7 @@ _manage_profile_docker_secrets() {
     local keycloak_rotation_choice=""
     local list_choice=""
     local max_choice=""
+    local keycloak_status=0
 
     if declare -F profile_supports_keycloak_bootstrap >/dev/null 2>&1 &&
         profile_supports_keycloak_bootstrap; then
@@ -567,7 +568,7 @@ _manage_profile_docker_secrets() {
         echo "  0) Back"
         read -r -p "Secret choice (0-${max_choice}): " choice
         if [ "$choice" = "0" ]; then
-            return 0
+            return "$keycloak_status"
         elif [ "$choice" = "1" ]; then
             _create_selected_profile_secret required || true
         elif [ "$choice" = "2" ]; then
@@ -578,10 +579,20 @@ _manage_profile_docker_secrets() {
                 "${PROJECT_ROOT}/secrets.env" || true
         elif [ -n "$keycloak_bootstrap_choice" ] &&
             [ "$choice" = "$keycloak_bootstrap_choice" ]; then
-            run_profile_keycloak_bootstrap || true
+            if run_profile_keycloak_bootstrap; then
+                keycloak_status=0
+            else
+                keycloak_status=$?
+                echo "[ERROR] Keycloak bootstrap did not complete."
+            fi
         elif [ -n "$keycloak_rotation_choice" ] &&
             [ "$choice" = "$keycloak_rotation_choice" ]; then
-            run_profile_keycloak_secret_rotation || true
+            if run_profile_keycloak_secret_rotation; then
+                keycloak_status=0
+            else
+                keycloak_status=$?
+                echo "[ERROR] Keycloak secret rotation did not complete."
+            fi
         elif [ "$choice" = "$list_choice" ]; then
             list_docker_secrets
         else

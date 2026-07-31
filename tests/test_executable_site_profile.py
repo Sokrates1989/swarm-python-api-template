@@ -424,8 +424,97 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             frontend["attributes"]["pkce.code.challenge.method"],
             "S256",
         )
+        self.assertEqual(
+            frontend["attributes"]["post.logout.redirect.uris"],
+            (
+                "https://felix-app.fe-wi.com/auth/callback"
+                "##felixkc:/callback"
+                "##https://felix-app.fe-wi.com/*"
+            ),
+        )
         self.assertIs(backend["publicClient"], False)
         self.assertIs(backend["serviceAccountsEnabled"], True)
+
+    def test_keycloak_bootstrap_policy_is_normalized_from_profile(self) -> None:
+        """Normalize realm, mapper, and forbidden-user policy as typed data.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = self._configure("felix", self.felix_config)
+        identity = load_keycloak_identity(profile)
+
+        self.assertEqual(identity.realm_display_name, "Felix")
+        self.assertEqual(
+            dict(identity.realm_settings),
+            self.felix_config["auth"]["realmSettings"],
+        )
+        self.assertEqual(
+            identity.audience_mapper_name,
+            "backend-audience",
+        )
+        self.assertEqual(
+            identity.forbidden_default_usernames,
+            ("test",),
+        )
+
+    def test_keycloak_bootstrap_policy_rejects_invalid_schema_values(
+        self,
+    ) -> None:
+        """Reject unsupported realm, mapper, and forbidden-user policy data.
+
+        Returns:
+            Nothing.
+        """
+
+        invalid_settings = copy.deepcopy(self.felix_config)
+        invalid_settings["auth"]["realmSettings"]["unsupported"] = True
+        invalid_mapper = copy.deepcopy(self.felix_config)
+        invalid_mapper["auth"]["audienceMapperName"] = "not safe"
+        invalid_users = copy.deepcopy(self.felix_config)
+        invalid_users["auth"]["forbiddenDefaultUsernames"] = [
+            "test",
+            "test",
+        ]
+        disabled_realm = copy.deepcopy(self.felix_config)
+        disabled_realm["auth"]["realmSettings"]["enabled"] = False
+        missing_roles = copy.deepcopy(self.felix_config)
+        del missing_roles["auth"]["serviceAccountClientRoles"]
+        shared_client = copy.deepcopy(self.felix_config)
+        shared_client["auth"]["adminClientId"] = shared_client["auth"][
+            "frontendClientId"
+        ]
+        reserved_client = copy.deepcopy(self.felix_config)
+        reserved_client["auth"]["adminClientId"] = "realm-management"
+        master_realm = copy.deepcopy(self.felix_config)
+        master_realm["auth"]["realm"] = "master"
+        master_realm["auth"]["issuerUrl"] = (
+            "https://keycloak.fe-wi.com/realms/master"
+        )
+        master_realm["auth"]["jwksUrl"] = (
+            "https://keycloak.fe-wi.com/realms/master/"
+            "protocol/openid-connect/certs"
+        )
+        cases = (
+            (invalid_settings, "realmSettings contains unsupported fields"),
+            (invalid_mapper, "audienceMapperName is unsafe"),
+            (invalid_users, "forbiddenDefaultUsernames must be unique"),
+            (disabled_realm, "realmSettings.enabled must be true"),
+            (missing_roles, "missing required keys: serviceAccountClientRoles"),
+            (shared_client, "frontendClientId and auth.adminClientId must differ"),
+            (reserved_client, "must not use built-in clients"),
+            (master_realm, "must not target Keycloak's master realm"),
+        )
+
+        for invalid, message in cases:
+            with self.subTest(expected=message):
+                self._write_config("felix", invalid)
+                with self.assertRaisesRegex(
+                    ExecutableProfileError,
+                    message,
+                ):
+                    load_config_defaults(self.root, "felix")
 
     def test_operator_deployment_defaults_can_be_overridden(self) -> None:
         """Allow validated stack, routing, image, and resource choices.

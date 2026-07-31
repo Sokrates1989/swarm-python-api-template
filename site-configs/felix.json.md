@@ -45,21 +45,41 @@ deployment. The app menu uses the public Admin API of that existing server; it
 never deploys another Keycloak instance and never depends on the local
 development `keycloak` repository.
 
-The shared bootstrap reads realm, clients, callbacks, origins, audience,
-protected legacy identity, backend service-account client roles, and the
-confidential-client Docker secret target from this JSON. It preserves
-unrelated realm settings and social identity providers. Stack identity is
-independent from authentication identity: the stack is `felix`, while the
-candidate realm and clients retain the isolated `felix-new` names required by
-the published application images. The legacy `felix` realm remains protected.
-For Felix, the only declared backend grant is
-`realm-management/manage-users`; undeclared broader grants fail closed.
+The shared bootstrap reads realm-owned settings, clients, callbacks, origins,
+audience mapper, forbidden default usernames, protected legacy identity,
+backend service-account client roles, and the confidential-client Docker
+secret target from this JSON. It reconciles only the allowlisted
+`realmSettings` fields and preserves all other realm settings and social
+identity providers. Stack identity is independent from authentication
+identity: the stack is `felix`, while the candidate realm and clients retain
+the isolated `felix-new` names required by the published application images.
+Every declared frontend callback is also admitted as a post-logout redirect,
+including the native `felixkc:/callback`, while browser origins additionally
+receive their Web wildcard.
+The legacy `felix` realm remains protected. For Felix, the only declared
+backend grant is `realm-management/manage-users`; undeclared broader grants
+in either the service-account assignment or the backend client's dedicated
+scope, direct realm roles other than Keycloak's generated default role,
+roles on undeclared clients, and the default `test` user block automatic
+apply.
 
 Administrator password and backend client secret are never printed, written
-to `.env`, put in command arguments, or saved to a repository file. Existing
-Docker secret state is kept without retrieving client-secret material.
-Explicit rotation first regenerates the Keycloak credential and then replaces
-the profile-declared Docker secret while the app stack is stopped.
+to `.env`, put in command arguments, or saved to a repository file. The
+bootstrap first shows a sanitized live-state plan. After apply, it reads all
+owned state back and verifies the public issuer and JWKS. When the Docker
+secret is missing, the real current Keycloak credential is fetched, proven
+through the client-credentials token endpoint and a read-only realm-user
+Admin API request, and streamed unchanged from memory to
+`docker secret create`.
+
+An existing Docker secret cannot be read back by Docker Swarm, so it is
+reported as `present-unverified` rather than falsely described as synchronized.
+Explicit rotation first regenerates and proves the Keycloak credential and
+then replaces the profile-declared Docker secret while the app stack is
+stopped. Because Docker secrets are immutable, replacement first creates a
+temporary recovery secret containing the same proven value. It removes that
+recovery object only after the fixed-name target is recreated; failures report
+the recovery object name without exposing its value.
 
 Required and optional secret names are identifiers only. Runtime values are
 mounted through their declared `*_FILE` fields.

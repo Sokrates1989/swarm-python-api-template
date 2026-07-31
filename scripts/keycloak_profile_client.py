@@ -3,8 +3,9 @@ Module: keycloak_profile_client.py
 
 Description:
     Defines the profile-derived Keycloak identity and a small standard-library
-    Admin REST client. It normalizes only public site-config values and keeps
-    administrator credentials and bearer tokens in process memory.
+    Admin/OIDC client. It normalizes only public site-config values and keeps
+    administrator credentials, client credentials, and bearer tokens in
+    process memory.
 
 Dependencies:
     - Python standard library.
@@ -28,18 +29,78 @@ class KeycloakProfileError(RuntimeError):
     """Report a safe, operator-facing Keycloak reconciliation failure."""
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects so credentials never leave the declared Keycloak URL."""
+
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        file_pointer: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        new_url: str,
+    ) -> None:
+        """Decline every redirect.
+
+        Args:
+            request: Original urllib request.
+            file_pointer: Response stream supplied by urllib.
+            code: HTTP redirect status.
+            message: HTTP status text.
+            headers: Redirect response headers.
+            new_url: Proposed redirect target.
+
+        Returns:
+            Always ``None``, which makes urllib surface the redirect status.
+        """
+
+        return None
+
+
+def _read_http(
+    request: urllib.request.Request,
+) -> tuple[int, bytes]:
+    """Send one request without redirects and return status plus raw body.
+
+    Args:
+        request: Prepared urllib request.
+
+    Returns:
+        HTTP status and response bytes, including HTTP error responses.
+
+    Raises:
+        KeycloakProfileError: If Keycloak cannot be reached.
+    """
+
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    try:
+        with opener.open(request, timeout=30) as response:
+            return int(response.status), response.read()
+    except urllib.error.HTTPError as error:
+        return int(error.code), error.read()
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise KeycloakProfileError("Unable to reach Keycloak.") from error
+
+
 @dataclass(frozen=True)
 class KeycloakIdentity:
     """Normalized public Keycloak identity declared by one site profile.
 
     Attributes:
         server_url: Public Keycloak base URL.
+        issuer_url: Exact public issuer URL for the selected realm.
+        jwks_url: Exact public JSON Web Key Set URL.
         realm: Realm name.
+        realm_display_name: Human-readable realm name.
+        realm_settings: Exact profile-owned realm boolean settings.
         frontend_client_id: Public PKCE client identifier.
         backend_client_id: Confidential service client identifier.
         audience: Audience added to frontend access tokens.
+        audience_mapper_name: Exact frontend audience-mapper name.
         redirect_uris: Exact mobile and WebApp callback allowlist.
         web_origins: Exact browser origin allowlist.
+        forbidden_default_usernames: Usernames that block automatic apply.
         frontend_root_url: Public WebApp root URL.
         api_root_url: Public backend root URL.
         docker_secret: Docker secret receiving the backend client secret.
@@ -48,12 +109,18 @@ class KeycloakIdentity:
     """
 
     server_url: str
+    issuer_url: str
+    jwks_url: str
     realm: str
+    realm_display_name: str
+    realm_settings: tuple[tuple[str, bool], ...]
     frontend_client_id: str
     backend_client_id: str
     audience: str
+    audience_mapper_name: str
     redirect_uris: tuple[str, ...]
     web_origins: tuple[str, ...]
+    forbidden_default_usernames: tuple[str, ...]
     frontend_root_url: str
     api_root_url: str
     docker_secret: str
@@ -169,17 +236,7 @@ class KeycloakAdminClient:
             method=method,
             headers=headers,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                status = int(response.status)
-                raw = response.read()
-        except urllib.error.HTTPError as error:
-            status = int(error.code)
-            raw = error.read()
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise KeycloakProfileError(
-                f"Unable to reach Keycloak while requesting {path}."
-            ) from error
+        status, raw = _read_http(request)
         if status not in expected:
             raise KeycloakProfileError(
                 f"Keycloak request {method} {path} returned HTTP {status}."
@@ -192,6 +249,145 @@ class KeycloakAdminClient:
             raise KeycloakProfileError(
                 f"Keycloak request {method} {path} returned invalid JSON."
             ) from error
+
+    def public_json(self, url: str) -> dict[str, Any]:
+        """Fetch one public Keycloak JSON document without admin credentials.
+
+        Args:
+            url: Exact profile-declared HTTPS URL.
+
+        Returns:
+            Decoded JSON object.
+
+        Raises:
+            KeycloakProfileError: If the URL leaves the configured Keycloak
+                origin or the response is unavailable or malformed.
+        """
+
+        server = urllib.parse.urlparse(self.identity.server_url)
+        target = urllib.parse.urlparse(url)
+        if (
+            target.scheme != server.scheme
+            or target.netloc != server.netloc
+            or target.username
+            or target.password
+        ):
+            raise KeycloakProfileError(
+                "Public Keycloak verification URL left the declared server."
+            )
+        request = urllib.request.Request(
+            url,
+            method="GET",
+            headers={"Accept": "application/json"},
+        )
+        return self._send(request, "read public Keycloak metadata")
+
+    def prove_client_credentials(
+        self,
+        client_id: str,
+        client_secret: str,
+    ) -> None:
+        """Prove a confidential secret and declared user-read authority.
+
+        Args:
+            client_id: Exact confidential backend client ID.
+            client_secret: Secret retained only in process memory.
+
+        Returns:
+            Nothing after Keycloak returns a token and, when the profile
+            declares a compatible realm-management role, that token can read
+            the selected realm's user administration endpoint.
+
+        Raises:
+            KeycloakProfileError: If Keycloak rejects the credential or omits
+                an access token, or if a declared user-read role does not
+                authorize the expected endpoint.
+        """
+
+        body = urllib.parse.urlencode(
+            {
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.identity.issuer_url}/protocol/openid-connect/token",
+            data=body,
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        payload = self._send(
+            request,
+            "validate the backend client credential",
+        )
+        access_token = payload.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise KeycloakProfileError(
+                "Keycloak client-credentials proof returned no access token."
+            )
+        if self._requires_user_access_proof():
+            self._prove_user_admin_access(access_token)
+
+    def _requires_user_access_proof(self) -> bool:
+        """Check whether declared roles should authorize a realm-user read.
+
+        Returns:
+            Whether the profile declares a built-in realm-management role
+            that grants user listing.
+        """
+
+        user_read_roles = {
+            "manage-users",
+            "view-users",
+            "query-users",
+        }
+        return any(
+            client_id == "realm-management"
+            and bool(set(roles) & user_read_roles)
+            for client_id, roles in self.identity.service_account_client_roles
+        )
+
+    def _prove_user_admin_access(self, access_token: str) -> None:
+        """Require the service token to access the realm user endpoint.
+
+        Args:
+            access_token: Client-credentials token kept only in memory.
+
+        Returns:
+            Nothing after Keycloak returns a valid user list.
+
+        Raises:
+            KeycloakProfileError: If the token lacks the declared backend
+                user-administration authority or the response is malformed.
+        """
+
+        realm = urllib.parse.quote(self.identity.realm, safe="")
+        query = urllib.parse.urlencode({"max": "1"})
+        request = urllib.request.Request(
+            f"{self.identity.server_url}/admin/realms/{realm}/users?{query}",
+            method="GET",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+        )
+        status, raw = _read_http(request)
+        if status != 200:
+            raise KeycloakProfileError(
+                "The backend client credential was accepted, but its token "
+                f"could not access realm users (HTTP {status})."
+            )
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise KeycloakProfileError(
+                "Keycloak returned invalid user-access proof data."
+            ) from error
+        if not isinstance(payload, list):
+            raise KeycloakProfileError(
+                "Keycloak returned unexpected user-access proof data."
+            )
 
     @staticmethod
     def _send(
@@ -211,15 +407,11 @@ class KeycloakAdminClient:
             KeycloakProfileError: If transport, status, or parsing fails.
         """
 
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                raw = response.read()
-        except urllib.error.HTTPError as error:
+        status, raw = _read_http(request)
+        if status != 200:
             raise KeycloakProfileError(
-                f"Keycloak refused to {action} (HTTP {error.code})."
-            ) from error
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise KeycloakProfileError(f"Unable to {action}.") from error
+                f"Keycloak refused to {action} (HTTP {status})."
+            )
         try:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -263,6 +455,120 @@ def _backend_secret_name(profile: ExecutableProfile) -> str:
     return matches[0]
 
 
+def _frontend_roots(
+    profile: ExecutableProfile,
+    raw: dict[str, Any],
+) -> tuple[str, str]:
+    """Resolve configured and active WebApp roots.
+
+    Args:
+        profile: Validated executable profile.
+        raw: Keycloak authentication mapping.
+
+    Returns:
+        Tracked configured root and active deployment root without trailing
+        slashes.
+
+    Raises:
+        KeycloakProfileError: If neither deployment nor origin declares a
+            usable WebApp root.
+    """
+
+    frontend_root = profile.deployment.get("WEB_BASE_URL", "")
+    if not frontend_root:
+        origins = raw.get("webOrigins", [])
+        if not isinstance(origins, list) or not origins:
+            raise KeycloakProfileError(
+                "The Keycloak profile requires WEB_BASE_URL or a web origin."
+            )
+        frontend_root = str(origins[0])
+    routing = mapping(profile.data.get("routing", {}), "routing")
+    configured = str(routing.get("webBaseUrl", "")).rstrip("/")
+    return configured, frontend_root.rstrip("/")
+
+
+def _active_redirect_uris(
+    raw: dict[str, Any],
+    configured_root: str,
+    deployment_root: str,
+) -> tuple[str, ...]:
+    """Map tracked WebApp callbacks to the active deployment root.
+
+    Args:
+        raw: Keycloak authentication mapping.
+        configured_root: Tracked default WebApp root.
+        deployment_root: Operator-selected active WebApp root.
+
+    Returns:
+        Exact active callback tuple, preserving custom-scheme callbacks.
+    """
+
+    return tuple(
+        (
+            f"{deployment_root}{str(value)[len(configured_root):]}"
+            if configured_root
+            and str(value).startswith(f"{configured_root}/")
+            else str(value)
+        )
+        for value in raw["redirectUris"]
+    )
+
+
+def _active_web_origins(
+    raw: dict[str, Any],
+    configured_root: str,
+    deployment_root: str,
+) -> tuple[str, ...]:
+    """Map the tracked WebApp origin to the active deployment origin.
+
+    Args:
+        raw: Keycloak authentication mapping.
+        configured_root: Tracked default WebApp root.
+        deployment_root: Operator-selected active WebApp root.
+
+    Returns:
+        Exact active browser-origin tuple.
+    """
+
+    return tuple(
+        (
+            deployment_root
+            if str(value).rstrip("/") == configured_root
+            else str(value)
+        )
+        for value in raw["webOrigins"]
+    )
+
+
+def _service_account_roles(
+    raw: dict[str, Any],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Normalize exact service-account client-role groups.
+
+    Args:
+        raw: Keycloak authentication mapping.
+
+    Returns:
+        Immutable role groups in profile order.
+
+    Raises:
+        KeycloakProfileError: If role groups are not a JSON object.
+    """
+
+    role_groups = raw.get("serviceAccountClientRoles")
+    if not isinstance(role_groups, dict):
+        raise KeycloakProfileError(
+            "Keycloak service-account roles must be a client-role mapping."
+        )
+    return tuple(
+        (
+            str(client_id),
+            tuple(str(role) for role in roles),
+        )
+        for client_id, roles in role_groups.items()
+    )
+
+
 def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
     """Normalize all realm/client values from the active site profile.
 
@@ -282,57 +588,40 @@ def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
         raise KeycloakProfileError(
             "The selected site profile does not declare auth.provider=keycloak."
         )
-    frontend_root = profile.deployment.get("WEB_BASE_URL", "")
-    if not frontend_root:
-        origins = raw.get("webOrigins", [])
-        if not isinstance(origins, list) or not origins:
-            raise KeycloakProfileError(
-                "The Keycloak profile requires WEB_BASE_URL or a web origin."
-            )
-        frontend_root = str(origins[0])
-    role_groups = raw.get("serviceAccountClientRoles", {})
-    if not isinstance(role_groups, dict):
-        raise KeycloakProfileError(
-            "Keycloak service-account roles must be a client-role mapping."
-        )
-    routing = mapping(profile.data.get("routing", {}), "routing")
-    configured_web_root = str(routing.get("webBaseUrl", "")).rstrip("/")
-    deployment_web_root = frontend_root.rstrip("/")
-    redirect_uris = tuple(
-        (
-            f"{deployment_web_root}{str(value)[len(configured_web_root):]}"
-            if configured_web_root
-            and str(value).startswith(f"{configured_web_root}/")
-            else str(value)
-        )
-        for value in raw["redirectUris"]
+    configured_web_root, deployment_web_root = _frontend_roots(profile, raw)
+    redirect_uris = _active_redirect_uris(
+        raw,
+        configured_web_root,
+        deployment_web_root,
     )
-    web_origins = tuple(
-        (
-            deployment_web_root
-            if str(value).rstrip("/") == configured_web_root
-            else str(value)
-        )
-        for value in raw["webOrigins"]
+    web_origins = _active_web_origins(
+        raw,
+        configured_web_root,
+        deployment_web_root,
     )
     return KeycloakIdentity(
         server_url=str(raw["serverUrl"]).rstrip("/"),
+        issuer_url=str(raw["issuerUrl"]).rstrip("/"),
+        jwks_url=str(raw["jwksUrl"]).rstrip("/"),
         realm=str(raw["realm"]),
+        realm_display_name=str(raw["realmDisplayName"]),
+        realm_settings=tuple(
+            (str(name), bool(value))
+            for name, value in raw["realmSettings"].items()
+        ),
         frontend_client_id=str(raw["frontendClientId"]),
         backend_client_id=str(raw["adminClientId"]),
         audience=str(raw["audience"]),
+        audience_mapper_name=str(raw["audienceMapperName"]),
         redirect_uris=redirect_uris,
         web_origins=web_origins,
-        frontend_root_url=frontend_root.rstrip("/"),
+        forbidden_default_usernames=tuple(
+            str(value) for value in raw["forbiddenDefaultUsernames"]
+        ),
+        frontend_root_url=deployment_web_root,
         api_root_url=profile.deployment["API_BASE_URL"].rstrip("/"),
         docker_secret=_backend_secret_name(profile),
-        service_account_client_roles=tuple(
-            (
-                str(client_id),
-                tuple(str(role) for role in roles),
-            )
-            for client_id, roles in role_groups.items()
-        ),
+        service_account_client_roles=_service_account_roles(raw),
     )
 
 

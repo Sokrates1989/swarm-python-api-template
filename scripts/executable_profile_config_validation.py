@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
+from executable_profile_keycloak_validation import validate_keycloak_auth
 from executable_profile_support import (
     DIGEST_IMAGE_PATTERN,
     IMAGE_PATTERN,
@@ -354,120 +355,8 @@ def _validate_secret_naming_policy(data: Mapping[str, object]) -> None:
         )
 
 
-def _validate_protected_identity(
-    auth: Mapping[str, object],
-    realm: str,
-) -> None:
-    """Reject target identity intersecting profile-protected legacy data.
-
-    Args:
-        auth: Validated Keycloak mapping.
-        realm: Candidate realm.
-
-    Raises:
-        ExecutableProfileError: If realm, clients, or origins intersect.
-    """
-
-    protected = mapping(
-        auth.get("protectedIdentity", {}),
-        "auth.protectedIdentity",
-    )
-    protected_realms = {
-        text(value, f"auth.protectedIdentity.realms[{index}]")
-        for index, value in enumerate(
-            sequence(
-                protected.get("realms", []),
-                "auth.protectedIdentity.realms",
-            )
-        )
-    }
-    protected_clients = {
-        text(value, f"auth.protectedIdentity.clientIds[{index}]")
-        for index, value in enumerate(
-            sequence(
-                protected.get("clientIds", []),
-                "auth.protectedIdentity.clientIds",
-            )
-        )
-    }
-    protected_origins = {
-        text(value, f"auth.protectedIdentity.origins[{index}]")
-        for index, value in enumerate(
-            sequence(
-                protected.get("origins", []),
-                "auth.protectedIdentity.origins",
-            )
-        )
-    }
-    for index, origin in enumerate(sorted(protected_origins)):
-        validate_origin(
-            origin,
-            f"auth.protectedIdentity.origins[{index}]",
-        )
-    if realm in protected_realms:
-        raise ExecutableProfileError(
-            "auth.realm must not target a protected realm."
-        )
-    candidate_clients = {
-        str(auth["frontendClientId"]),
-        str(auth["audience"]),
-        str(auth["adminClientId"]),
-    }
-    if candidate_clients & protected_clients:
-        raise ExecutableProfileError(
-            "Candidate Keycloak client identity intersects protected clients."
-        )
-    if set(str(value) for value in auth["webOrigins"]) & protected_origins:
-        raise ExecutableProfileError(
-            "Candidate Keycloak origin intersects protected origins."
-        )
-
-
-def _validate_service_account_roles(auth: Mapping[str, object]) -> None:
-    """Validate backend service-account client-role declarations.
-
-    Args:
-        auth: Validated Keycloak mapping.
-
-    Raises:
-        ExecutableProfileError: If role owner or role names are unsafe.
-    """
-
-    role_groups = mapping(
-        auth.get("serviceAccountClientRoles", {}),
-        "auth.serviceAccountClientRoles",
-    )
-    for client_id, raw_roles in role_groups.items():
-        if not NAME_PATTERN.fullmatch(
-            text(client_id, "auth.serviceAccountClientRoles client")
-        ):
-            raise ExecutableProfileError(
-                "auth.serviceAccountClientRoles contains an unsafe client ID."
-            )
-        roles = [
-            text(
-                role,
-                f"auth.serviceAccountClientRoles.{client_id}[{index}]",
-            )
-            for index, role in enumerate(
-                sequence(
-                    raw_roles,
-                    f"auth.serviceAccountClientRoles.{client_id}",
-                )
-            )
-        ]
-        if not roles or len(roles) != len(set(roles)):
-            raise ExecutableProfileError(
-                "Service-account client roles must be non-empty and unique."
-            )
-        if any(not NAME_PATTERN.fullmatch(role) for role in roles):
-            raise ExecutableProfileError(
-                "Service-account client roles contain an unsafe role name."
-            )
-
-
 def _validate_keycloak_auth(auth: Mapping[str, object]) -> None:
-    """Validate generic Keycloak realm/client/bootstrap metadata.
+    """Delegate Keycloak policy to its focused validator.
 
     Args:
         auth: Profile authentication mapping.
@@ -476,55 +365,12 @@ def _validate_keycloak_auth(auth: Mapping[str, object]) -> None:
         ExecutableProfileError: If public OIDC identity is incomplete or unsafe.
     """
 
-    require_keys(
+    validate_keycloak_auth(
         auth,
-        {
-            "provider",
-            "serverUrl",
-            "issuerUrl",
-            "jwksUrl",
-            "realm",
-            "frontendClientId",
-            "audience",
-            "adminClientId",
-            "redirectUris",
-            "webOrigins",
-        },
-        "auth",
+        validate_https=validate_https,
+        validate_origin=validate_origin,
+        validate_redirect_uri=_validate_redirect_uri,
     )
-    for field in ("serverUrl", "issuerUrl", "jwksUrl"):
-        validate_https(text(auth[field], f"auth.{field}"), f"auth.{field}")
-    realm = text(auth["realm"], "auth.realm")
-    issuer = str(auth["issuerUrl"]).rstrip("/")
-    if issuer != f"{str(auth['serverUrl']).rstrip('/')}/realms/{realm}":
-        raise ExecutableProfileError(
-            "auth.issuerUrl must match serverUrl and realm."
-        )
-    expected_jwks = f"{issuer}/protocol/openid-connect/certs"
-    if str(auth["jwksUrl"]).rstrip("/") != expected_jwks:
-        raise ExecutableProfileError(
-            "auth.jwksUrl must match the declared issuer."
-        )
-    for field in ("frontendClientId", "audience", "adminClientId"):
-        if not NAME_PATTERN.fullmatch(text(auth[field], f"auth.{field}")):
-            raise ExecutableProfileError(f"auth.{field} is unsafe.")
-    redirects = sequence(auth["redirectUris"], "auth.redirectUris")
-    if not redirects:
-        raise ExecutableProfileError("auth.redirectUris must not be empty.")
-    for index, redirect_uri in enumerate(redirects):
-        _validate_redirect_uri(
-            text(redirect_uri, f"auth.redirectUris[{index}]"),
-            f"auth.redirectUris[{index}]",
-        )
-    for index, origin in enumerate(
-        sequence(auth["webOrigins"], "auth.webOrigins")
-    ):
-        validate_origin(
-            text(origin, f"auth.webOrigins[{index}]"),
-            f"auth.webOrigins[{index}]",
-        )
-    _validate_protected_identity(auth, realm)
-    _validate_service_account_roles(auth)
 
 
 def _validate_routing(

@@ -74,12 +74,20 @@ server through its Admin API. Realm, clients, callback URIs, browser origins,
 audience, protected identity, service-account client roles, and Docker secret
 target all come from the selected profile.
 
-The administrator password is read without echo by Python. The confidential
-client secret moves directly from Keycloak process memory to `docker secret
-create` standard input. Existing Docker secrets are kept without retrieving
-the credential. Explicit rotation requires the selected stack to be stopped,
-regenerates the confidential-client secret in Keycloak, and then replaces the
-exact declared Docker secret.
+The administrator password is read without echo by Python. After
+authentication, the operator sees a sanitized live-state plan and confirms
+with Enter by default. Apply success requires Admin API read-back plus public
+issuer and JWKS verification. The confidential client secret moves directly
+from Keycloak process memory to a client-credentials proof. When the declared
+roles grant realm-user access, the token must also pass a read-only Admin API
+request. Only then is the same value sent to `docker secret create` standard
+input. Docker inspection failures abort instead of being treated as an absent
+secret. Existing Docker secrets are reported as present but unverified
+because Swarm cannot reveal their value.
+Explicit rotation requires the selected stack to be stopped, regenerates and
+proves the confidential-client secret in Keycloak, stages a recovery Docker
+secret, and then replaces the exact declared Docker secret. Replacement
+failures retain and name the recovery object without printing its value.
 
 ### `docker-secrets-menu.sh`
 

@@ -294,6 +294,31 @@ _deploy_configured_stack
         self.assertNotIn("CONFLICT_CHECK_RAN", completed.stdout)
         self.assertNotIn("DEPLOY_RAN", completed.stdout)
 
+    def test_keycloak_menu_failure_prevents_full_deploy(self) -> None:
+        """Stop full deployment when the secret menu returns bootstrap failure.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(ACTIONS_MODULE)}
+create_data_directories() {{ echo directories-ready; return 0; }}
+render_selected_profile_stack() {{ echo stack-rendered; return 0; }}
+manage_docker_secrets_menu() {{ echo keycloak-failed; return 23; }}
+_deploy_configured_stack() {{ echo DEPLOY_SHOULD_NOT_RUN; return 0; }}
+DATA_ROOT=/swarm/volumes/example
+DB_TYPE=postgresql
+DB_MODE=local
+SECRETS_REQUIRED=true
+_run_full_deployment
+"""
+        completed = run_bash(script)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("keycloak-failed", completed.stdout)
+        self.assertNotIn("DEPLOY_SHOULD_NOT_RUN", completed.stdout)
+
     def test_traefik_network_requires_non_ingress_swarm_overlay(self) -> None:
         """Reject bridge and ingress networks while accepting a public overlay.
 

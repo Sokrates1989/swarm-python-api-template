@@ -99,8 +99,18 @@
     "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
     "jwksUrl": "https://keycloak.fe-wi.com/realms/felix-new/protocol/openid-connect/certs",
     "realm": "felix-new",
+    "realmDisplayName": "Felix",
+    "realmSettings": {
+      "enabled": true,
+      "registrationAllowed": false,
+      "resetPasswordAllowed": true,
+      "rememberMe": true,
+      "verifyEmail": true,
+      "loginWithEmailAllowed": true
+    },
     "frontendClientId": "felix-new-frontend",
     "audience": "felix-new-backend",
+    "audienceMapperName": "backend-audience",
     "adminClientId": "felix-new-backend",
     "redirectUris": [
       "https://felix-app.fe-wi.com/auth/callback",
@@ -108,6 +118,9 @@
     ],
     "webOrigins": [
       "https://felix-app.fe-wi.com"
+    ],
+    "forbiddenDefaultUsernames": [
+      "test"
     ],
     "serviceAccountClientRoles": {
       "realm-management": [

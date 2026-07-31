@@ -183,6 +183,12 @@ _profile_keycloak_summary() {
     echo "This updates the existing Keycloak deployment through its Admin API."
     echo "It does not deploy another Keycloak instance and does not change social"
     echo "identity providers or unrelated realm settings."
+    echo "After login, a read-only live-state plan is shown before Enter-default"
+    echo "approval. Success requires Admin API read-back, issuer/JWKS verification,"
+    echo "client-credentials proof, and a capability-derived authorization check"
+    echo "before a missing Docker secret is created."
+    echo "No test user or example role is created. The client-secret value is"
+    echo "never displayed or stored in a file."
 }
 
 # _profile_keycloak_reconcile
@@ -222,16 +228,16 @@ _profile_keycloak_reconcile() {
 #   None.
 #
 # Returns:
-#   0 after successful reconciliation; 1 on validation, cancellation, or API
-#   failure.
+#   0 after successful reconciliation or explicit cancellation; 1 on
+#   validation or API failure.
 #
 # Side effects:
-#   Mutates only the profile-declared Keycloak realm/clients and missing Docker
-#   client secret after the operator accepts the default confirmation.
+#   Authenticates, shows a read-only plan, and mutates only the
+#   profile-declared Keycloak state and missing Docker client secret after the
+#   operator accepts the Python adapter's Enter-default confirmation.
 run_profile_keycloak_bootstrap() {
     local python_command=""
     local admin_user="admin"
-    local proceed=""
 
     if ! profile_supports_keycloak_bootstrap; then
         echo "[INFO] The selected profile does not declare supported Keycloak bootstrap."
@@ -242,11 +248,6 @@ run_profile_keycloak_bootstrap() {
         return 1
     }
     _profile_keycloak_summary
-    read -r -p "Reconcile this realm and its declared clients? (Y/n): " proceed
-    if [[ "$proceed" =~ ^[Nn]$ ]]; then
-        echo "Keycloak reconciliation cancelled."
-        return 1
-    fi
     read -r -p "Keycloak admin username [admin]: " admin_user
     admin_user="${admin_user:-admin}"
     _profile_keycloak_reconcile "$python_command" "$admin_user"

@@ -26,7 +26,9 @@ Production Keycloak remains the existing `swarm-keycloak` deployment at
 `/swarm/administration/keycloak`. The app quick-start menu reconciles its
 declared realm and clients through the public Admin API; it never deploys a
 second Keycloak and never depends on the local-development `keycloak`
-repository.
+repository. The menu shows a sanitized plan, verifies state by reading it
+back, checks the public issuer and JWKS, and proves a newly bridged backend
+credential through the client-credentials endpoint without displaying it.
 
 The contract protects:
 

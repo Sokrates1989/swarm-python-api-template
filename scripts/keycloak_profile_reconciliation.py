@@ -26,41 +26,87 @@ from keycloak_profile_client import (
 )
 
 
+def realm_payload(identity: KeycloakIdentity) -> dict[str, Any]:
+    """Build the exact profile-owned realm representation.
+
+    Args:
+        identity: Profile-derived Keycloak identity.
+
+    Returns:
+        Realm representation containing only explicitly owned fields.
+    """
+
+    return {
+        "realm": identity.realm,
+        "displayName": identity.realm_display_name,
+        **dict(identity.realm_settings),
+    }
+
+
 def ensure_realm(client: KeycloakAdminClient) -> str:
-    """Create the declared realm when missing without replacing settings.
+    """Create or update the profile-owned realm settings.
 
     Args:
         client: Authenticated Keycloak client.
 
     Returns:
-        ``created`` or ``kept``.
+        ``created``, ``updated``, or ``kept``.
 
     Raises:
         KeycloakProfileError: If realm lookup or creation fails.
     """
 
     identity = client.identity
-    status, _ = client.request(
+    status, current = client.request(
         "GET",
         realm_path(identity),
         expected=(200, 404),
     )
-    if status == 200:
+    desired = realm_payload(identity)
+    if status == 200 and not isinstance(current, dict):
+        raise KeycloakProfileError(
+            "Keycloak realm lookup returned invalid data."
+        )
+    if status == 200 and _owned_fields_match(current, desired):
         return "kept"
+    if status == 200:
+        merged = dict(current)
+        merged.update(desired)
+        client.request(
+            "PUT",
+            realm_path(identity),
+            body=merged,
+            expected=(200, 204),
+        )
+        return "updated"
     client.request(
         "POST",
         "/admin/realms",
-        body={
-            "realm": identity.realm,
-            "displayName": identity.realm.replace("-", " ").title(),
-            "enabled": True,
-            "loginWithEmailAllowed": True,
-            "resetPasswordAllowed": True,
-            "registrationAllowed": False,
-        },
+        body=desired,
         expected=(201, 204),
     )
     return "created"
+
+
+def _post_logout_redirect_uris(identity: KeycloakIdentity) -> str:
+    """Build Keycloak's exact post-logout redirect allowlist.
+
+    Args:
+        identity: Profile-derived Keycloak identity.
+
+    Returns:
+        Keycloak's ``##``-separated allowlist containing every declared
+        application callback and each declared Web origin wildcard.
+    """
+
+    candidates = [
+        *identity.redirect_uris,
+        *(
+            f"{origin.rstrip('/')}/*"
+            for origin in identity.web_origins
+        ),
+    ]
+    return "##".join(dict.fromkeys(candidates))
 
 
 def frontend_payload(identity: KeycloakIdentity) -> dict[str, Any]:
@@ -83,15 +129,16 @@ def frontend_payload(identity: KeycloakIdentity) -> dict[str, Any]:
         "directAccessGrantsEnabled": False,
         "implicitFlowEnabled": False,
         "serviceAccountsEnabled": False,
+        "authorizationServicesEnabled": False,
+        "bearerOnly": False,
+        "fullScopeAllowed": False,
         "rootUrl": identity.frontend_root_url,
         "baseUrl": "/",
         "redirectUris": list(identity.redirect_uris),
         "webOrigins": list(identity.web_origins),
         "attributes": {
             "pkce.code.challenge.method": "S256",
-            "post.logout.redirect.uris": "##".join(
-                f"{origin.rstrip('/')}/*" for origin in identity.web_origins
-            ),
+            "post.logout.redirect.uris": _post_logout_redirect_uris(identity),
         },
     }
 
@@ -111,14 +158,19 @@ def backend_payload(identity: KeycloakIdentity) -> dict[str, Any]:
         "name": identity.backend_client_id,
         "protocol": "openid-connect",
         "enabled": True,
+        "clientAuthenticatorType": "client-secret",
         "publicClient": False,
         "standardFlowEnabled": False,
         "directAccessGrantsEnabled": False,
         "implicitFlowEnabled": False,
         "serviceAccountsEnabled": True,
+        "authorizationServicesEnabled": False,
         "bearerOnly": False,
+        "fullScopeAllowed": False,
         "rootUrl": identity.api_root_url,
         "baseUrl": "/",
+        "redirectUris": [],
+        "webOrigins": [],
     }
 
 
@@ -146,9 +198,37 @@ def _owned_fields_match(
                 for name, item in value.items()
             ):
                 return False
-        elif current.get(key) != value:
+        elif value is False and current.get(key) is None:
+            continue
+        elif value in ("", []) and current.get(key) is None:
+            continue
+        elif isinstance(value, list):
+            current_value = current.get(key)
+            current_list = (
+                current_value if isinstance(current_value, list) else []
+            )
+            if sorted(current_list) != sorted(value):
+                return False
+        elif not isinstance(value, list) and current.get(key) != value:
             return False
     return True
+
+
+def owned_fields_match(
+    current: dict[str, Any],
+    desired: dict[str, Any],
+) -> bool:
+    """Expose profile-owned representation comparison to verification.
+
+    Args:
+        current: Existing Keycloak representation.
+        desired: Profile-owned desired fields.
+
+    Returns:
+        Whether every desired field is represented by current state.
+    """
+
+    return _owned_fields_match(current, desired)
 
 
 def ensure_client(
@@ -214,6 +294,33 @@ def ensure_client(
     return client_uuid, "updated"
 
 
+def audience_mapper_payload(
+    identity: KeycloakIdentity,
+) -> dict[str, Any]:
+    """Build the exact frontend audience-mapper representation.
+
+    Args:
+        identity: Profile-derived Keycloak identity.
+
+    Returns:
+        Keycloak protocol-mapper representation.
+    """
+
+    return {
+        "name": identity.audience_mapper_name,
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-audience-mapper",
+        "consentRequired": False,
+        "config": {
+            "included.client.audience": identity.audience,
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true",
+        },
+    }
+
+
 def ensure_audience_mapper(
     client: KeycloakAdminClient,
     frontend_uuid: str,
@@ -242,19 +349,7 @@ def ensure_audience_mapper(
         raise KeycloakProfileError(
             "Keycloak protocol mapper lookup was invalid."
         )
-    desired = {
-        "name": "backend-audience",
-        "protocol": "openid-connect",
-        "protocolMapper": "oidc-audience-mapper",
-        "consentRequired": False,
-        "config": {
-            "included.client.audience": identity.audience,
-            "access.token.claim": "true",
-            "id.token.claim": "false",
-            "userinfo.token.claim": "false",
-            "introspection.token.claim": "true",
-        },
-    }
+    desired = audience_mapper_payload(identity)
     matches = [
         item
         for item in current
@@ -359,11 +454,14 @@ def regenerate_client_secret(
 
 
 __all__ = [
+    "audience_mapper_payload",
     "backend_payload",
     "ensure_audience_mapper",
     "ensure_client",
     "ensure_realm",
     "frontend_payload",
     "get_client_secret",
+    "owned_fields_match",
+    "realm_payload",
     "regenerate_client_secret",
 ]

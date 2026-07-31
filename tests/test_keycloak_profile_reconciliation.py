@@ -38,64 +38,28 @@ from executable_profile_environment import (  # noqa: E402
 )
 from keycloak_profile_bootstrap import (  # noqa: E402
     KeycloakIdentity,
+    KeycloakProfileError,
     _frontend_payload,
     ensure_client,
+    ensure_realm,
     load_keycloak_identity,
-    reconcile,
-    regenerate_client_secret,
+)
+from keycloak_profile_reconciliation import (  # noqa: E402
+    backend_payload,
+    frontend_payload,
+    realm_payload,
 )
 from keycloak_profile_roles import (  # noqa: E402
     KeycloakRoleError,
     ensure_service_account_roles,
 )
-
-
-class RecordingAdminClient:
-    """Provide deterministic Keycloak Admin responses and request evidence."""
-
-    def __init__(
-        self,
-        identity: KeycloakIdentity,
-        handler,
-    ) -> None:
-        """Create one request-recording fake client.
-
-        Args:
-            identity: Profile-derived Keycloak identity.
-            handler: Callable returning ``(status, payload)`` for a request.
-
-        Returns:
-            Nothing.
-        """
-
-        self.identity = identity
-        self.handler = handler
-        self.requests: list[tuple[str, str, Any, Any]] = []
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        body: Any | None = None,
-        query: dict[str, str] | None = None,
-        expected: tuple[int, ...] = (200,),
-    ) -> tuple[int, Any]:
-        """Record and dispatch one fake Admin API request.
-
-        Args:
-            method: HTTP method.
-            path: Admin API path.
-            body: Optional JSON-compatible body.
-            query: Optional query mapping.
-            expected: Accepted status codes.
-
-        Returns:
-            Handler-provided status and payload.
-        """
-
-        self.requests.append((method, path, body, query))
-        return self.handler(method, path, body, query, expected)
+from keycloak_profile_verification import (  # noqa: E402
+    build_reconciliation_plan,
+    verify_reconciled_state,
+)
+from tests.keycloak_profile_test_support import (  # noqa: E402
+    RecordingAdminClient,
+)
 
 
 class KeycloakProfileReconciliationTests(unittest.TestCase):
@@ -207,8 +171,80 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             any(method == "PUT" for method, _, _, _ in client.requests)
         )
 
-    def test_service_account_role_is_added_once(self) -> None:
-        """Add the one declared role without broadening the grant set.
+    def test_existing_realm_drift_is_updated_with_owned_settings(self) -> None:
+        """Update drifted realm fields while preserving unrelated state.
+
+        Returns:
+            Nothing.
+        """
+
+        desired = realm_payload(self.identity)
+        current = {
+            **desired,
+            "rememberMe": False,
+            "unrelatedSetting": "preserved",
+        }
+        updated_bodies: list[dict[str, Any]] = []
+
+        def handler(method, path, body, query, expected):
+            """Serve one drifted realm and record the correcting update."""
+
+            self.assertIsNone(query)
+            if method == "GET":
+                return 200, current
+            if method == "PUT":
+                self.assertIsInstance(body, dict)
+                updated_bodies.append(dict(body))
+                current.update(body)
+                return 204, None
+            self.fail(f"Unexpected request: {method} {path}")
+
+        client = RecordingAdminClient(self.identity, handler)
+        action = ensure_realm(client)
+
+        self.assertEqual(action, "updated")
+        self.assertEqual(len(updated_bodies), 1)
+        self.assertIs(updated_bodies[0]["rememberMe"], True)
+        self.assertEqual(
+            updated_bodies[0]["unrelatedSetting"],
+            "preserved",
+        )
+
+    def test_ignored_realm_update_is_detected_by_strict_verification(
+        self,
+    ) -> None:
+        """Fail when Keycloak accepts a realm update but retains drift.
+
+        Returns:
+            Nothing.
+        """
+
+        drifted = {
+            **realm_payload(self.identity),
+            "verifyEmail": False,
+        }
+
+        def handler(method, path, body, query, expected):
+            """Acknowledge realm updates without applying them."""
+
+            self.assertIsNone(query)
+            if method == "GET":
+                return 200, drifted
+            if method == "PUT":
+                return 204, None
+            self.fail(f"Unexpected request: {method} {path}")
+
+        client = RecordingAdminClient(self.identity, handler)
+
+        self.assertEqual(ensure_realm(client), "updated")
+        with self.assertRaisesRegex(
+            KeycloakProfileError,
+            "realm verification found unresolved drift",
+        ):
+            verify_reconciled_state(client)
+
+    def test_declared_role_is_added_to_assignment_and_scope(self) -> None:
+        """Add the declared assignment and dedicated client-scope mapping.
 
         Returns:
             Nothing.
@@ -219,6 +255,18 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
 
             if path.endswith("/service-account-user"):
                 return 200, {"id": "service-user"}
+            if path.endswith("/users/service-user/role-mappings"):
+                return 200, {
+                    "realmMappings": [
+                        {"name": "default-roles-felix-new"},
+                    ],
+                    "clientMappings": {},
+                }
+            if path.endswith("/clients/backend-uuid/scope-mappings"):
+                return 200, {
+                    "realmMappings": [],
+                    "clientMappings": {},
+                }
             if query == {"clientId": "realm-management"}:
                 return 200, [
                     {
@@ -226,7 +274,14 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                         "clientId": "realm-management",
                     }
                 ]
-            if path.endswith("/role-mappings/clients/realm-management-uuid"):
+            if "/evaluate-scopes/scope-mappings/" in path:
+                return 200, []
+            if path.endswith(
+                (
+                    "/role-mappings/clients/realm-management-uuid",
+                    "/scope-mappings/clients/realm-management-uuid",
+                )
+            ):
                 if method == "GET":
                     return 200, []
                 return 204, None
@@ -245,7 +300,10 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         ]
         self.assertEqual(
             posts,
-            [[{"id": "role-uuid", "name": "manage-users"}]],
+            [
+                [{"id": "role-uuid", "name": "manage-users"}],
+                [{"id": "role-uuid", "name": "manage-users"}],
+            ],
         )
 
     def test_undeclared_service_account_role_fails_closed(self) -> None:
@@ -260,6 +318,138 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
 
             if path.endswith("/service-account-user"):
                 return 200, {"id": "service-user"}
+            if path.endswith("/users/service-user/role-mappings"):
+                return 200, {
+                    "realmMappings": [
+                        {"name": "default-roles-felix-new"},
+                    ],
+                    "clientMappings": {
+                        "realm-management": {
+                            "client": "realm-management",
+                            "mappings": [
+                                {"id": "admin", "name": "realm-admin"},
+                            ],
+                        }
+                    },
+                }
+            if path.endswith("/clients/backend-uuid/scope-mappings"):
+                return 200, {}
+            self.fail(f"Unexpected request: {method} {path}")
+
+        client = RecordingAdminClient(self.identity, handler)
+        with self.assertRaisesRegex(KeycloakRoleError, "undeclared roles"):
+            ensure_service_account_roles(client, "backend-uuid")
+
+    def test_complete_role_inventory_rejects_undeclared_grants(self) -> None:
+        """Reject direct realm and undeclared-client grants before mutation.
+
+        Returns:
+            Nothing.
+        """
+
+        cases = (
+            (
+                "realm",
+                {
+                    "realmMappings": [{"name": "realm-admin"}],
+                    "clientMappings": {},
+                },
+                {},
+            ),
+            (
+                "other-client",
+                {
+                    "realmMappings": [],
+                    "clientMappings": {
+                        "account": {
+                            "client": "account",
+                            "mappings": [{"name": "manage-account"}],
+                        }
+                    },
+                },
+                {},
+            ),
+            (
+                "client-scope",
+                {
+                    "realmMappings": [
+                        {"name": "default-roles-felix-new"},
+                    ],
+                    "clientMappings": {},
+                },
+                {
+                    "realmMappings": [],
+                    "clientMappings": {
+                        "account": {
+                            "client": "account",
+                            "mappings": [{"name": "manage-account"}],
+                        }
+                    },
+                },
+            ),
+        )
+        for label, assignment_inventory, scope_inventory in cases:
+            with self.subTest(case=label):
+
+                def handler(method, path, body, query, expected):
+                    """Return one unsafe complete assignment inventory."""
+
+                    if path.endswith("/service-account-user"):
+                        return 200, {"id": "service-user"}
+                    if path.endswith("/users/service-user/role-mappings"):
+                        return 200, assignment_inventory
+                    if path.endswith(
+                        "/clients/backend-uuid/scope-mappings"
+                    ):
+                        return 200, scope_inventory
+                    self.fail(f"Unexpected request: {method} {path}")
+
+                client = RecordingAdminClient(self.identity, handler)
+                with self.assertRaisesRegex(
+                    KeycloakRoleError,
+                    "undeclared roles",
+                ):
+                    ensure_service_account_roles(client, "backend-uuid")
+                self.assertFalse(
+                    any(
+                        method == "POST"
+                        for method, _, _, _ in client.requests
+                    )
+                )
+
+    def test_effective_client_scope_rejects_hidden_broader_role(
+        self,
+    ) -> None:
+        """Reject an extra effective role inherited through client scopes.
+
+        Returns:
+            Nothing.
+        """
+
+        declared_mapping = {
+            "realmMappings": [],
+            "clientMappings": {
+                "realm-management": {
+                    "client": "realm-management",
+                    "mappings": [{"name": "manage-users"}],
+                }
+            },
+        }
+
+        def handler(method, path, body, query, expected):
+            """Expose safe direct mappings but one unsafe effective role."""
+
+            if path.endswith("/service-account-user"):
+                return 200, {"id": "service-user"}
+            if path.endswith("/users/service-user/role-mappings"):
+                return 200, {
+                    **declared_mapping,
+                    "realmMappings": [
+                        {"name": "default-roles-felix-new"},
+                    ],
+                }
+            if path.endswith("/clients/backend-uuid/scope-mappings"):
+                return 200, declared_mapping
             if query == {"clientId": "realm-management"}:
                 return 200, [
                     {
@@ -267,176 +457,214 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                         "clientId": "realm-management",
                     }
                 ]
-            if path.endswith("/role-mappings/clients/realm-management-uuid"):
-                return 200, [{"id": "admin", "name": "realm-admin"}]
+            if "/evaluate-scopes/scope-mappings/" in path:
+                return 200, [
+                    {"name": "manage-users"},
+                    {"name": "realm-admin"},
+                ]
             self.fail(f"Unexpected request: {method} {path}")
 
         client = RecordingAdminClient(self.identity, handler)
         with self.assertRaisesRegex(KeycloakRoleError, "undeclared roles"):
             ensure_service_account_roles(client, "backend-uuid")
+        self.assertFalse(
+            any(method == "POST" for method, _, _, _ in client.requests)
+        )
 
-    def test_regeneration_uses_keycloak_rotation_endpoint(self) -> None:
-        """Return a rotated secret from POST without placing it in a URL.
+    def test_full_scope_legacy_client_can_migrate_before_effective_check(
+        self,
+    ) -> None:
+        """Plan a safe full-scope disable before exact effective verification.
 
         Returns:
             Nothing.
         """
+
+        frontend = ("frontend-uuid", frontend_payload(self.identity))
+        backend_state = backend_payload(self.identity)
+        backend_state["fullScopeAllowed"] = True
+        backend = ("backend-uuid", backend_state)
+        declared_mapping = {
+            "realmMappings": [],
+            "clientMappings": {
+                "realm-management": {
+                    "client": "realm-management",
+                    "mappings": [{"name": "manage-users"}],
+                }
+            },
+        }
 
         def handler(method, path, body, query, expected):
-            """Return a secret only from the rotation endpoint."""
+            """Serve exact direct roles and reject premature effective reads."""
 
-            self.assertEqual(method, "POST")
-            self.assertTrue(path.endswith("/client-secret"))
-            self.assertIsNone(body)
-            return 200, {"value": "rotated-sensitive-value"}
+            if path.endswith("/service-account-user"):
+                return 200, {"id": "service-user"}
+            if path.endswith("/users/service-user/role-mappings"):
+                return 200, {
+                    **declared_mapping,
+                    "realmMappings": [
+                        {"name": "default-roles-felix-new"},
+                    ],
+                }
+            if path.endswith("/clients/backend-uuid/scope-mappings"):
+                return 200, declared_mapping
+            if "/evaluate-scopes/" in path:
+                self.fail(
+                    "Effective scope must wait until full scope is disabled."
+                )
+            self.fail(f"Unexpected request: {method} {path}")
 
         client = RecordingAdminClient(self.identity, handler)
-        secret = regenerate_client_secret(client, "backend-uuid")
-
-        self.assertEqual(secret, "rotated-sensitive-value")
-        self.assertNotIn(
-            secret,
-            " ".join(path for _, path, _, _ in client.requests),
-        )
-
-    def test_explicit_rotation_regenerates_then_replaces_docker_secret(
-        self,
-    ) -> None:
-        """Bind a newly rotated Keycloak value to the exact Docker secret.
-
-        Returns:
-            Nothing.
-        """
-
         with (
             patch(
-                "keycloak_profile_bootstrap.stack_is_running",
-                return_value=False,
+                "keycloak_profile_verification._read_realm",
+                return_value=realm_payload(self.identity),
             ),
             patch(
-                "keycloak_profile_bootstrap.docker_secret_exists",
-                return_value=True,
-            ),
-            patch("keycloak_profile_bootstrap.KeycloakAdminClient") as client_type,
-            patch(
-                "keycloak_profile_bootstrap.ensure_realm",
-                return_value="kept",
+                "keycloak_profile_verification._read_client",
+                side_effect=[frontend, backend],
             ),
             patch(
-                "keycloak_profile_bootstrap._resolve_client_uuid",
-                return_value="backend-uuid",
+                "keycloak_profile_verification._read_mapper_action",
+                return_value="keep",
             ),
             patch(
-                "keycloak_profile_bootstrap.ensure_client",
-                side_effect=[
-                    ("frontend-uuid", "kept"),
-                    ("backend-uuid", "kept"),
-                ],
+                "keycloak_profile_verification.find_forbidden_users",
+                return_value=(),
             ),
-            patch(
-                "keycloak_profile_bootstrap.ensure_audience_mapper",
-                return_value="kept",
-            ),
-            patch(
-                "keycloak_profile_bootstrap.ensure_service_account_roles",
-                return_value="kept",
-            ),
-            patch(
-                "keycloak_profile_bootstrap.get_client_secret",
-            ) as current_secret,
-            patch(
-                "keycloak_profile_bootstrap.regenerate_client_secret",
-                return_value="new-sensitive-value",
-            ) as rotate_secret,
-            patch(
-                "keycloak_profile_bootstrap.write_docker_secret",
-                return_value="replaced",
-            ) as write_secret,
         ):
-            client_type.return_value = Mock(identity=self.identity)
-            summary = reconcile(
-                self.profile,
-                "admin",
-                "admin-password",
-                replace_secret=True,
+            plan = build_reconciliation_plan(
+                client,
+                docker_secret_present=True,
+                replace_secret=False,
             )
 
-        current_secret.assert_not_called()
-        rotate_secret.assert_called_once()
-        write_secret.assert_called_once_with(
-            self.profile,
-            self.identity,
-            "new-sensitive-value",
-            replace=True,
-        )
-        self.assertEqual(summary["dockerSecretAction"], "replaced")
-        self.assertNotIn("new-sensitive-value", json.dumps(summary))
+        self.assertEqual(plan["backendClient"], "update")
+        self.assertEqual(plan["serviceAccountRoles"], "keep")
+        self.assertEqual(plan["blockers"], [])
 
-    @patch("keycloak_profile_bootstrap.write_docker_secret")
-    @patch("keycloak_profile_bootstrap.regenerate_client_secret")
-    @patch("keycloak_profile_bootstrap.get_client_secret")
-    @patch("keycloak_profile_bootstrap.ensure_service_account_roles")
-    @patch("keycloak_profile_bootstrap.ensure_audience_mapper")
-    @patch("keycloak_profile_bootstrap.ensure_client")
-    @patch("keycloak_profile_bootstrap._resolve_client_uuid")
-    @patch("keycloak_profile_bootstrap.ensure_realm")
-    @patch("keycloak_profile_bootstrap.KeycloakAdminClient")
-    @patch("keycloak_profile_bootstrap.docker_secret_exists")
-    def test_existing_docker_secret_is_not_read_or_replaced(
-        self,
-        secret_exists: Mock,
-        client_type: Mock,
-        ensure_realm_mock: Mock,
-        resolve_uuid: Mock,
-        ensure_client_mock: Mock,
-        mapper_mock: Mock,
-        roles_mock: Mock,
-        get_secret_mock: Mock,
-        rotate_secret_mock: Mock,
-        write_secret_mock: Mock,
-    ) -> None:
-        """Keep a bound Docker secret without retrieving secret material.
-
-        Args:
-            secret_exists: Docker existence mock.
-            client_type: Admin client constructor mock.
-            ensure_realm_mock: Realm reconciliation mock.
-            resolve_uuid: Backend lookup mock.
-            ensure_client_mock: Client reconciliation mock.
-            mapper_mock: Audience mapper mock.
-            roles_mock: Service-account role mock.
-            get_secret_mock: Current-secret retrieval mock.
-            rotate_secret_mock: Rotation mock.
-            write_secret_mock: Docker write mock.
+    def test_forbidden_default_user_blocks_reconciliation_plan(self) -> None:
+        """Expose a present ``test`` user as an explicit apply blocker.
 
         Returns:
             Nothing.
         """
 
-        secret_exists.return_value = True
-        client_type.return_value = Mock(identity=self.identity)
-        ensure_realm_mock.return_value = "kept"
-        resolve_uuid.return_value = "backend-uuid"
-        ensure_client_mock.side_effect = [
-            ("frontend-uuid", "kept"),
-            ("backend-uuid", "kept"),
-        ]
-        mapper_mock.return_value = "kept"
-        roles_mock.return_value = "kept"
+        frontend = ("frontend-uuid", frontend_payload(self.identity))
+        backend = ("backend-uuid", backend_payload(self.identity))
+        client = Mock(identity=self.identity)
+        with (
+            patch(
+                "keycloak_profile_verification._read_realm",
+                return_value=realm_payload(self.identity),
+            ),
+            patch(
+                "keycloak_profile_verification._read_client",
+                side_effect=[frontend, backend],
+            ),
+            patch(
+                "keycloak_profile_verification._read_mapper_action",
+                return_value="keep",
+            ),
+            patch(
+                "keycloak_profile_verification._role_plan",
+                return_value=("keep", ()),
+            ),
+            patch(
+                "keycloak_profile_verification.find_forbidden_users",
+                return_value=("test",),
+            ),
+        ):
+            plan = build_reconciliation_plan(
+                client,
+                docker_secret_present=False,
+                replace_secret=False,
+            )
 
-        summary = reconcile(
-            self.profile,
-            "admin",
-            "admin-password",
-            replace_secret=False,
+        self.assertEqual(
+            plan["blockers"],
+            ["Delete forbidden default user explicitly: test"],
         )
+        self.assertEqual(plan["dockerSecret"], "fetch-prove-and-create")
 
-        self.assertEqual(summary["dockerSecretAction"], "kept")
-        get_secret_mock.assert_not_called()
-        rotate_secret_mock.assert_not_called()
-        write_secret_mock.assert_not_called()
-        self.assertNotIn("admin-password", json.dumps(summary))
+    def _assert_public_metadata_rejected(
+        self,
+        discovery: dict[str, Any],
+        jwks: dict[str, Any],
+        message: str,
+    ) -> None:
+        """Assert that invalid public OIDC evidence fails verification.
 
+        Args:
+            discovery: Public discovery response.
+            jwks: Public signing-key response.
+            message: Expected safe error fragment.
+
+        Returns:
+            Nothing.
+        """
+
+        client = Mock(identity=self.identity)
+        client.public_json.side_effect = [discovery, jwks]
+        with (
+            patch(
+                "keycloak_profile_verification._read_realm",
+                return_value=realm_payload(self.identity),
+            ),
+            patch(
+                "keycloak_profile_verification._read_client",
+                side_effect=[
+                    (
+                        "frontend-uuid",
+                        frontend_payload(self.identity),
+                    ),
+                    (
+                        "backend-uuid",
+                        backend_payload(self.identity),
+                    ),
+                ],
+            ),
+            patch("keycloak_profile_verification._verify_mapper"),
+            patch(
+                "keycloak_profile_verification."
+                "verify_service_account_roles",
+            ),
+            patch(
+                "keycloak_profile_verification.find_forbidden_users",
+                return_value=(),
+            ),
+        ):
+            with self.assertRaisesRegex(KeycloakProfileError, message):
+                verify_reconciled_state(client)
+
+    def test_discovery_issuer_and_jwks_fail_closed(self) -> None:
+        """Reject a mismatched issuer and an empty public signing-key set.
+
+        Returns:
+            Nothing.
+        """
+
+        cases = (
+            (
+                "issuer",
+                {"issuer": "https://keycloak.fe-wi.com/realms/wrong"},
+                {"keys": [{"kid": "key-1"}]},
+                "discovery issuer",
+            ),
+            (
+                "jwks",
+                {"issuer": self.identity.issuer_url},
+                {"keys": []},
+                "JWKS verification returned no signing keys",
+            ),
+        )
+        for label, discovery, jwks, message in cases:
+            with self.subTest(case=label):
+                self._assert_public_metadata_rejected(
+                    discovery,
+                    jwks,
+                    message,
+                )
 
 if __name__ == "__main__":
     unittest.main()

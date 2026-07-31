@@ -400,7 +400,9 @@ show_main_menu() {
         fi
         if [ -n "$MENU_KEYCLOAK_BOOTSTRAP" ] &&
             [ "$choice" = "$MENU_KEYCLOAK_BOOTSTRAP" ]; then
-            run_profile_keycloak_bootstrap || true
+            if ! run_profile_keycloak_bootstrap; then
+                echo "[ERROR] Keycloak bootstrap did not complete."
+            fi
             read -r -p "Press Enter to continue..."
             continue
         fi

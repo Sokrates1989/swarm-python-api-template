@@ -100,15 +100,18 @@ scripts/
 ├── executable_profile.py
 ├── executable_profile_support.py
 ├── executable_profile_config_validation.py
+├── executable_profile_keycloak_validation.py
 ├── executable_profile_deployment_validation.py
 ├── executable_profile_environment.py
 ├── executable_profile_runtime.py
 ├── executable_stack_renderer.py
 ├── keycloak_profile_bootstrap.py
+├── keycloak_profile_cli.py
 ├── keycloak_profile_client.py
 ├── keycloak_profile_reconciliation.py
 ├── keycloak_profile_roles.py
-└── keycloak_profile_secret_bridge.py
+├── keycloak_profile_secret_bridge.py
+└── keycloak_profile_verification.py
 ```
 
 - `build-site-stack.sh` dispatches to the profile-declared renderer after
@@ -117,8 +120,9 @@ scripts/
 - `executable_profile_*` modules validate tracked profile data and
   operator-selected deployment values.
 - `executable_stack_renderer.py` renders strict full-stack profiles.
-- `keycloak_profile_*` modules update the existing Keycloak server and bridge
-  only the declared confidential-client Docker secret.
+- `keycloak_profile_*` modules plan, update, and read back the existing
+  Keycloak server, verify public OIDC metadata, prove the real confidential
+  credential, and bridge only the declared Docker secret.
 
 ## Site-config structure
 

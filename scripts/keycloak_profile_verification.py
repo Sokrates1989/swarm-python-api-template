@@ -1,0 +1,544 @@
+"""
+Module: keycloak_profile_verification.py
+
+Description:
+    Builds a secret-free, read-only Keycloak reconciliation plan and verifies
+    the resulting realm, clients, audience mapper, service-account roles,
+    issuer, JWKS, and forbidden default-user policy. Success requires observed
+    state, not only successful mutation response codes.
+
+Dependencies:
+    - Python standard library.
+    - Keycloak profile client, reconciliation, and role modules.
+"""
+
+from __future__ import annotations
+
+import urllib.parse
+from typing import Any
+
+from keycloak_profile_client import (
+    KeycloakAdminClient,
+    KeycloakIdentity,
+    KeycloakProfileError,
+    realm_path,
+    resolve_client_uuid,
+)
+from keycloak_profile_reconciliation import (
+    audience_mapper_payload,
+    backend_payload,
+    frontend_payload,
+    owned_fields_match,
+    realm_payload,
+)
+from keycloak_profile_roles import (
+    KeycloakRoleError,
+    inspect_service_account_roles,
+    verify_service_account_roles,
+)
+
+
+def _read_realm(
+    client: KeycloakAdminClient,
+) -> dict[str, Any] | None:
+    """Read the selected realm without treating absence as an error.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+
+    Returns:
+        Realm representation, or ``None`` when it does not exist.
+
+    Raises:
+        KeycloakProfileError: If Keycloak returns malformed realm data.
+    """
+
+    status, payload = client.request(
+        "GET",
+        realm_path(client.identity),
+        expected=(200, 404),
+    )
+    if status == 404:
+        return None
+    if not isinstance(payload, dict):
+        raise KeycloakProfileError(
+            "Keycloak realm lookup returned invalid data."
+        )
+    return payload
+
+
+def _read_client(
+    client: KeycloakAdminClient,
+    client_id: str,
+) -> tuple[str, dict[str, Any]] | None:
+    """Read one exact client representation.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        client_id: Exact public client identifier.
+
+    Returns:
+        UUID plus representation, or ``None`` when missing.
+
+    Raises:
+        KeycloakProfileError: If Keycloak returns malformed client data.
+    """
+
+    client_uuid = resolve_client_uuid(client, client_id)
+    if client_uuid is None:
+        return None
+    escaped_uuid = urllib.parse.quote(client_uuid, safe="")
+    _, payload = client.request(
+        "GET",
+        realm_path(client.identity, f"/clients/{escaped_uuid}"),
+    )
+    if not isinstance(payload, dict):
+        raise KeycloakProfileError(
+            f"Keycloak client {client_id!r} returned invalid data."
+        )
+    return client_uuid, payload
+
+
+def _component_action(
+    current: dict[str, Any] | None,
+    desired: dict[str, Any],
+) -> str:
+    """Classify one desired representation without mutation.
+
+    Args:
+        current: Current representation, or ``None`` when missing.
+        desired: Exact profile-owned desired fields.
+
+    Returns:
+        ``create``, ``update``, or ``keep``.
+    """
+
+    if current is None:
+        return "create"
+    if owned_fields_match(current, desired):
+        return "keep"
+    return "update"
+
+
+def _read_mapper_action(
+    client: KeycloakAdminClient,
+    frontend_uuid: str | None,
+) -> str:
+    """Classify the declared audience mapper without mutation.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        frontend_uuid: Existing frontend UUID, or ``None`` when missing.
+
+    Returns:
+        ``create``, ``update``, or ``keep``.
+
+    Raises:
+        KeycloakProfileError: If mapper data is malformed or ambiguous.
+    """
+
+    if frontend_uuid is None:
+        return "create"
+    escaped_uuid = urllib.parse.quote(frontend_uuid, safe="")
+    path = realm_path(
+        client.identity,
+        f"/clients/{escaped_uuid}/protocol-mappers/models",
+    )
+    _, payload = client.request("GET", path)
+    if not isinstance(payload, list):
+        raise KeycloakProfileError(
+            "Keycloak protocol mapper lookup returned invalid data."
+        )
+    desired = audience_mapper_payload(client.identity)
+    matches = [
+        item
+        for item in payload
+        if isinstance(item, dict) and item.get("name") == desired["name"]
+    ]
+    if not matches:
+        return "create"
+    if len(matches) != 1:
+        raise KeycloakProfileError(
+            "The declared Keycloak audience mapper is ambiguous."
+        )
+    return _component_action(matches[0], desired)
+
+
+def find_forbidden_users(
+    client: KeycloakAdminClient,
+) -> tuple[str, ...]:
+    """Find exact profile-forbidden default usernames.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+
+    Returns:
+        Sorted usernames present in the selected realm.
+
+    Raises:
+        KeycloakProfileError: If Keycloak returns malformed user data.
+    """
+
+    found: list[str] = []
+    path = realm_path(client.identity, "/users")
+    for username in client.identity.forbidden_default_usernames:
+        _, payload = client.request(
+            "GET",
+            path,
+            query={"username": username, "exact": "true"},
+        )
+        if not isinstance(payload, list):
+            raise KeycloakProfileError(
+                "Keycloak user lookup returned invalid data."
+            )
+        if any(
+            isinstance(item, dict) and item.get("username") == username
+            for item in payload
+        ):
+            found.append(username)
+    return tuple(sorted(found))
+
+
+def _role_plan(
+    client: KeycloakAdminClient,
+    backend: tuple[str, dict[str, Any]] | None,
+) -> tuple[str, tuple[str, ...]]:
+    """Classify service-account roles and expose unsafe blockers.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        backend: Existing backend UUID/representation pair, or ``None``.
+
+    Returns:
+        Planned action and any unexpected qualified role names.
+    """
+
+    backend_uuid = _role_ready_uuid(backend)
+    if backend_uuid is None:
+        return "assign", ()
+    include_effective = backend[1].get("fullScopeAllowed") is not True
+    differences = inspect_service_account_roles(
+        client,
+        backend_uuid,
+        include_effective=include_effective,
+    )
+    action = "assign" if differences["missing"] else "keep"
+    return action, differences["unexpected"]
+
+
+def _secret_plan_action(
+    docker_secret_present: bool,
+    replace_secret: bool,
+) -> str:
+    """Classify the Docker secret handoff without reading secret material.
+
+    Args:
+        docker_secret_present: Whether the declared Docker secret exists.
+        replace_secret: Whether explicit rotation was requested.
+
+    Returns:
+        Sanitized secret action.
+    """
+
+    if replace_secret:
+        return "rotate-and-replace"
+    if docker_secret_present:
+        return "keep-present-unverified"
+    return "fetch-prove-and-create"
+
+
+def _plan_blockers(
+    client: KeycloakAdminClient,
+    *,
+    realm_exists: bool,
+    backend_action: str,
+    unexpected_roles: tuple[str, ...],
+    docker_secret_present: bool,
+    replace_secret: bool,
+) -> list[str]:
+    """Build explicit blockers that require operator correction.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        realm_exists: Whether the selected realm already exists.
+        backend_action: Planned backend client action.
+        unexpected_roles: Undeclared qualified service-account roles.
+        docker_secret_present: Whether the declared Docker secret exists.
+        replace_secret: Whether explicit rotation was requested.
+
+    Returns:
+        Sanitized blocker messages.
+    """
+
+    forbidden = find_forbidden_users(client) if realm_exists else ()
+    blockers = [
+        f"Delete forbidden default user explicitly: {username}"
+        for username in forbidden
+    ]
+    blockers.extend(
+        f"Remove undeclared service-account role explicitly: {role}"
+        for role in unexpected_roles
+    )
+    if (
+        backend_action == "create"
+        and docker_secret_present
+        and not replace_secret
+    ):
+        blockers.append(
+            "Backend client is missing while its Docker secret exists; "
+            "use explicit secret rotation with the stack stopped."
+        )
+    return blockers
+
+
+def _read_plan_clients(
+    client: KeycloakAdminClient,
+    realm_exists: bool,
+) -> tuple[
+    tuple[str, dict[str, Any]] | None,
+    tuple[str, dict[str, Any]] | None,
+]:
+    """Read candidate clients only when their realm exists.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        realm_exists: Whether client endpoints are available.
+
+    Returns:
+        Optional frontend and backend UUID/representation pairs.
+    """
+
+    if not realm_exists:
+        return None, None
+    identity = client.identity
+    return (
+        _read_client(client, identity.frontend_client_id),
+        _read_client(client, identity.backend_client_id),
+    )
+
+
+def _role_ready_uuid(
+    backend: tuple[str, dict[str, Any]] | None,
+) -> str | None:
+    """Return a backend UUID only when its service account is available.
+
+    Args:
+        backend: Optional backend UUID/representation pair.
+
+    Returns:
+        Backend UUID, or ``None`` when role inspection must wait for apply.
+    """
+
+    if backend is None:
+        return None
+    if backend[1].get("serviceAccountsEnabled") is not True:
+        return None
+    return backend[0]
+
+
+def build_reconciliation_plan(
+    client: KeycloakAdminClient,
+    *,
+    docker_secret_present: bool,
+    replace_secret: bool,
+) -> dict[str, Any]:
+    """Build one sanitized read-only plan from live Keycloak and Docker state.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        docker_secret_present: Whether the declared Docker secret exists.
+        replace_secret: Whether explicit credential rotation was requested.
+
+    Returns:
+        JSON-compatible plan with component actions and blockers.
+
+    Raises:
+        KeycloakProfileError: If live state is malformed.
+        KeycloakRoleError: If role state cannot be inspected safely.
+    """
+
+    identity = client.identity
+    current_realm = _read_realm(client)
+    realm_action = _component_action(
+        current_realm,
+        realm_payload(identity),
+    )
+    frontend, backend = _read_plan_clients(
+        client,
+        current_realm is not None,
+    )
+    frontend_uuid = None if frontend is None else frontend[0]
+    role_action, unexpected_roles = _role_plan(
+        client,
+        backend,
+    )
+    frontend_action = _component_action(
+        None if frontend is None else frontend[1],
+        frontend_payload(identity),
+    )
+    backend_action = _component_action(
+        None if backend is None else backend[1],
+        backend_payload(identity),
+    )
+    blockers = _plan_blockers(
+        client,
+        realm_exists=current_realm is not None,
+        backend_action=backend_action,
+        unexpected_roles=unexpected_roles,
+        docker_secret_present=docker_secret_present,
+        replace_secret=replace_secret,
+    )
+    return {
+        "realm": realm_action,
+        "frontendClient": frontend_action,
+        "backendClient": backend_action,
+        "audienceMapper": _read_mapper_action(client, frontend_uuid),
+        "serviceAccountRoles": role_action,
+        "dockerSecret": _secret_plan_action(
+            docker_secret_present,
+            replace_secret,
+        ),
+        "blockers": blockers,
+    }
+
+
+def _verify_mapper(
+    client: KeycloakAdminClient,
+    frontend_uuid: str,
+) -> None:
+    """Require exactly one converged profile-owned audience mapper.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        frontend_uuid: Verified frontend client UUID.
+
+    Returns:
+        Nothing when the mapper matches.
+
+    Raises:
+        KeycloakProfileError: If the mapper is missing, ambiguous, or drifted.
+    """
+
+    action = _read_mapper_action(client, frontend_uuid)
+    if action != "keep":
+        raise KeycloakProfileError(
+            "Keycloak audience mapper verification found unresolved drift."
+        )
+
+
+def _verify_realm_and_clients(
+    client: KeycloakAdminClient,
+) -> tuple[tuple[str, dict[str, Any]], tuple[str, dict[str, Any]]]:
+    """Verify profile-owned realm and client representations.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+
+    Returns:
+        Verified frontend and backend UUID/representation pairs.
+
+    Raises:
+        KeycloakProfileError: If realm or client state is missing or drifted.
+    """
+
+    identity = client.identity
+    realm = _read_realm(client)
+    if realm is None or not owned_fields_match(
+        realm,
+        realm_payload(identity),
+    ):
+        raise KeycloakProfileError(
+            "Keycloak realm verification found unresolved drift."
+        )
+    frontend = _read_client(client, identity.frontend_client_id)
+    backend = _read_client(client, identity.backend_client_id)
+    if frontend is None or not owned_fields_match(
+        frontend[1],
+        frontend_payload(identity),
+    ):
+        raise KeycloakProfileError(
+            "Keycloak frontend client verification found unresolved drift."
+        )
+    if backend is None or not owned_fields_match(
+        backend[1],
+        backend_payload(identity),
+    ):
+        raise KeycloakProfileError(
+            "Keycloak backend client verification found unresolved drift."
+        )
+    return frontend, backend
+
+
+def _verify_public_metadata(client: KeycloakAdminClient) -> None:
+    """Verify exact issuer metadata and at least one public signing key.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+
+    Returns:
+        Nothing when discovery and JWKS are valid.
+
+    Raises:
+        KeycloakProfileError: If issuer or signing-key state is invalid.
+    """
+
+    identity = client.identity
+    discovery = client.public_json(
+        f"{identity.issuer_url}/.well-known/openid-configuration"
+    )
+    jwks = client.public_json(identity.jwks_url)
+    if discovery.get("issuer") != identity.issuer_url:
+        raise KeycloakProfileError(
+            "Keycloak discovery issuer does not match the site profile."
+        )
+    if not isinstance(jwks.get("keys"), list) or not jwks["keys"]:
+        raise KeycloakProfileError(
+            "Keycloak JWKS verification returned no signing keys."
+        )
+
+
+def verify_reconciled_state(
+    client: KeycloakAdminClient,
+) -> dict[str, bool]:
+    """Verify exact Admin API state plus public issuer and signing keys.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+
+    Returns:
+        Secret-free named checks, all true on success.
+
+    Raises:
+        KeycloakProfileError: If mapper, user, issuer, or JWKS verification
+            fails.
+        KeycloakRoleError: If service-account roles are not exact.
+    """
+
+    frontend, backend = _verify_realm_and_clients(client)
+    _verify_mapper(client, frontend[0])
+    verify_service_account_roles(client, backend[0])
+    forbidden = find_forbidden_users(client)
+    if forbidden:
+        raise KeycloakProfileError(
+            "Forbidden default Keycloak users are present: "
+            + ", ".join(forbidden)
+            + "."
+        )
+    _verify_public_metadata(client)
+    return {
+        "realmSettings": True,
+        "frontendPkceClient": True,
+        "backendServiceClient": True,
+        "audienceMapper": True,
+        "serviceAccountRoles": True,
+        "noForbiddenDefaultUsers": True,
+        "issuer": True,
+        "jwks": True,
+    }
+
+
+__all__ = [
+    "build_reconciliation_plan",
+    "find_forbidden_users",
+    "verify_reconciled_state",
+]

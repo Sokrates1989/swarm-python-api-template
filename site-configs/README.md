@@ -58,7 +58,7 @@ Version 5.0 owns these main objects:
 | `database`, `services` | Database contract and exact service topology |
 | `image`, `web`, `resources`, `storage` | API/WebApp image and deployment defaults |
 | `pgadmin` | Optional PostgreSQL management-service defaults |
-| `cors`, `auth` | Browser-origin and authentication identity contract |
+| `cors`, `auth` | Browser-origin, authentication identity, realm policy, and verification contract |
 | `environment`, `envKeys` | Exact public runtime environment allowlist |
 | `secrets`, `optionalSecrets`, `secretMounts` | Exact Docker secret identifiers and file mounts |
 | `secretsConfig` | Exact-versus-prefixed naming and optional batch-entry template |
@@ -100,7 +100,8 @@ The same rule applies to:
   including a direct pgAdmin port;
 - API and WebApp images, versions, replicas, and memory;
 - Keycloak realm, clients, callbacks, origins, audience, protected legacy
-  identity, and backend service-account client roles;
+  identity, exact realm settings, audience-mapper name, forbidden default
+  usernames, and backend service-account client roles;
 - required and optional Docker secret identifiers; and
 - enabled capability environment and secret mounts.
 
@@ -113,6 +114,29 @@ from the other.
 Release image tags must be semantic versions. Infrastructure images must be
 registry-digest pinned. Secret values, passwords, tokens, and private keys are
 forbidden in site configs and root `.env`.
+
+For `auth.provider=keycloak`, schema 5 also requires:
+
+- `realmDisplayName` and the exact boolean `realmSettings` allowlist;
+- `audienceMapperName`;
+- `forbiddenDefaultUsernames`, which may be empty but must contain unique safe
+  names; and
+- `serviceAccountClientRoles`, grouped by the role-owning Keycloak client.
+
+The shared validator rejects Keycloak's `master` realm, built-in managed
+client IDs, and any profile that reuses one client ID for both the public
+frontend and confidential backend.
+
+The bootstrap authenticates to the existing server, prints a read-only
+sanitized plan, applies only after confirmation, then verifies Admin API
+read-back, issuer, JWKS, audience mapper, exact declared role groups, and
+forbidden-user absence. Exact role verification covers both direct
+service-account assignments and the backend client's dedicated role-scope
+mappings, including rejection of roles on undeclared clients. A missing
+client-secret Docker secret is created only after Keycloak returns the real
+credential and accepts it in a client-credentials grant. Profiles declaring a
+built-in realm-management user-read role additionally require the resulting
+token to authorize a read-only realm-user Admin API request.
 
 `_template.json` is the canonical schema-5 new-app starting point. Copy it to
 `<profile-id>.json`, replace its example public identity and image values, add

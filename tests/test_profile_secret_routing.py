@@ -37,9 +37,12 @@ MENU_HANDLERS = (
 KEYCLOAK_BOOTSTRAP = (
     REPOSITORY_ROOT / "setup" / "modules" / "keycloak-bootstrap.sh"
 )
-NATIVE_BASH_AND_JQ = (
+NATIVE_BASH_AVAILABLE = (
     not sys.platform.startswith("win")
     and shutil.which("bash") is not None
+)
+NATIVE_BASH_AND_JQ = (
+    NATIVE_BASH_AVAILABLE
     and shutil.which("jq") is not None
 )
 
@@ -93,6 +96,76 @@ class ProfileSecretRoutingStaticTests(unittest.TestCase):
         )
         self.assertIn("site_profile_declares_secrets", requires)
         self.assertNotIn("profile_uses_executable_renderer", requires)
+
+    def test_keycloak_failures_are_not_silently_discarded(self) -> None:
+        """Require menu call sites to report rather than erase failures.
+
+        Returns:
+            Nothing.
+        """
+
+        secret_source = SECRET_MENU.read_text(encoding="utf-8")
+        menu_source = MENU_HANDLERS.read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "run_profile_keycloak_bootstrap || true",
+            secret_source,
+        )
+        self.assertNotIn(
+            "run_profile_keycloak_bootstrap || true",
+            menu_source,
+        )
+        self.assertIn(
+            "Keycloak bootstrap did not complete",
+            secret_source,
+        )
+        self.assertIn(
+            "Keycloak bootstrap did not complete",
+            menu_source,
+        )
+
+
+@unittest.skipUnless(
+    NATIVE_BASH_AVAILABLE,
+    "Failure-propagation integration requires native Bash.",
+)
+class ProfileSecretFailurePropagationLinuxTests(unittest.TestCase):
+    """Exercise Keycloak failure propagation without requiring jq."""
+
+    def test_failed_keycloak_bootstrap_is_returned_on_menu_exit(self) -> None:
+        """Preserve a bootstrap failure so full deploy cannot continue.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(SECRET_MENU)}
+_show_profile_secret_status() {{ :; }}
+_profile_declares_secret_template() {{ return 1; }}
+profile_supports_keycloak_bootstrap() {{ return 0; }}
+run_profile_keycloak_bootstrap() {{
+    echo bootstrap-failed
+    return 23
+}}
+run_profile_keycloak_secret_rotation() {{ return 24; }}
+list_docker_secrets() {{ :; }}
+_manage_profile_docker_secrets <<< $'3\\n0\\n'
+status=$?
+printf 'STATUS=%s\\n' "$status"
+[ "$status" -eq 23 ]
+"""
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("bootstrap-failed", completed.stdout)
+        self.assertIn("Keycloak bootstrap did not complete", completed.stdout)
+        self.assertIn("STATUS=23", completed.stdout)
 
 
 @unittest.skipUnless(
