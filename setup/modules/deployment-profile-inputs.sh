@@ -303,6 +303,7 @@ _collect_database() {
 # _derive_shared_deployment_values
 # ------------------------------------------------------------------------------
 # Derives non-prompted values used by both environment writer adapters.
+# Existing executable Keycloak choices are retained across wizard reruns.
 #
 # Returns:
 #   0 after setting secret prefix, CORS, and stack metadata globals.
@@ -330,6 +331,19 @@ _derive_shared_deployment_values() {
     STACK_ROLE="${APP_STACK_ROLE:-api}"
     PRIMARY_SERVICE="${APP_PRIMARY_SERVICE:-api}"
     export STACK_FAMILY STACK_ROLE PRIMARY_SERVICE
+    if [ "${APP_IS_EXECUTABLE:-false}" = "true" ]; then
+        AUTH_PROVIDER="${APP_AUTH_PROVIDER:-none}"
+        KEYCLOAK_BASE_URL="$(_deployment_existing_value KEYCLOAK_BASE_URL "${APP_KEYCLOAK_BASE_URL:-}")"
+        KEYCLOAK_ISSUER_URL="$(_deployment_existing_value KEYCLOAK_ISSUER_URL "${APP_KEYCLOAK_ISSUER_URL:-}")"
+        KEYCLOAK_REALM="$(_deployment_existing_value KEYCLOAK_REALM "${APP_KEYCLOAK_REALM:-}")"
+        KEYCLOAK_REALM_DISPLAY_NAME="$(_deployment_existing_value KEYCLOAK_REALM_DISPLAY_NAME "${APP_KEYCLOAK_REALM_DISPLAY_NAME:-}")"
+        KEYCLOAK_AUDIENCE="$(_deployment_existing_value KEYCLOAK_AUDIENCE "${APP_KEYCLOAK_AUDIENCE:-}")"
+        KEYCLOAK_FRONTEND_CLIENT_ID="$(_deployment_existing_value KEYCLOAK_FRONTEND_CLIENT_ID "${APP_KEYCLOAK_FRONTEND_CLIENT_ID:-}")"
+        KEYCLOAK_BACKEND_CLIENT_ID="$(_deployment_existing_value KEYCLOAK_BACKEND_CLIENT_ID "${APP_KEYCLOAK_BACKEND_CLIENT_ID:-}")"
+        export AUTH_PROVIDER KEYCLOAK_BASE_URL KEYCLOAK_ISSUER_URL KEYCLOAK_REALM
+        export KEYCLOAK_REALM_DISPLAY_NAME KEYCLOAK_AUDIENCE
+        export KEYCLOAK_FRONTEND_CLIENT_ID KEYCLOAK_BACKEND_CLIENT_ID
+    fi
 }
 
 # ------------------------------------------------------------------------------

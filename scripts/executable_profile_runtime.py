@@ -185,17 +185,24 @@ def runtime_environment(
     )
     auth = mapping(data.get("auth", {"provider": "none"}), "auth")
     if auth.get("provider") == "keycloak":
+        issuer_url = deployment["KEYCLOAK_ISSUER_URL"].rstrip("/")
         environment.update(
             {
                 "AUTH_PROVIDER": "keycloak",
-                "KEYCLOAK_SERVER_URL": str(auth["serverUrl"]),
-                "KEYCLOAK_REALM": str(auth["realm"]),
-                "KEYCLOAK_CLIENT_ID": str(auth["frontendClientId"]),
-                "KEYCLOAK_ISSUER_URL": str(auth["issuerUrl"]),
-                "KEYCLOAK_JWKS_URL": str(auth["jwksUrl"]),
+                "KEYCLOAK_SERVER_URL": deployment["KEYCLOAK_BASE_URL"],
+                "KEYCLOAK_REALM": deployment["KEYCLOAK_REALM"],
+                "KEYCLOAK_CLIENT_ID": deployment[
+                    "KEYCLOAK_FRONTEND_CLIENT_ID"
+                ],
+                "KEYCLOAK_ISSUER_URL": issuer_url,
+                "KEYCLOAK_JWKS_URL": (
+                    f"{issuer_url}/protocol/openid-connect/certs"
+                ),
                 "KEYCLOAK_ENFORCE_AUDIENCE": "true",
-                "KEYCLOAK_AUDIENCE": str(auth["audience"]),
-                "KEYCLOAK_ADMIN_CLIENT_ID": str(auth["adminClientId"]),
+                "KEYCLOAK_AUDIENCE": deployment["KEYCLOAK_AUDIENCE"],
+                "KEYCLOAK_ADMIN_CLIENT_ID": deployment[
+                    "KEYCLOAK_BACKEND_CLIENT_ID"
+                ],
             }
         )
     for key in FALSE_DEBUG_KEYS:

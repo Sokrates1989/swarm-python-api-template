@@ -611,7 +611,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
                     load_config_defaults(self.root, "felix")
 
     def test_application_identity_cannot_be_overridden(self) -> None:
-        """Reject attempts to override profile and authentication identity.
+        """Reject deployment-instance changes to the selected application ID.
 
         Returns:
             Nothing.
@@ -625,7 +625,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             write_deployment_env(
                 self.root,
                 "felix",
-                {"KEYCLOAK_REALM": "other"},
+                {"APP_ID": "other"},
                 force=True,
             )
 

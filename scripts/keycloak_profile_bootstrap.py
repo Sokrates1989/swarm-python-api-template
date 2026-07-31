@@ -9,8 +9,8 @@ Description:
 
 Dependencies:
     - Python standard library.
-    - Executable profile, Keycloak CLI/client/reconciliation/role/verification,
-      and Docker secret bridge modules.
+    - Executable profile, Keycloak CLI/client/configuration/reconciliation,
+      role/verification, and Docker secret bridge modules.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from executable_profile import (
     ExecutableProfileError,
     load_executable_profile,
 )
+from keycloak_profile_configuration import persist_keycloak_values
 from keycloak_profile_client import (
     KeycloakAdminClient,
     KeycloakIdentity,
@@ -567,6 +568,63 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _review_bootstrap_configuration(
+    profile: ExecutableProfile,
+    identity: KeycloakIdentity,
+    *,
+    skip_review: bool,
+) -> tuple[ExecutableProfile, KeycloakIdentity]:
+    """Collect, persist, and redisplay changed public Keycloak values.
+
+    Args:
+        profile: Current validated deployment profile.
+        identity: Current normalized Keycloak identity.
+        skip_review: Keep existing values without interactive questions.
+
+    Returns:
+        Active profile and identity after optional persistence and rendering.
+
+    Raises:
+        ExecutableProfileError: If entered values or stack rendering fail.
+        KeycloakProfileError: If the server trust anchor is changed.
+        OSError: If generated deployment artifacts cannot be replaced.
+    """
+
+    if skip_review:
+        return profile, identity
+    selected_values = prompt_bootstrap_values(identity)
+    profile, changed = persist_keycloak_values(profile, selected_values)
+    if not changed:
+        return profile, identity
+    prior_identity = identity
+    identity = load_keycloak_identity(profile)
+    print("")
+    print(
+        "[OK] Saved Keycloak deployment values to "
+        f"{profile.root / '.env'}"
+    )
+    print(
+        "[OK] Rebuilt generated stack at "
+        f"{profile.root / 'swarm-stack.yml'}"
+    )
+    print(
+        "[WARN] WebApp/mobile artifacts must be built with this "
+        "realm and client identity."
+    )
+    if (
+        identity.realm != prior_identity.realm
+        or identity.backend_client_id != prior_identity.backend_client_id
+    ):
+        print(
+            "[WARN] An existing Docker client secret belongs to the prior "
+            "realm/backend client and requires explicit rotation with the "
+            "stack stopped."
+        )
+    print("")
+    print_target(profile, identity)
+    return profile, identity
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run profile-driven Keycloak reconciliation.
 
@@ -582,8 +640,11 @@ def main(argv: list[str] | None = None) -> int:
         profile = load_executable_profile(args.root)
         identity = load_keycloak_identity(profile)
         print_target(profile, identity)
-        if not args.accept_profile_values:
-            prompt_bootstrap_values(identity)
+        profile, identity = _review_bootstrap_configuration(
+            profile,
+            identity,
+            skip_review=args.accept_profile_values,
+        )
         debug = args.debug
         if not args.accept_profile_values and not debug:
             debug = prompt_secret_safe_debug()

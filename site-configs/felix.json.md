@@ -17,9 +17,8 @@ Felix differs only through profile data:
 - backend image `sokrates1989/python-api-felix`;
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
-- shared existing Keycloak realm `felix`, candidate public client
-  `felix-new-frontend`, and confidential backend client/audience
-  `felix-new-backend`; and
+- Keycloak realm/client defaults `felix`, `felix-new-frontend`, and
+  `felix-new-backend`, with protected legacy identity and realm policy; and
 - exact Docker secret identifiers and file mounts.
 
 Felix recommends `storage.dataRoot: /swarm/prod/felix`. Pressing Enter at the
@@ -53,20 +52,20 @@ deployment. The app menu uses the public Admin API of that existing server; it
 never deploys another Keycloak instance and never depends on the local
 development `keycloak` repository.
 
-The shared bootstrap reads realm-owned settings, clients, callbacks, origins,
-audience mapper, forbidden default usernames, protected legacy identity,
-backend service-account client roles, and the confidential-client Docker
-secret target from this JSON. It reconciles only the allowlisted
-`realmSettings` fields and preserves all other realm settings and social
-identity providers. Stack identity is independent from authentication
-identity: the stack and shared realm are `felix`, while candidate clients keep
-the `felix-new-frontend` and `felix-new-backend` names. Reconciliation touches
-only declared realm fields and candidate clients; unrelated legacy clients and
-social providers in `felix` are preserved.
+The shared bootstrap reads realm policy, callback templates, audience-mapper
+policy, forbidden default usernames, protected legacy identity, backend
+service-account roles, the fixed Keycloak server trust anchor, and the
+confidential-client Docker secret target from this JSON. Realm/display name,
+managed client IDs, audience, and active service roots use these profile values
+as defaults but may be changed in the guided bootstrap. Valid selections are
+persisted to the ignored root `.env` and rebuild the generated stack. It
+reconciles only the allowlisted `realmSettings` fields and preserves all other
+realm settings, unrelated clients, and social identity providers.
 Every declared frontend callback is also admitted as a post-logout redirect,
 including the native `felixkc:/callback`, while browser origins additionally
 receive their Web wildcard.
-The legacy `felix` realm remains protected. For Felix, the only declared
+The separate legacy `felixappnew` realm and declared legacy client/origin
+remain protected. For Felix, the only declared
 backend grant is `realm-management/manage-users`; undeclared broader grants
 in either the service-account assignment or the backend client's dedicated
 scope, direct realm roles other than Keycloak's generated default role,

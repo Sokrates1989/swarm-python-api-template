@@ -10,8 +10,8 @@ Description:
 
 Dependencies:
     - Python standard library.
-    - Executable profile and Keycloak profile client, verification, and
-      Docker-secret modules.
+    - Executable profile and Keycloak profile client, configuration,
+      verification, and Docker-secret modules.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import getpass
 import json
 
 from executable_profile import ExecutableProfile
+from keycloak_profile_configuration import KeycloakBootstrapValues
 from keycloak_profile_client import (
     KeycloakAdminClient,
     KeycloakIdentity,
@@ -81,67 +82,72 @@ def print_target(
     print("its value is never displayed or written to a file.")
 
 
-def _prompt_declared_value(label: str, expected: str) -> None:
-    """Ask for one public value while preventing one-run identity drift.
+def _prompt_value(label: str, default: str) -> str:
+    """Return an entered public value or its active deployment default.
 
     Args:
         label: Operator-facing field label.
-        expected: Exact profile/deployment-derived public value.
+        default: Active profile/deployment-derived public value.
 
     Returns:
-        Nothing when Enter or the exact declared value is supplied.
-
-    Raises:
-        KeycloakProfileError: If the entered value differs from the selected
-            site's cross-repository identity contract.
+        Trimmed entered value, or ``default`` when Enter is pressed.
     """
 
-    answer = input(f"{label} [{expected}]: ").strip()
-    if answer and answer != expected:
-        raise KeycloakProfileError(
-            f"{label} is fixed by the selected site profile. Expected "
-            f"{expected!r}; update the site config and matching application "
-            "release profiles before bootstrapping a different identity."
-        )
+    answer = input(f"{label} [{default}]: ").strip()
+    return answer or default
 
 
-def prompt_bootstrap_values(identity: KeycloakIdentity) -> None:
-    """Walk through the public bootstrap values with active defaults.
+def prompt_bootstrap_values(
+    identity: KeycloakIdentity,
+) -> KeycloakBootstrapValues:
+    """Collect editable public bootstrap values with active defaults.
 
     Args:
         identity: Complete profile/deployment-derived Keycloak identity.
 
     Returns:
-        Nothing after every declared value is explicitly accepted.
-
-    Raises:
-        KeycloakProfileError: If an answer attempts a one-run identity change.
+        Selected values ready for validation and deployment persistence.
 
     Note:
-        Root URLs already reflect operator choices from the shared deployment
-        setup. Realm and client IDs are cross-repository build contracts, so a
-        bootstrap-only override would create an unusable deployment.
+        The Keycloak server URL is printed as a fixed trust anchor because the
+        administrator password must never be redirected by an interactive
+        value entered immediately before authentication.
     """
 
     print("")
     print("Review Keycloak bootstrap values")
     print("--------------------------------")
     print("Press Enter to accept each active profile/deployment value.")
-    print("Identity changes must be made through the shared site profile and")
-    print("matching WebApp/backend release profiles, not only for this run.")
+    print("Different values are validated, saved to .env, and used to rebuild")
+    print("the stack before Keycloak authentication and reconciliation.")
+    print("WebApp/mobile builds must use the same realm and client identity.")
     print("")
-    fields = (
-        ("Keycloak server URL", identity.server_url),
-        ("Realm name", identity.realm),
-        ("Realm display name", identity.realm_display_name),
-        ("Frontend client ID", identity.frontend_client_id),
-        ("Backend client ID", identity.backend_client_id),
-        ("Frontend client root URL", identity.frontend_root_url),
-        ("Backend API client root URL", identity.api_root_url),
-        ("Backend audience", identity.audience),
+    print(f"Keycloak server URL (fixed trust anchor): {identity.server_url}")
+    return KeycloakBootstrapValues(
+        server_url=identity.server_url,
+        realm=_prompt_value("Realm name", identity.realm),
+        realm_display_name=_prompt_value(
+            "Realm display name",
+            identity.realm_display_name,
+        ),
+        frontend_client_id=_prompt_value(
+            "Frontend client ID",
+            identity.frontend_client_id,
+        ),
+        backend_client_id=_prompt_value(
+            "Backend client ID",
+            identity.backend_client_id,
+        ),
+        frontend_root_url=_prompt_value(
+            "Frontend client root URL",
+            identity.frontend_root_url,
+        ),
+        api_root_url=_prompt_value(
+            "Backend API client root URL",
+            identity.api_root_url,
+        ),
+        audience=_prompt_value("Backend audience", identity.audience),
     )
-    for label, expected in fields:
-        _prompt_declared_value(label, expected)
 
 
 def prompt_secret_safe_debug() -> bool:

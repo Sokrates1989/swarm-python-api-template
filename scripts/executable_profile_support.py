@@ -5,9 +5,9 @@ Description:
     Defines shared constants, errors, strict JSON/dotenv parsing, and fixed
     application identity derivation for schema-5 executable deployment
     profiles. Operator-selected deployment values such as stack names,
-    domains, and image repositories are deliberately excluded from fixed
-    identity. These helpers contain no application identity and perform no
-    runtime mutation.
+    domains, image repositories, and Keycloak deployment identity are
+    deliberately excluded from immutable application identity. These helpers
+    contain no application identity and perform no runtime mutation.
 
 Dependencies:
     - Python standard library only.
@@ -75,6 +75,7 @@ DEPLOYMENT_KEYS = (
     "KEYCLOAK_BASE_URL",
     "KEYCLOAK_ISSUER_URL",
     "KEYCLOAK_REALM",
+    "KEYCLOAK_REALM_DISPLAY_NAME",
     "KEYCLOAK_AUDIENCE",
     "KEYCLOAK_FRONTEND_CLIENT_ID",
     "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -112,6 +113,24 @@ DEPLOYMENT_KEYS = (
     "WEB_MEMORY_LIMIT",
 )
 DEPLOYMENT_KEY_SET = frozenset(DEPLOYMENT_KEYS)
+
+# Keycloak identity selected per deployment; the server URL is intentionally
+# absent because it remains the tracked administrator-credential trust anchor.
+KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
+    {
+        "KEYCLOAK_ISSUER_URL",
+        "KEYCLOAK_REALM",
+        "KEYCLOAK_REALM_DISPLAY_NAME",
+        "KEYCLOAK_AUDIENCE",
+        "KEYCLOAK_FRONTEND_CLIENT_ID",
+        "KEYCLOAK_BACKEND_CLIENT_ID",
+    }
+)
+
+# Additive generated-environment fields accepted from pre-upgrade `.env` files.
+OPTIONAL_DEPLOYMENT_DEFAULTS = {
+    "KEYCLOAK_REALM_DISPLAY_NAME": "",
+}
 
 
 class ExecutableProfileError(ValueError):
@@ -286,6 +305,8 @@ def read_env(path: Path) -> dict[str, str]:
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
             value = value[1:-1]
         values[key] = value
+    for key, default in OPTIONAL_DEPLOYMENT_DEFAULTS.items():
+        values.setdefault(key, default)
     missing = [key for key in DEPLOYMENT_KEYS if key not in values]
     if missing:
         raise ExecutableProfileError(
@@ -317,16 +338,18 @@ def fixed_deployment_values(
     data: Mapping[str, object],
     config_id: str,
 ) -> dict[str, str]:
-    """Derive non-editable application identity from a site config.
+    """Derive profile defaults for application and authentication identity.
 
     Args:
         data: Parsed site profile.
         config_id: Selected site-config ID.
 
     Returns:
-        Fixed public root environment fields. Deployment-instance choices such
-        as stack names, domains, image repositories, ports, and resources are
-        intentionally omitted so the shared wizard can offer profile defaults.
+        Profile-derived public root environment defaults. Deployment-instance
+        choices such as stack names, domains, image repositories, ports, and
+        resources are omitted. Keycloak values remain present as editable
+        defaults and are filtered by :func:`immutable_deployment_values` when
+        enforcing application identity.
     """
 
     stack = mapping(data["stack"], "stack")
@@ -350,6 +373,9 @@ def fixed_deployment_values(
         "KEYCLOAK_BASE_URL": str(auth.get("serverUrl", "")),
         "KEYCLOAK_ISSUER_URL": str(auth.get("issuerUrl", "")),
         "KEYCLOAK_REALM": str(auth.get("realm", "")),
+        "KEYCLOAK_REALM_DISPLAY_NAME": str(
+            auth.get("realmDisplayName", "")
+        ),
         "KEYCLOAK_AUDIENCE": str(auth.get("audience", "")),
         "KEYCLOAK_FRONTEND_CLIENT_ID": str(
             auth.get("frontendClientId", "")
@@ -364,6 +390,28 @@ def fixed_deployment_values(
     }
 
 
+def immutable_deployment_values(
+    data: Mapping[str, object],
+    config_id: str,
+) -> dict[str, str]:
+    """Return site-profile identity that one deployment may not override.
+
+    Args:
+        data: Parsed site profile.
+        config_id: Selected site-config ID.
+
+    Returns:
+        Application, renderer, and service identity excluding editable
+        Keycloak deployment values.
+    """
+
+    return {
+        key: value
+        for key, value in fixed_deployment_values(data, config_id).items()
+        if key not in KEYCLOAK_DEPLOYMENT_KEYS
+    }
+
+
 __all__ = [
     "DEPLOYMENT_KEYS",
     "DEPLOYMENT_KEY_SET",
@@ -372,12 +420,14 @@ __all__ = [
     "ExecutableProfileError",
     "FALSE_DEBUG_KEYS",
     "IMAGE_PATTERN",
+    "KEYCLOAK_DEPLOYMENT_KEYS",
     "MEMORY_PATTERN",
     "NAME_PATTERN",
     "SECRET_PATTERN",
     "SEMVER_PATTERN",
     "config_path",
     "fixed_deployment_values",
+    "immutable_deployment_values",
     "load_json",
     "mapping",
     "read_env",

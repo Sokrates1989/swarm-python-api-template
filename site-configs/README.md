@@ -67,8 +67,8 @@ Version 5.0 owns these main objects:
 
 The shared executable path then:
 
-1. derives fixed application/authentication identity and editable deployment
-   defaults from the selected JSON;
+1. derives fixed application identity, a fixed Keycloak credential trust
+   anchor, and editable deployment defaults from the selected JSON;
 2. writes the ignored, public-only root `.env`;
 3. validates `environment`, `envKeys`, and file-backed secret mounts;
 4. renders the complete `swarm-stack.yml`;
@@ -86,6 +86,16 @@ identity layer. `storage.dataRoot` may provide a safe absolute recommended
 host path. Missing or empty values fall back to the deployment checkout. The
 operator may choose another safe absolute path, which the ignored root `.env`
 preserves for later reconfiguration.
+
+For Keycloak profiles, `auth.serverUrl`, protected legacy identity, realm
+policy, callbacks, mapper policy, forbidden users, service-account roles, and
+the Docker-secret target remain tracked safety policy. Realm name/display
+name, frontend/backend client IDs, audience, and active frontend/API roots are
+editable deployment values. The bootstrap persists them to root `.env` and
+rebuilds the stack. The server URL is deliberately not an interactive override
+because the following administrator password must only be sent to the tracked
+credential destination. WebApp/mobile artifacts must be built with the active
+realm and client IDs.
 
 `services.web` controls the optional WebApp service. When true, `web.image`,
 `web.resources`, and the `routing.web*` fields define that service. No code

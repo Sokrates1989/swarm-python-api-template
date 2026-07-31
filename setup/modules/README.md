@@ -73,17 +73,23 @@ actions appear only when the profile declares those capabilities.
 Exposes realm bootstrap only when a strict executable profile declares
 `auth.provider=keycloak`. It calls
 `scripts/keycloak_profile_bootstrap.py`, which updates the existing Keycloak
-server through its Admin API. Realm, clients, callback URIs, browser origins,
-audience, protected identity, service-account client roles, and Docker secret
-target all come from the selected profile.
+server through its Admin API. The profile owns the trusted server, defaults,
+callback templates, protected identity, realm/mapper policy, service-account
+roles, and Docker-secret target. Active realm, clients, audience, and service
+roots come from the validated deployment environment.
 
 Before credentials, the operator walks through the active server, realm,
 display name, client IDs, service roots, and audience with the selected
-profile/deployment values as Enter-default answers. A one-run identity change
-is rejected because independently built WebApp and backend artifacts must use
-the same realm and client IDs; change those contracts through the site config
-and matching release profiles instead. The administrator username and hidden
-password prompts remain adjacent.
+profile/deployment values as Enter-default answers. Entered realm, display
+name, client IDs, audience, and service roots are validated, persisted to the
+ignored root `.env`, and used to rebuild `swarm-stack.yml` before credentials
+are requested. The server URL remains the tracked credential trust anchor and
+cannot be redirected from this password-bearing dialogue. The administrator
+username and hidden password prompts remain adjacent. Independently built
+WebApp/mobile artifacts must use the selected realm and client identity.
+Changing the realm or backend client while its Docker secret already exists
+keeps fail-closed behavior: stop the stack and use the explicit rotation
+action so the proven new credential replaces the prior binding.
 
 The operator may enable secret-safe debug tracing. It prints only Admin API
 methods, paths, query-key names, and HTTP status codes—never request bodies,

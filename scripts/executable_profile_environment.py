@@ -3,8 +3,9 @@ Module: executable_profile_environment.py
 
 Description:
     Builds operator-editable defaults and atomically writes the public root
-    environment for any schema-5 executable site profile. Profile identity and
-    service defaults are read exclusively from the selected site config.
+    environment for any schema-5 executable site profile. Immutable profile
+    identity and editable deployment defaults are read from the selected site
+    config; validated operator choices may replace the latter.
 
 Dependencies:
     - Python standard library.
@@ -26,6 +27,7 @@ from executable_profile_support import (
     ExecutableProfileError,
     config_path,
     fixed_deployment_values,
+    immutable_deployment_values,
     load_json,
     mapping,
 )
@@ -184,7 +186,7 @@ def write_deployment_env(
 
     resolved_root = root.resolve()
     data, values = load_config_defaults(resolved_root, config_id)
-    fixed_keys = set(fixed_deployment_values(data, config_id))
+    fixed_keys = set(immutable_deployment_values(data, config_id))
     for key, value in overrides.items():
         if key not in DEPLOYMENT_KEY_SET:
             raise ExecutableProfileError(

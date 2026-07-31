@@ -108,6 +108,7 @@ scripts/
 ├── keycloak_profile_bootstrap.py
 ├── keycloak_profile_cli.py
 ├── keycloak_profile_client.py
+├── keycloak_profile_configuration.py
 ├── keycloak_profile_reconciliation.py
 ├── keycloak_profile_roles.py
 ├── keycloak_profile_secret_bridge.py

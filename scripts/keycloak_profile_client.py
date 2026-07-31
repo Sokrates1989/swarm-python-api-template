@@ -607,13 +607,14 @@ def _service_account_roles(
 
 
 def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
-    """Normalize all realm/client values from the active site profile.
+    """Normalize realm policy plus active deployment identity.
 
     Args:
         profile: Validated executable profile.
 
     Returns:
-        Immutable Keycloak identity.
+        Immutable Keycloak identity combining tracked safety policy with
+        validated operator-selected realm/client values.
 
     Raises:
         KeycloakProfileError: If the profile does not use Keycloak or lacks a
@@ -636,19 +637,24 @@ def load_keycloak_identity(profile: ExecutableProfile) -> KeycloakIdentity:
         configured_web_root,
         deployment_web_root,
     )
+    deployment = profile.deployment
+    issuer_url = deployment["KEYCLOAK_ISSUER_URL"].rstrip("/")
     return KeycloakIdentity(
-        server_url=str(raw["serverUrl"]).rstrip("/"),
-        issuer_url=str(raw["issuerUrl"]).rstrip("/"),
-        jwks_url=str(raw["jwksUrl"]).rstrip("/"),
-        realm=str(raw["realm"]),
-        realm_display_name=str(raw["realmDisplayName"]),
+        server_url=deployment["KEYCLOAK_BASE_URL"].rstrip("/"),
+        issuer_url=issuer_url,
+        jwks_url=f"{issuer_url}/protocol/openid-connect/certs",
+        realm=deployment["KEYCLOAK_REALM"],
+        realm_display_name=(
+            deployment["KEYCLOAK_REALM_DISPLAY_NAME"]
+            or str(raw["realmDisplayName"])
+        ),
         realm_settings=tuple(
             (str(name), bool(value))
             for name, value in raw["realmSettings"].items()
         ),
-        frontend_client_id=str(raw["frontendClientId"]),
-        backend_client_id=str(raw["adminClientId"]),
-        audience=str(raw["audience"]),
+        frontend_client_id=deployment["KEYCLOAK_FRONTEND_CLIENT_ID"],
+        backend_client_id=deployment["KEYCLOAK_BACKEND_CLIENT_ID"],
+        audience=deployment["KEYCLOAK_AUDIENCE"],
         audience_mapper_name=str(raw["audienceMapperName"]),
         redirect_uris=redirect_uris,
         web_origins=web_origins,

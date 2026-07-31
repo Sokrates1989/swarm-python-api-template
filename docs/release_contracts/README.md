@@ -30,7 +30,7 @@ repository. The menu shows a sanitized plan, verifies state by reading it
 back, checks the public issuer and JWKS, and proves a newly bridged backend
 credential through the client-credentials endpoint without displaying it.
 
-The contract protects:
+The contract records these reviewed release defaults and boundaries:
 
 - candidate WebApp `felix-app.fe-wi.com`;
 - candidate API `api.felix-app.fe-wi.com`;
@@ -41,6 +41,12 @@ The contract protects:
   and origin state inside the shared `felix` realm;
 - one full-stack service boundary; and
 - explicit approval before legacy forwarding.
+
+The shared bootstrap may replace the realm/display name, managed client IDs,
+audience, and service roots with validated deployment-instance values in the
+ignored root `.env`. Such choices must match the WebApp/mobile artifacts used
+for that deployment. The tracked Keycloak server and protected legacy identity
+remain immutable safety boundaries.
 
 JSON cannot contain comments, so this README owns safe-editing guidance.
 Never add passwords, tokens, private keys, client-secret values, generated

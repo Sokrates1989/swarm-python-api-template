@@ -94,6 +94,11 @@ profile recommendation and otherwise defaults dynamically to the deployment
 checkout. Felix recommends `/swarm/prod/felix`, while the shared prompt still
 permits an intentional safe absolute override.
 
+For Keycloak profiles, the tracked server URL is the administrator-credential
+trust anchor. Realm/display name, managed client IDs, audience, and active
+service roots are validated deployment-instance choices stored in `.env`.
+Protected legacy identity and realm/client policy remain tracked profile data.
+
 ## Current file structure
 
 ```text

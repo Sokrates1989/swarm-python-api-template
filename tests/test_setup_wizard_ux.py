@@ -44,6 +44,9 @@ SITE_HELPERS = (
 MENU_HANDLERS = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
 )
+KEYCLOAK_BOOTSTRAP = (
+    REPOSITORY_ROOT / "setup" / "modules" / "keycloak-bootstrap.sh"
+)
 
 
 class SetupWizardUxTests(unittest.TestCase):
@@ -123,6 +126,31 @@ class SetupWizardUxTests(unittest.TestCase):
 
         self.assertIn('load_app_config "$project_root" "$profile_id"', loader)
         self.assertIn("Deployment profile is missing:", loader)
+
+    def test_keycloak_choices_survive_shared_wizard_reruns(self) -> None:
+        """Carry persisted identity through the generic executable adapter.
+
+        Returns:
+            Nothing.
+        """
+
+        inputs = INPUTS_MODULE.read_text(encoding="utf-8")
+        adapter = EXECUTABLE_ADAPTER.read_text(encoding="utf-8")
+        bootstrap = KEYCLOAK_BOOTSTRAP.read_text(encoding="utf-8")
+        keys = (
+            "KEYCLOAK_REALM",
+            "KEYCLOAK_REALM_DISPLAY_NAME",
+            "KEYCLOAK_AUDIENCE",
+            "KEYCLOAK_FRONTEND_CLIENT_ID",
+            "KEYCLOAK_BACKEND_CLIENT_ID",
+        )
+
+        for key in keys:
+            self.assertIn(f"_deployment_existing_value {key}", inputs)
+            self.assertIn(f'--set "{key}=${{{key}}}"', adapter)
+        self.assertIn("saved to root .env", bootstrap)
+        self.assertIn("rebuild swarm-stack.yml", bootstrap)
+        self.assertIn("credential trust anchor", bootstrap)
 
     def test_common_sections_are_capability_driven(self) -> None:
         """Require shared service/routing prompts without app-name branches.

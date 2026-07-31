@@ -59,14 +59,15 @@ Do not clone `D:\Development\Code\keycloak` or its remote on a production
 server. That repository is for local development. Do not create a second
 Keycloak stack.
 
-The Felix deployment menu talks to the existing server's Admin API. It reads
-realm `felix`, candidate clients, callbacks, origins, audience, and target Docker
-secret name from `site-configs/felix.json`. The stack name remains `felix`;
-stack and authentication identity are independent. Re-running the action is
-idempotent: it preserves unrelated realm settings and social identity
-providers while reconciling the declared clients. The separate legacy realm
-`felixappnew`, its declared legacy client, and its origin remain protected and
-are never candidate bootstrap targets.
+The Felix deployment menu talks to the existing server's Admin API. The site
+profile provides realm/client defaults, callback and policy templates,
+protected identity, and the target Docker-secret name. Validated active
+realm/client/root choices live in the ignored root `.env`. The stack name
+remains `felix`; stack and authentication identity are independent. Re-running
+the action is idempotent: it preserves unrelated realm settings and social
+identity providers while reconciling the selected clients. The separate
+legacy realm `felixappnew`, its declared legacy client, and its origin remain
+protected and are never candidate bootstrap targets.
 
 The administrator password is entered without terminal echo. The confidential
 backend secret is not printed or written to `.env`; when its Docker secret is
@@ -108,19 +109,27 @@ Let's Encrypt mode.
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
 Review the server, realm, display name, frontend/backend client IDs, frontend
-and backend roots, and audience through their Enter-default prompts. These
-answers confirm the selected site/deployment contract; a different one-run
-identity is rejected because the WebApp and backend must be rebuilt against
-the same realm/client values. Optionally enable secret-safe request tracing,
-then enter the existing Keycloak admin username and its password at the
-immediately following hidden Python prompt.
+and backend roots, and audience through their Enter-default prompts. Entered
+values replace the defaults, are validated against protected legacy identity,
+persist to root `.env`, and rebuild `swarm-stack.yml` before authentication.
+The Keycloak server is shown as a fixed tracked credential trust anchor.
+WebApp/mobile artifacts must be built with the selected realm and client IDs.
+Optionally enable secret-safe request tracing, then enter the existing
+Keycloak admin username and its password at the immediately following hidden
+Python prompt.
+
+If an existing Docker client secret belongs to a previously selected realm or
+backend client, stop the Felix stack and use the explicit Keycloak secret
+rotation action after saving the new identity. The bootstrap deliberately does
+not silently reinterpret an opaque existing Swarm secret.
 
 Tracing contains only HTTP methods, Admin API paths, query-key names, and
 status codes. Bodies, headers, query values, tokens, passwords, and client
 secrets are never logged. Any strict read-back failure names its remaining
 profile-owned fields.
 
-The shared action ensures:
+With the profile defaults, the shared action ensures (entered deployment
+values replace the corresponding realm/client/root names below):
 
 - existing realm `felix` is reconciled without replacing unrelated clients or
   social identity providers;

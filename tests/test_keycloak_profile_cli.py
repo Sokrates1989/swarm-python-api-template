@@ -33,16 +33,15 @@ from keycloak_profile_cli import (  # noqa: E402
     prompt_bootstrap_values,
     prompt_secret_safe_debug,
 )
-from keycloak_profile_client import KeycloakProfileError  # noqa: E402
 
 
 class KeycloakProfileCliTests(unittest.TestCase):
     """Verify the interactive administrator credential prompt boundary."""
 
-    def test_bootstrap_values_are_guided_and_cannot_drift_for_one_run(
+    def test_bootstrap_values_accept_defaults_and_operator_changes(
         self,
     ) -> None:
-        """Accept Enter defaults and reject a bootstrap-only realm override.
+        """Return Enter defaults and actual operator-entered identity values.
 
         Returns:
             Nothing.
@@ -58,16 +57,30 @@ class KeycloakProfileCliTests(unittest.TestCase):
             api_root_url="https://api.example.com",
             audience="example-backend",
         )
-        with patch("builtins.input", side_effect=[""] * 8), patch(
+        with patch("builtins.input", side_effect=[""] * 7), patch(
             "builtins.print"
         ):
-            prompt_bootstrap_values(identity)
-        with (
-            patch("builtins.input", side_effect=["", "another-realm"]),
-            patch("builtins.print"),
-            self.assertRaisesRegex(KeycloakProfileError, "fixed by"),
-        ):
-            prompt_bootstrap_values(identity)
+            defaults = prompt_bootstrap_values(identity)
+        self.assertEqual(defaults.frontend_client_id, "example-frontend")
+        with patch(
+            "builtins.input",
+            side_effect=[
+                "another-realm",
+                "Another Realm",
+                "selected-frontend",
+                "selected-backend",
+                "https://selected.example.com",
+                "https://api-selected.example.com",
+                "selected-audience",
+            ],
+        ), patch("builtins.print"):
+            selected = prompt_bootstrap_values(identity)
+        self.assertEqual(selected.realm, "another-realm")
+        self.assertEqual(selected.realm_display_name, "Another Realm")
+        self.assertEqual(selected.frontend_client_id, "selected-frontend")
+        self.assertEqual(selected.backend_client_id, "selected-backend")
+        self.assertEqual(selected.audience, "selected-audience")
+        self.assertEqual(selected.server_url, identity.server_url)
 
     def test_debug_trace_requires_explicit_yes(self) -> None:
         """Keep secret-safe request tracing opt-in.
@@ -125,7 +138,15 @@ class KeycloakProfileCliTests(unittest.TestCase):
             patch.object(
                 bootstrap,
                 "prompt_bootstrap_values",
-                side_effect=lambda *_args: events.append("values"),
+                side_effect=lambda *_args: events.append("values") or object(),
+            ),
+            patch.object(
+                bootstrap,
+                "persist_keycloak_values",
+                side_effect=lambda active, _values: (
+                    events.append("persist") or active,
+                    False,
+                ),
             ),
             patch.object(
                 bootstrap,
@@ -178,6 +199,7 @@ class KeycloakProfileCliTests(unittest.TestCase):
             [
                 "target",
                 "values",
+                "persist",
                 "debug",
                 "username",
                 "password",

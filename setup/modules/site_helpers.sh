@@ -252,6 +252,18 @@ load_app_config() {
     APP_INTERNAL_NETWORK_EXTERNAL="$(_jq_or_default "$config_file" '.networking.externalNetwork' "false")"
     APP_INTERNAL_NETWORK_ATTACHABLE="$(_jq_or_default "$config_file" '.networking.attachable' "false")"
 
+    # Authentication defaults. The server URL remains the tracked credential
+    # destination; executable profiles may persist validated realm/client
+    # deployment selections in the ignored root environment.
+    APP_AUTH_PROVIDER="$(_jq_or_default "$config_file" '.auth.provider' "none")"
+    APP_KEYCLOAK_BASE_URL="$(_jq_or_default "$config_file" '.auth.serverUrl' "")"
+    APP_KEYCLOAK_ISSUER_URL="$(_jq_or_default "$config_file" '.auth.issuerUrl' "")"
+    APP_KEYCLOAK_REALM="$(_jq_or_default "$config_file" '.auth.realm' "")"
+    APP_KEYCLOAK_REALM_DISPLAY_NAME="$(_jq_or_default "$config_file" '.auth.realmDisplayName' "")"
+    APP_KEYCLOAK_AUDIENCE="$(_jq_or_default "$config_file" '.auth.audience' "")"
+    APP_KEYCLOAK_FRONTEND_CLIENT_ID="$(_jq_or_default "$config_file" '.auth.frontendClientId' "")"
+    APP_KEYCLOAK_BACKEND_CLIENT_ID="$(_jq_or_default "$config_file" '.auth.adminClientId' "")"
+
     # Secret-handling metadata (optional). Profiles whose Docker secrets use
     # Profiles with literal, unprefixed secret names declare their own secrets
     # template and set secretsConfig.prefixed = false.
@@ -520,6 +532,7 @@ _load_executable_env_fields() {
     export KEYCLOAK_BASE_URL="$(_root_env_value "$env_file" KEYCLOAK_BASE_URL)"
     export KEYCLOAK_ISSUER_URL="$(_root_env_value "$env_file" KEYCLOAK_ISSUER_URL)"
     export KEYCLOAK_REALM="$(_root_env_value "$env_file" KEYCLOAK_REALM)"
+    export KEYCLOAK_REALM_DISPLAY_NAME="$(_root_env_value "$env_file" KEYCLOAK_REALM_DISPLAY_NAME)"
     export KEYCLOAK_AUDIENCE="$(_root_env_value "$env_file" KEYCLOAK_AUDIENCE)"
     export KEYCLOAK_FRONTEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_FRONTEND_CLIENT_ID)"
     export KEYCLOAK_BACKEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_BACKEND_CLIENT_ID)"

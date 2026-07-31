@@ -4,9 +4,9 @@
 # ==============================================================================
 #
 # Offers Keycloak reconciliation only when the active site config declares
-# auth.provider=keycloak. Realm, clients, callbacks, origins, audience, and the
-# Docker secret target all come from that site config. No application identity
-# or production checkout path is embedded in this module.
+# auth.provider=keycloak. The site config provides safe defaults, protected
+# identity policy, and the fixed credential destination. Validated realm,
+# client, audience, and root choices persist in the deployment `.env`.
 # ==============================================================================
 
 # _profile_config_file
@@ -61,6 +61,34 @@ _profile_json_value() {
     fi
     value=$(jq -r "${expression} // empty" "$profile_file" 2>/dev/null)
     printf '%s\n' "${value:-$fallback}"
+}
+
+# _profile_keycloak_active_value
+# Reads an active deployment value and otherwise returns its profile default.
+#
+# Arguments:
+#   $1 - Generated root environment key.
+#   $2 - jq expression for the profile default.
+#
+# Outputs:
+#   Active or default public value.
+#
+# Returns:
+#   0 after printing a value; 1 when neither source is available.
+_profile_keycloak_active_value() {
+    local env_key="$1"
+    local expression="$2"
+    local env_file="${PROJECT_ROOT:-.}/.env"
+    local value=""
+
+    if [ -f "$env_file" ]; then
+        value="$(_root_env_value "$env_file" "$env_key")"
+    fi
+    if [ -n "$value" ]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+    _profile_json_value "$expression"
 }
 
 # profile_uses_keycloak
@@ -174,19 +202,20 @@ _profile_keycloak_summary() {
     echo "Keycloak realm bootstrap"
     echo "------------------------"
     echo "  Profile:         $(_profile_json_value '.appId')"
-    echo "  Existing server: $(_profile_json_value '.auth.serverUrl')"
-    echo "  Realm:           $(_profile_json_value '.auth.realm')"
-    echo "  Frontend client: $(_profile_json_value '.auth.frontendClientId')"
-    echo "  Backend client:  $(_profile_json_value '.auth.adminClientId')"
+    echo "  Existing server: $(_profile_keycloak_active_value KEYCLOAK_BASE_URL '.auth.serverUrl')"
+    echo "  Realm:           $(_profile_keycloak_active_value KEYCLOAK_REALM '.auth.realm')"
+    echo "  Frontend client: $(_profile_keycloak_active_value KEYCLOAK_FRONTEND_CLIENT_ID '.auth.frontendClientId')"
+    echo "  Backend client:  $(_profile_keycloak_active_value KEYCLOAK_BACKEND_CLIENT_ID '.auth.adminClientId')"
     echo "  Docker secret:   ${secret_name:-not declared}"
     echo ""
     echo "This updates the existing Keycloak deployment through its Admin API."
     echo "It does not deploy another Keycloak instance and does not change social"
     echo "identity providers or unrelated realm settings."
-    echo "The guided review asks for the active realm, clients, audience, and"
-    echo "service roots using the selected profile/deployment values as defaults."
-    echo "One-run identity drift is rejected because the WebApp and backend must"
-    echo "be built against the same public Keycloak identity."
+    echo "The guided review accepts active realm, clients, audience, and service"
+    echo "roots using the selected deployment values as defaults. Changed values"
+    echo "are validated, saved to root .env, and used to rebuild swarm-stack.yml."
+    echo "The Keycloak server remains the tracked credential trust anchor."
+    echo "WebApp/mobile builds must use the selected realm and client identity."
     echo "After login, a read-only live-state plan is shown before Enter-default"
     echo "approval. Success requires Admin API read-back, issuer/JWKS verification,"
     echo "client-credentials proof, and a capability-derived authorization check"
@@ -208,8 +237,9 @@ _profile_keycloak_summary() {
 #   Python adapter status.
 #
 # Side effects:
-#   May create/update the declared realm and clients. It may create or replace
-#   the declared Docker secret, but never prints the secret value.
+#   May persist validated public deployment values, rebuild the generated
+#   stack, create/update the selected realm and clients, and create or replace
+#   the declared Docker secret. It never prints the secret value.
 _profile_keycloak_reconcile() {
     local python_command="$1"
     local replace_flag="${2:-}"
@@ -217,11 +247,18 @@ _profile_keycloak_reconcile() {
         "${PROJECT_ROOT}/scripts/keycloak_profile_bootstrap.py"
         --root "$PROJECT_ROOT"
     )
+    local status=0
 
     if [ "$replace_flag" = "--replace-secret" ]; then
         arguments+=(--replace-secret)
+        arguments+=(--accept-profile-values)
     fi
     "$python_command" "${arguments[@]}"
+    status=$?
+    if [ -f "${PROJECT_ROOT}/.env" ]; then
+        load_root_env "$PROJECT_ROOT" || true
+    fi
+    return "$status"
 }
 
 # run_profile_keycloak_bootstrap
@@ -235,9 +272,9 @@ _profile_keycloak_reconcile() {
 #   validation or API failure.
 #
 # Side effects:
-#   Authenticates, shows a read-only plan, and mutates only the
-#   profile-declared Keycloak state and missing Docker client secret after the
-#   operator accepts the Python adapter's Enter-default confirmation.
+#   Persists entered public deployment identity, authenticates, shows a
+#   read-only plan, and mutates only profile-policy-authorized Keycloak state
+#   and the declared missing Docker client secret after confirmation.
 run_profile_keycloak_bootstrap() {
     local python_command=""
 

@@ -3,13 +3,15 @@ Module: executable_profile_deployment_validation.py
 
 Description:
     Validates operator-owned root environment values against the selected
-    tracked executable profile. Application and authentication identity cannot
-    be overridden, while stack names, routing, images, ports, resources,
-    storage, and database mode are validated before rendering or mutation.
+    tracked executable profile. Application/service identity and the Keycloak
+    credential destination remain fixed, while routing, images, Keycloak realm
+    and client identity, resources, and database mode are validated before
+    rendering or mutation.
 
 Dependencies:
     - Python standard library.
     - scripts/executable_profile_config_validation.py.
+    - scripts/executable_profile_keycloak_validation.py.
     - scripts/executable_profile_support.py.
 """
 
@@ -25,16 +27,145 @@ from executable_profile_config_validation import (
     validate_origin,
     validate_port,
 )
+from executable_profile_keycloak_validation import (
+    KEYCLOAK_RESERVED_MANAGED_CLIENT_IDS,
+)
 from executable_profile_support import (
     IMAGE_PATTERN,
     MEMORY_PATTERN,
     NAME_PATTERN,
     SEMVER_PATTERN,
     ExecutableProfileError,
-    fixed_deployment_values,
+    immutable_deployment_values,
     mapping,
     sequence,
+    text,
 )
+
+
+def _protected_auth_values(
+    auth: Mapping[str, object],
+    key: str,
+) -> set[str]:
+    """Return one normalized protected Keycloak identity set.
+
+    Args:
+        auth: Tracked profile authentication mapping.
+        key: Protected identity array name.
+
+    Returns:
+        Protected string values declared for the selected profile.
+    """
+
+    protected = mapping(
+        auth.get("protectedIdentity", {}),
+        "auth.protectedIdentity",
+    )
+    return {
+        str(value)
+        for value in sequence(
+            protected.get(key, []),
+            f"auth.protectedIdentity.{key}",
+        )
+    }
+
+
+def _validate_keycloak_client_values(
+    auth: Mapping[str, object],
+    values: Mapping[str, str],
+) -> None:
+    """Validate editable client IDs and protected-client boundaries.
+
+    Args:
+        auth: Tracked profile authentication mapping.
+        values: Complete generated deployment environment.
+
+    Raises:
+        ExecutableProfileError: If clients are malformed, equal, reserved, or
+            protected as legacy identity.
+    """
+
+    client_keys = (
+        "KEYCLOAK_FRONTEND_CLIENT_ID",
+        "KEYCLOAK_BACKEND_CLIENT_ID",
+        "KEYCLOAK_AUDIENCE",
+    )
+    for key in client_keys:
+        if not NAME_PATTERN.fullmatch(values[key]):
+            raise ExecutableProfileError(f".env {key} is unsafe.")
+    managed_clients = {
+        values["KEYCLOAK_FRONTEND_CLIENT_ID"],
+        values["KEYCLOAK_BACKEND_CLIENT_ID"],
+    }
+    if len(managed_clients) != 2:
+        raise ExecutableProfileError(
+            "Keycloak frontend and backend client IDs must differ."
+        )
+    if managed_clients & KEYCLOAK_RESERVED_MANAGED_CLIENT_IDS:
+        raise ExecutableProfileError(
+            "Managed Keycloak client IDs must not use built-in clients."
+        )
+    candidates = managed_clients | {values["KEYCLOAK_AUDIENCE"]}
+    if candidates & _protected_auth_values(auth, "clientIds"):
+        raise ExecutableProfileError(
+            "Keycloak deployment identity intersects protected clients."
+        )
+
+
+def _validate_keycloak_deployment(
+    data: Mapping[str, object],
+    values: Mapping[str, str],
+) -> None:
+    """Validate editable Keycloak identity against profile safety policy.
+
+    Args:
+        data: Tracked executable profile.
+        values: Complete generated deployment environment.
+
+    Raises:
+        ExecutableProfileError: If an identity value is malformed,
+            inconsistent, reserved, or protected as legacy state.
+    """
+
+    auth = mapping(data.get("auth", {"provider": "none"}), "auth")
+    keycloak_keys = (
+        "KEYCLOAK_BASE_URL",
+        "KEYCLOAK_ISSUER_URL",
+        "KEYCLOAK_REALM",
+        "KEYCLOAK_REALM_DISPLAY_NAME",
+        "KEYCLOAK_AUDIENCE",
+        "KEYCLOAK_FRONTEND_CLIENT_ID",
+        "KEYCLOAK_BACKEND_CLIENT_ID",
+    )
+    if values["AUTH_PROVIDER"] != "keycloak":
+        if any(values[key] for key in keycloak_keys):
+            raise ExecutableProfileError(
+                "Non-Keycloak deployments must not declare Keycloak identity."
+            )
+        return
+    base_url = values["KEYCLOAK_BASE_URL"].rstrip("/")
+    realm = values["KEYCLOAK_REALM"]
+    validate_origin(base_url, ".env KEYCLOAK_BASE_URL")
+    if not NAME_PATTERN.fullmatch(realm) or realm == "master":
+        raise ExecutableProfileError(".env KEYCLOAK_REALM is unsafe.")
+    expected_issuer = f"{base_url}/realms/{realm}"
+    if values["KEYCLOAK_ISSUER_URL"].rstrip("/") != expected_issuer:
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_ISSUER_URL must match base URL and realm."
+        )
+    validate_https(expected_issuer, ".env KEYCLOAK_ISSUER_URL")
+    display_name = values["KEYCLOAK_REALM_DISPLAY_NAME"] or str(
+        auth["realmDisplayName"]
+    )
+    if len(text(display_name, ".env KEYCLOAK_REALM_DISPLAY_NAME")) > 128:
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_REALM_DISPLAY_NAME is too long."
+        )
+    if realm in _protected_auth_values(auth, "realms"):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_REALM must not target a protected realm."
+        )
+    _validate_keycloak_client_values(auth, values)
 
 
 def _validate_operator_identity(
@@ -354,7 +485,7 @@ def validate_deployment(
         ExecutableProfileError: If fixed identity or operator values drift.
     """
 
-    for key, expected in fixed_deployment_values(data, config_id).items():
+    for key, expected in immutable_deployment_values(data, config_id).items():
         if values[key] != expected:
             raise ExecutableProfileError(
                 f".env {key} must match site-config value {expected!r}."
@@ -369,6 +500,7 @@ def validate_deployment(
             ".env PGADMIN_ENABLED must be true or false."
         )
     _validate_operator_identity(data, values)
+    _validate_keycloak_deployment(data, values)
     _validate_counts_and_resources(values)
     _validate_data_root(values)
     _validate_proxy(values)
