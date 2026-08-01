@@ -116,14 +116,6 @@
       {
         "name": "admin",
         "description": "Felix application administrator"
-      },
-      {
-        "name": "manager",
-        "description": "Felix booking and service manager"
-      },
-      {
-        "name": "service-provider",
-        "description": "Felix booking service provider"
       }
     ],
     "bootstrapTestUsersEnabled": true,
