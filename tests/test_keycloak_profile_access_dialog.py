@@ -188,7 +188,16 @@ class KeycloakProfileAccessDialogTests(unittest.TestCase):
             ],
         ), patch(
             "builtins.input",
-            side_effect=["test", "test-user", "manual-user", "", "", ""],
+            side_effect=[
+                "",
+                "Invalid Name",
+                "test",
+                "test-user",
+                "manual-user",
+                "",
+                "",
+                "",
+            ],
         ), patch("builtins.print") as printed:
             _, users = prompt_application_access(
                 self.identity,
@@ -196,7 +205,25 @@ class KeycloakProfileAccessDialogTests(unittest.TestCase):
             )
 
         self.assertEqual(users[-1].username, "manual-user")
-        self.assertGreaterEqual(printed.call_count, 2)
+        rendered_messages = " ".join(
+            " ".join(str(argument) for argument in call.args)
+            for call in printed.call_args_list
+        )
+        self.assertIn("Username cannot be empty", rendered_messages)
+        self.assertIn(
+            "Username 'Invalid Name' is invalid",
+            rendered_messages,
+        )
+        self.assertIn(
+            "Username 'test' is forbidden by the selected site profile "
+            "(auth.forbiddenDefaultUsernames)",
+            rendered_messages,
+        )
+        self.assertIn(
+            "Username 'test-user' is already declared by the selected site "
+            "profile or this bootstrap run",
+            rendered_messages,
+        )
 
 
 if __name__ == "__main__":

@@ -176,6 +176,50 @@ def _configure_declared_users(
     return tuple(configured)
 
 
+def _prompt_manual_username(
+    existing_usernames: set[str],
+    forbidden_usernames: set[str],
+) -> str:
+    """Read a unique username and explain its exact rejection reason.
+
+    Args:
+        existing_usernames: Profile-declared and previously entered usernames
+            that cannot be declared again in the current bootstrap.
+        forbidden_usernames: Site-profile policy names that must remain absent
+            from the Keycloak realm.
+
+    Returns:
+        A trimmed username accepted by syntax, uniqueness, and profile policy.
+    """
+
+    while True:
+        username = input("Username: ").strip()
+        if not username:
+            print("Username cannot be empty.")
+            continue
+        if not NAME_PATTERN.fullmatch(username):
+            print(
+                f"Username {username!r} is invalid. Use 1-128 lowercase "
+                "letters, digits, dots, underscores, or hyphens, starting "
+                "with a letter or digit."
+            )
+            continue
+        if username in forbidden_usernames:
+            print(
+                f"Username {username!r} is forbidden by the selected site "
+                "profile (auth.forbiddenDefaultUsernames). Choose another "
+                "username."
+            )
+            continue
+        if username in existing_usernames:
+            print(
+                f"Username {username!r} is already declared by the selected "
+                "site profile or this bootstrap run. Choose another username."
+            )
+            continue
+        return username
+
+
 def _manual_user_identity(
     existing_usernames: set[str],
     existing_emails: set[str],
@@ -192,13 +236,9 @@ def _manual_user_identity(
         Username, email, first name, and last name.
     """
 
-    username = _prompt_validated_value(
-        "Username",
-        "",
-        lambda value: bool(NAME_PATTERN.fullmatch(value))
-        and value not in existing_usernames
-        and value not in forbidden_usernames,
-        "Use a unique safe username not reserved by the selected profile.",
+    username = _prompt_manual_username(
+        existing_usernames,
+        forbidden_usernames,
     )
     email = _prompt_validated_value(
         "Email",
