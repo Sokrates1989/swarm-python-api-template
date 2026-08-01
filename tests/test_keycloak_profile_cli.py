@@ -213,16 +213,32 @@ class KeycloakProfileCliTests(unittest.TestCase):
         self.assertEqual(selected.backend_client_id, "selected-backend")
         self.assertEqual(selected.audience, "selected-backend")
 
-    def test_debug_trace_requires_explicit_yes(self) -> None:
-        """Keep secret-safe request tracing opt-in.
+    def test_debug_trace_explains_safety_and_requires_explicit_yes(
+        self,
+    ) -> None:
+        """Explain trace boundaries while keeping request tracing opt-in.
 
         Returns:
             Nothing.
         """
 
-        with patch("builtins.input", return_value=""):
+        with patch("builtins.input", return_value=""), patch(
+            "builtins.print"
+        ) as print_mock:
             self.assertFalse(prompt_secret_safe_debug())
-        with patch("builtins.input", return_value="yes"):
+
+        rendered_explanation = " ".join(
+            " ".join(str(argument) for argument in call.args)
+            for call in print_mock.call_args_list
+        )
+        self.assertIn("Admin API methods", rendered_explanation)
+        self.assertIn("status codes", rendered_explanation)
+        self.assertIn("never shows request bodies", rendered_explanation)
+        self.assertIn("client secrets", rendered_explanation)
+
+        with patch("builtins.input", return_value="yes"), patch(
+            "builtins.print"
+        ):
             self.assertTrue(prompt_secret_safe_debug())
 
     def test_admin_username_uses_explicit_or_enter_default(self) -> None:

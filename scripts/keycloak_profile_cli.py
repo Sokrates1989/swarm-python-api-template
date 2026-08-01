@@ -354,13 +354,21 @@ def prompt_bootstrap_test_user_passwords(
 
 
 def prompt_secret_safe_debug() -> bool:
-    """Ask whether Admin API method/path/status tracing should be enabled.
+    """Explain and ask whether safe Admin API tracing should be enabled.
 
     Returns:
         True only for an explicit ``y`` or ``yes`` answer. Request bodies,
         headers, query values, and credentials remain excluded from tracing.
     """
 
+    print(
+        "Tracing shows Keycloak Admin API methods, paths, query-key names, "
+        "and status codes."
+    )
+    print(
+        "It never shows request bodies, headers, query values, tokens, "
+        "passwords, or client secrets."
+    )
     answer = input(
         "Enable secret-safe Keycloak API request tracing? [y/N]: "
     ).strip()
