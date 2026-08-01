@@ -184,10 +184,10 @@
         "productionCleanupRequired": true
       }
     ],
-    "frontendClientId": "felix-new-frontend",
-    "audience": "felix-new-backend",
+    "frontendClientId": "felix-frontend",
+    "audience": "felix-backend",
     "audienceMapperName": "backend-audience",
-    "adminClientId": "felix-new-backend",
+    "adminClientId": "felix-backend",
     "redirectUris": [
       "https://felix-app.fe-wi.com/auth/callback",
       "felixkc:/callback"
@@ -232,12 +232,12 @@
     "AUTH_PROVIDER": "keycloak",
     "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
     "KEYCLOAK_REALM": "felix",
-    "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
+    "KEYCLOAK_CLIENT_ID": "felix-frontend",
     "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix",
     "KEYCLOAK_JWKS_URL": "https://keycloak.fe-wi.com/realms/felix/protocol/openid-connect/certs",
     "KEYCLOAK_ENFORCE_AUDIENCE": "true",
-    "KEYCLOAK_AUDIENCE": "felix-new-backend",
-    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
+    "KEYCLOAK_AUDIENCE": "felix-backend",
+    "KEYCLOAK_ADMIN_CLIENT_ID": "felix-backend",
     "DEBUG": "false",
     "DEBUG_ENABLED": "false",
     "SQL_ECHO_ENABLED": "false",
