@@ -11,6 +11,14 @@ This directory contains modular Docker Compose files and snippets that are combi
 - **`api.template.yml`** - API service template with placeholder markers
 - **`footer.yml`** - Networks and secrets definitions (always last)
 
+Service templates surround optional memory constraints with
+`###MEMORY_LIMIT_START###` and `###MEMORY_LIMIT_END###`. The shared builder
+removes that complete block when `MEMORY_LIMIT` is empty, `0`, or
+`unlimited`; for an explicit byte quantity it removes only the markers and
+leaves Docker to interpolate the validated value. This prevents the literal
+word `unlimited` from reaching Compose while keeping unconstrained services
+free of `deploy.resources.limits.memory`.
+
 ### Database Service Modules
 
 - **`postgres-local.yml`** - PostgreSQL database service definition (for local deployment)

@@ -32,9 +32,24 @@ DIGEST_IMAGE_PATTERN = re.compile(
 )
 SECRET_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,127}")
 MEMORY_PATTERN = re.compile(
-    r"[1-9][0-9]*(?:[KMGTP]i?B?|B)",
+    r"[1-9][0-9]*(?:B|[KMGTP](?:B|iB)?)",
     re.IGNORECASE,
 )
+
+
+def memory_limit_is_unlimited(value: str) -> bool:
+    """Return whether a deployment memory value omits the Docker constraint.
+
+    Args:
+        value: Operator or profile memory-limit value.
+
+    Returns:
+        Whether the case-insensitive value is ``unlimited`` or ``0``.
+    """
+
+    return value.strip().lower() in {"unlimited", "0"}
+
+
 DIRECT_SECRET_KEYS = frozenset(
     {
         "DB_PASSWORD",
@@ -493,6 +508,7 @@ __all__ = [
     "immutable_deployment_values",
     "load_json",
     "mapping",
+    "memory_limit_is_unlimited",
     "read_env",
     "require_keys",
     "sequence",

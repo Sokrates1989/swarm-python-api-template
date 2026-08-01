@@ -30,9 +30,6 @@
       restart_policy:
         condition: any
         delay: 5s
-      resources:
-        limits:
-          memory: 256M
 ###ADMIN_TRAEFIK_LABELS_START###
 ###ADMIN_TRAEFIK_LABELS###
 ###ADMIN_TRAEFIK_LABELS_END###

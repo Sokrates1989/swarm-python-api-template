@@ -19,6 +19,14 @@ asks for the WebApp domain before the API domain. A persisted or profile
 derives `api.<entered-web-domain>` after collecting the WebApp answer. Public
 API-only profiles continue to ask directly for their API domain.
 
+Memory constraints are opt-in for every profile and service. The canonical
+default is `unlimited`, which causes the renderer to omit Docker's
+`deploy.resources.limits.memory` block. During setup, pressing Enter on an
+`[unlimited]` prompt, or entering `unlimited` or `0`, selects that omission;
+an explicit positive byte quantity enables the constraint. Values use bytes,
+not bits. The shared parser accepts K/M/G/T (1024-based) and the equivalent
+KB/MB/GB/TB or KiB/MiB/GiB/TiB spellings, for example `512M` or `2GiB`.
+
 ## Version map
 
 The repository currently accepts these profile-format versions:
@@ -62,7 +70,7 @@ Version 5.0 owns these main objects:
 | `stack` | Default stack name, family, role, and primary service |
 | `exposure`, `routing` | Allowed public/direct exposure and safe routing defaults |
 | `database`, `services` | Database contract and exact service topology |
-| `image`, `web`, `resources`, `storage` | API/WebApp image and deployment defaults |
+| `image`, `web`, `resources`, `storage` | API/WebApp image, replica, opt-in memory, and storage defaults |
 | `pgadmin` | Optional PostgreSQL management-service defaults |
 | `cors`, `auth` | Browser-origin, authentication identity, realm policy, and verification contract |
 | `environment`, `envKeys` | Exact public runtime environment allowlist |
@@ -119,7 +127,7 @@ The same rule applies to:
 - Traefik overlay network, provider constraint label, and certificate resolver
   versus direct published ports,
   including a direct pgAdmin port;
-- API and WebApp images, versions, replicas, and memory;
+- API and WebApp images, versions, replicas, and optional memory limits;
 - Keycloak realm, clients, callbacks, origins, audience, protected legacy
   identity, exact realm settings, application realm roles, temporary test-user
   declarations, audience-mapper name, forbidden default usernames, and backend
@@ -210,7 +218,7 @@ Version 3.0 uses these core fields:
 | `database.type`, `database.defaultMode` | Database engine and mode default |
 | `services` | Redis/database capability flags |
 | `image` | API image repository and tag default |
-| `resources` | Replica and memory defaults |
+| `resources` | Replica defaults and an opt-in memory limit (`unlimited` by default) |
 | `adminUI` | Optional database-management capability |
 | `secrets`, `envKeys` | Compatibility secret identifiers and runtime keys |
 

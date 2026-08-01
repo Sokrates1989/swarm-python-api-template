@@ -27,11 +27,6 @@
       placement:
         constraints:
           - node.role == manager
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
       interval: 10s

@@ -69,13 +69,13 @@
     },
     "resources": {
       "defaultReplicas": 1,
-      "defaultMemoryLimit": "128M"
+      "defaultMemoryLimit": "unlimited"
     }
   },
   "resources": {
     "defaultReplicas": 1,
-    "defaultMemoryLimit": "512M",
-    "defaultWebMemoryLimit": "128M"
+    "defaultMemoryLimit": "unlimited",
+    "defaultWebMemoryLimit": "unlimited"
   },
   "storage": {
     "dataRoot": "/swarm/prod/felix"

@@ -165,7 +165,7 @@ Recommended profile model:
   },
   "resources": {
     "defaultReplicas": 1,
-    "defaultMemoryLimit": "256M"
+    "defaultMemoryLimit": "unlimited"
   },
   "secrets": [
     "secure_messaging_allowed_client_tokens",

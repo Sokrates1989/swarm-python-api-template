@@ -352,9 +352,9 @@ load_app_config() {
 
     # Resource defaults
     APP_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.resources.defaultReplicas' "1")"
-    APP_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.resources.defaultMemoryLimit' "512M")"
+    APP_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.resources.defaultMemoryLimit' "unlimited")"
     APP_WEB_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.web.resources.defaultReplicas' "1")"
-    APP_WEB_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.web.resources.defaultMemoryLimit // .resources.defaultWebMemoryLimit' "128M")"
+    APP_WEB_DEFAULT_MEMORY_LIMIT="$(_jq_or_default "$config_file" '.web.resources.defaultMemoryLimit // .resources.defaultWebMemoryLimit' "unlimited")"
     # A profile may recommend a production host path. Missing or empty storage
     # defaults remain relocatable by resolving to this deployment checkout.
     APP_DATA_ROOT="$(_jq_or_default "$config_file" '.storage.dataRoot' "$project_root")"

@@ -17,7 +17,7 @@
   },
   "resources": {
     "defaultReplicas": 1,
-    "defaultMemoryLimit": "512M"
+    "defaultMemoryLimit": "unlimited"
   },
   "secrets": [
     "DB_PASSWORD",

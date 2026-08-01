@@ -91,7 +91,8 @@ If no root `.env` exists:
 5. choose Traefik or direct published ports and the correct TLS ownership;
 6. choose the real Traefik overlay network from the discovered numbered list;
 7. confirm backend and WebApp image repositories, semantic versions,
-   replicas, memory, and optional pgAdmin; at **Host data root**, press Enter to
+   replicas, optional memory limits (Enter keeps them unlimited), and optional
+   pgAdmin; at **Host data root**, press Enter to
    accept the checkout default (`/swarm/prod/felix`) unless an intentional
    separate absolute host path is required; and
 8. let the wizard write root `.env` and Compose-validate

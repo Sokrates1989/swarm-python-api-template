@@ -9,6 +9,7 @@
 #
 # Dependencies:
 #   - Bash 4.3 or newer for caller-owned variable assignment.
+#   - setup/modules/deployment-memory-policy.sh.
 # ==============================================================================
 
 # Guard against multiple sourcing.
@@ -16,6 +17,9 @@ if [ -n "${_DEPLOYMENT_PROFILE_PROMPTS_LOADED:-}" ]; then
     return 0 2>/dev/null || true
 fi
 _DEPLOYMENT_PROFILE_PROMPTS_LOADED=1
+
+# Shared optional memory-limit normalization and operator guidance.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deployment-memory-policy.sh"
 
 # Public operator documentation used by every validated public-domain prompt.
 PUBLIC_DOMAIN_CREATE_INFO_URL="https://wiki.fe-wi.com/en/deployment/create-subdomain"
@@ -126,7 +130,7 @@ _deployment_value_is_valid() {
                 [[ "$value" =~ ^[a-z0-9][a-z0-9._/-]*$ ]]
             ;;
         memory)
-            [[ "$value" =~ ^[1-9][0-9]*([KMGTP]i?B?|B)$ ]]
+            deployment_memory_limit_is_valid "$value"
             ;;
         path)
             [[ "$value" =~ ^/[a-zA-Z0-9._/-]+$ ]] &&
@@ -157,7 +161,8 @@ _deployment_value_is_valid() {
 #   $3 - Default value.
 #   $4 - Validation kind accepted by _deployment_value_is_valid.
 #        Domain validation automatically adds the public subdomain guide to
-#        the displayed label.
+#        the displayed label. Memory validation prints byte-unit help and
+#        normalizes Enter, `0`, or `unlimited` to the unconstrained sentinel.
 #
 # Returns:
 #   0 after a valid value is assigned.
@@ -171,11 +176,17 @@ prompt_deployment_value() {
 
     if [ "$validation_kind" = "domain" ]; then
         label="$(_deployment_public_domain_prompt_label "$label")"
+    elif [ "$validation_kind" = "memory" ]; then
+        default_value="$(normalize_deployment_memory_limit "$default_value")"
+        print_deployment_memory_limit_help
     fi
 
     while true; do
         read -r -p "${label} [${default_value}]: " selected
         selected="${selected:-$default_value}"
+        if [ "$validation_kind" = "memory" ]; then
+            selected="$(normalize_deployment_memory_limit "$selected")"
+        fi
         if _deployment_value_is_valid "$validation_kind" "$selected"; then
             printf -v "$target_name" '%s' "$selected"
             return 0

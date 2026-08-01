@@ -17,6 +17,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -34,6 +35,9 @@ SERVICES_MODULE = (
 )
 PROMPTS_MODULE = (
     REPOSITORY_ROOT / "setup" / "modules" / "deployment-profile-prompts.sh"
+)
+MEMORY_POLICY_MODULE = (
+    REPOSITORY_ROOT / "setup" / "modules" / "deployment-memory-policy.sh"
 )
 EXECUTABLE_ADAPTER = (
     REPOSITORY_ROOT / "setup" / "modules" / "executable-profile-wizard.sh"
@@ -213,6 +217,140 @@ class SetupWizardUxTests(unittest.TestCase):
         self.assertIn("WebApp domain (e.g. app.example.com)", inputs)
         self.assertIn("pgAdmin domain", services)
         self.assertIn("Mongo Express domain", services)
+
+    def test_memory_limits_are_shared_opt_in_profile_defaults(self) -> None:
+        """Default every profile to an omitted Docker memory constraint.
+
+        Returns:
+            Nothing.
+        """
+
+        for path in sorted((REPOSITORY_ROOT / "site-configs").glob("*.json")):
+            with self.subTest(profile=path.name):
+                profile = json.loads(path.read_text(encoding="utf-8"))
+                resources = profile.get("resources", {})
+                self.assertEqual(
+                    resources.get("defaultMemoryLimit"),
+                    "unlimited",
+                )
+                if profile.get("services", {}).get("web") is True:
+                    self.assertEqual(
+                        profile["web"]["resources"]["defaultMemoryLimit"],
+                        "unlimited",
+                    )
+
+    def test_memory_prompt_documents_units_and_reset_values(self) -> None:
+        """Explain byte units and support unlimited reset aliases centrally.
+
+        Returns:
+            Nothing.
+        """
+
+        prompts = PROMPTS_MODULE.read_text(encoding="utf-8")
+        policy = MEMORY_POLICY_MODULE.read_text(encoding="utf-8")
+
+        self.assertIn("print_deployment_memory_limit_help", prompts)
+        self.assertIn("bytes, not bits", policy)
+        self.assertIn("K/M/G/T (1024-based)", policy)
+        self.assertIn("enter unlimited/0", policy)
+        self.assertIn("###MEMORY_LIMIT_START###", policy)
+
+    @unittest.skipIf(
+        sys.platform.startswith("win") or shutil.which("bash") is None,
+        "Native Bash memory-prompt smoke test runs on Linux hosts.",
+    )
+    def test_memory_prompt_normalizes_reset_aliases(self) -> None:
+        """Normalize Enter, zero, and unlimited while retaining explicit units.
+
+        Returns:
+            Nothing.
+        """
+
+        script = (
+            f"source {shlex_quote(PROMPTS_MODULE)}; "
+            "prompt_deployment_value first 'Backend memory limit' 512M memory; "
+            "prompt_deployment_value second 'WebApp memory limit' 128M memory; "
+            "prompt_deployment_value third 'Backend memory limit' unlimited memory; "
+            "prompt_deployment_value fourth 'WebApp memory limit' unlimited memory; "
+            'printf "RESULT=%s|%s|%s|%s\\n" '
+            '"$first" "$second" "$third" "$fourth"'
+        )
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            input="0\nunlimited\n\n2GiB\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "RESULT=unlimited|unlimited|unlimited|2GiB",
+            completed.stdout,
+        )
+        self.assertEqual(completed.stdout.count("bytes, not bits"), 4)
+
+    @unittest.skipIf(
+        sys.platform.startswith("win") or shutil.which("bash") is None,
+        "Native Bash template-policy smoke test runs on Linux hosts.",
+    )
+    def test_unlimited_template_policy_omits_resource_block(self) -> None:
+        """Remove marked Compose limits and retain explicitly bounded limits.
+
+        Returns:
+            Nothing.
+        """
+
+        template = """before
+###MEMORY_LIMIT_START###
+resources:
+  limits:
+    memory: ${MEMORY_LIMIT}
+###MEMORY_LIMIT_END###
+after
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "stack.yml"
+            target.write_text(template, encoding="utf-8")
+            unlimited = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        f"source {shlex_quote(MEMORY_POLICY_MODULE)}; "
+                        "apply_deployment_memory_limit_template "
+                        f"{shlex_quote(target)} unlimited"
+                    ),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(unlimited.returncode, 0, unlimited.stderr)
+            self.assertEqual(
+                target.read_text(encoding="utf-8"),
+                "before\nafter\n",
+            )
+
+            target.write_text(template, encoding="utf-8")
+            explicit = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        f"source {shlex_quote(MEMORY_POLICY_MODULE)}; "
+                        "apply_deployment_memory_limit_template "
+                        f"{shlex_quote(target)} 512M"
+                    ),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            rendered = target.read_text(encoding="utf-8")
+            self.assertEqual(explicit.returncode, 0, explicit.stderr)
+            self.assertIn("memory: ${MEMORY_LIMIT}", rendered)
+            self.assertNotIn("###MEMORY_LIMIT", rendered)
 
     def test_web_domain_precedes_and_can_default_api_domain(self) -> None:
         """Collect a WebApp identity before its conventionally derived API.

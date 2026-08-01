@@ -206,6 +206,7 @@ Each `site-configs/<profileId>.json` describes what a deployment profile
 | `image.name` | Default Docker image name |
 | `image.defaultVersion` | Default image tag |
 | `resources.defaultReplicas` | Suggested replica count |
+| `resources.defaultMemoryLimit` | Optional Docker byte limit; `unlimited` omits the constraint |
 | `secrets` | List of required Docker secret key names |
 | `envKeys` | List of required environment variable keys |
 
@@ -224,7 +225,7 @@ Version 5.0 adds a strict full-stack contract:
 | `stack` | Stack name, family, role, and primary service |
 | `routing` / `exposure` | API/WebApp hosts, health paths, direct ports, and distinct Traefik network/provider-label/resolver defaults |
 | `services.web` | Adds the optional WebApp service when true |
-| `web` | WebApp image, version, replicas, and memory |
+| `web` | WebApp image, version, replicas, and optional memory limit |
 | `auth` | Keycloak identity, selectable realm defaults, callbacks, application roles, secret-free temporary users, protected legacy values, and service-account roles |
 | `environment` / `envKeys` | Exact public runtime allowlist |
 | `secretMounts` | Exact file-backed Docker secret mappings |

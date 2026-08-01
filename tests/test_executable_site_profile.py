@@ -201,7 +201,62 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertIn("felix-app.fe-wi.com", stack)
         self.assertIn("api.felix-app.fe-wi.com", stack)
         self.assertNotIn("felix.app.fe-wi.com", stack)
+        self.assertEqual(profile.deployment["MEMORY_LIMIT"], "unlimited")
+        self.assertEqual(
+            profile.deployment["WEB_MEMORY_LIMIT"],
+            "unlimited",
+        )
+        self.assertNotIn("memory:", stack)
         validate_rendered_stack(stack, profile)
+
+    def test_memory_constraints_are_explicit_and_resettable(self) -> None:
+        """Render only explicit limits and accept both reset aliases.
+
+        Returns:
+            Nothing.
+        """
+
+        constrained = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "MEMORY_LIMIT": "1T",
+                "WEB_MEMORY_LIMIT": "512MiB",
+            },
+        )
+        constrained_stack = render_stack(constrained)
+
+        self.assertIn('memory: "1T"', constrained_stack)
+        self.assertIn('memory: "512MiB"', constrained_stack)
+
+        reset = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "MEMORY_LIMIT": "0",
+                "WEB_MEMORY_LIMIT": "unlimited",
+            },
+        )
+        self.assertNotIn("memory:", render_stack(reset))
+
+    def test_invalid_memory_constraint_is_rejected(self) -> None:
+        """Reject values that are neither reset aliases nor byte quantities.
+
+        Returns:
+            Nothing.
+        """
+
+        self._write_config("felix", self.felix_config)
+        with self.assertRaisesRegex(
+            ExecutableProfileError,
+            "safe byte quantity",
+        ):
+            write_deployment_env(
+                self.root,
+                "felix",
+                {"MEMORY_LIMIT": "512bits"},
+                force=True,
+            )
 
     def test_renamed_application_uses_identical_setup_and_renderer(self) -> None:
         """Prove all application identity comes from a renamed site config.

@@ -39,6 +39,7 @@ from executable_profile_support import (
     KEYCLOAK_REALM_SETTING_ENV_KEYS,
     immutable_deployment_values,
     mapping,
+    memory_limit_is_unlimited,
     sequence,
     text,
 )
@@ -292,9 +293,11 @@ def _validate_counts_and_resources(values: Mapping[str, str]) -> None:
     if values["WEB_ENABLED"] == "true" and int(values["WEB_REPLICAS"]) < 1:
         raise ExecutableProfileError(".env WEB_REPLICAS must be at least 1.")
     for key in ("MEMORY_LIMIT", "WEB_MEMORY_LIMIT"):
-        if not MEMORY_PATTERN.fullmatch(values[key]):
+        if not memory_limit_is_unlimited(
+            values[key]
+        ) and not MEMORY_PATTERN.fullmatch(values[key]):
             raise ExecutableProfileError(
-                f".env {key} is not a safe memory limit."
+                f".env {key} must be unlimited, 0, or a safe byte quantity."
             )
 
 

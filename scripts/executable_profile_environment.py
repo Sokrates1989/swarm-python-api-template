@@ -113,7 +113,7 @@ def default_deployment_values(
             "IMAGE_VERSION": str(image["defaultVersion"]),
             "API_REPLICAS": str(resources.get("defaultReplicas", 1)),
             "MEMORY_LIMIT": str(
-                resources.get("defaultMemoryLimit", "512M")
+                resources.get("defaultMemoryLimit", "unlimited")
             ),
             "DATA_ROOT": str(storage.get("dataRoot") or root.resolve()),
             "PGADMIN_ENABLED": str(pgadmin.get("enabled", False)).lower(),
@@ -129,7 +129,7 @@ def default_deployment_values(
             "WEB_MEMORY_LIMIT": str(
                 web_resources.get(
                     "defaultMemoryLimit",
-                    resources.get("defaultWebMemoryLimit", "128M"),
+                    resources.get("defaultWebMemoryLimit", "unlimited"),
                 )
             ),
         }

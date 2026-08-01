@@ -30,7 +30,7 @@
   },
   "resources": {
     "defaultReplicas": 1,
-    "defaultMemoryLimit": "128M"
+    "defaultMemoryLimit": "unlimited"
   },
   "redirector": {
     "enabled": true,

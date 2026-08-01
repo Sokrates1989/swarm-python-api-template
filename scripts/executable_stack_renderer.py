@@ -8,6 +8,7 @@ Description:
 
 Dependencies:
     - scripts/executable_profile.py.
+    - scripts/executable_profile_support.py.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from executable_profile import (
     ExecutableProfile,
     ExecutableProfileError,
 )
+from executable_profile_support import memory_limit_is_unlimited
 
 
 _DIGEST_IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}")
@@ -150,7 +152,7 @@ def _release_deploy_block(
         profile: Validated deployment profile.
         service: Service suffix used for routing.
         replicas: Desired replicas.
-        memory: Docker memory limit.
+        memory: Docker memory limit or unconstrained sentinel.
         domain: Public service domain.
         container_port: Container listener port.
 
@@ -158,7 +160,7 @@ def _release_deploy_block(
         Indented Compose deploy lines.
     """
 
-    return [
+    lines = [
         "    deploy:",
         "      mode: replicated",
         f"      replicas: {replicas}",
@@ -178,16 +180,24 @@ def _release_deploy_block(
         "        condition: on-failure",
         "        delay: 5s",
         "        max_attempts: 3",
-        "      resources:",
-        "        limits:",
-        f"          memory: {_yaml_text(memory)}",
-        *_traefik_labels(
+    ]
+    if not memory_limit_is_unlimited(memory):
+        lines.extend(
+            [
+                "      resources:",
+                "        limits:",
+                f"          memory: {_yaml_text(memory)}",
+            ]
+        )
+    lines.extend(
+        _traefik_labels(
             profile,
             service=service,
             domain=domain,
             container_port=container_port,
-        ),
-    ]
+        )
+    )
+    return lines
 
 
 def _service_networks(profile: ExecutableProfile) -> list[str]:
@@ -513,7 +523,7 @@ def _render_pgadmin_service(profile: ExecutableProfile) -> list[str]:
             profile,
             service="pgadmin",
             replicas=values["PGADMIN_REPLICAS"],
-            memory="256M",
+            memory="unlimited",
             domain=values["PGADMIN_DOMAIN"],
             container_port=port,
         ),

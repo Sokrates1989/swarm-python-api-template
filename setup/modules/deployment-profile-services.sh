@@ -108,7 +108,7 @@ collect_deployment_services_and_storage() {
     WEB_IMAGE_NAME=""
     WEB_IMAGE_VERSION=""
     WEB_REPLICAS="1"
-    WEB_MEMORY_LIMIT="${APP_WEB_DEFAULT_MEMORY_LIMIT:-128M}"
+    WEB_MEMORY_LIMIT="${APP_WEB_DEFAULT_MEMORY_LIMIT:-unlimited}"
     if [ "$WEB_ENABLED" = "true" ]; then
         _collect_deployment_service \
             "WebApp" \

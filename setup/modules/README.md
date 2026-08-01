@@ -46,6 +46,13 @@ profile values never fall back to renderer-specific raw text prompts. Values
 validated as public domains automatically show the shared Wiki subdomain-
 creation link, so new profile capabilities inherit the same operator guidance.
 
+### `deployment-memory-policy.sh`
+
+Owns the shared optional-memory contract for both renderer families. It
+normalizes Enter, `unlimited`, and `0` to the unconstrained sentinel, validates
+explicit Docker byte quantities, prints the unit guidance before each memory
+prompt, and removes marked Compose limit blocks when no constraint is selected.
+
 ### `deployment-profile-inputs.sh`
 
 Runs the only deployment dialogue. It normalizes profile defaults and existing

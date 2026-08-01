@@ -29,8 +29,9 @@ _config_builder_sed_inplace() {
     fi
 }
 
-# Database-management rendering is a separate capability adapter.
+# Shared capability adapters used by every compose-module renderer.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/admin-ui-compose.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deployment-memory-policy.sh"
 
 # ------------------------------------------------------------------------------
 # build_env_file
@@ -129,6 +130,9 @@ build_profile_compose_stack_file() {
         echo ""
         cat "$footer_module"
     } > "${project_root}/swarm-stack.yml"
+    apply_deployment_memory_limit_template \
+        "${project_root}/swarm-stack.yml" \
+        "${MEMORY_LIMIT:-unlimited}" || return 1
 
     echo "swarm-stack.yml created"
 }
@@ -248,6 +252,10 @@ build_stack_file() {
         _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_api"
     fi
     
+    apply_deployment_memory_limit_template \
+        "$temp_api" \
+        "${MEMORY_LIMIT:-unlimited}" || return 1
+
     # Append API service to stack
     cat "$temp_api" >> "${project_root}/swarm-stack.yml"
     rm -f "$temp_api"
@@ -674,6 +682,9 @@ build_nginx_stack_file() {
         _config_builder_sed_inplace '/###PROXY_LABELS###/d' "$temp_nginx"
     fi
 
+    apply_deployment_memory_limit_template \
+        "$temp_nginx" \
+        "${MEMORY_LIMIT:-unlimited}" || return 1
     cat "$temp_nginx" >> "$output_file"
     rm -f "$temp_nginx"
 
