@@ -148,7 +148,13 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         """
 
         self.assertEqual(summary["realmAction"], "created")
-        self.assertEqual(summary["realmRolesAction"], "create=4")
+        role_count = len(self.identity.realm_roles)
+        user_count = len(self.identity.bootstrap_test_users)
+
+        self.assertEqual(
+            summary["realmRolesAction"],
+            f"create={role_count}",
+        )
         self.assertEqual(summary["frontendAction"], "created")
         self.assertEqual(summary["backendAction"], "created")
         self.assertEqual(summary["audienceMapperAction"], "created")
@@ -157,7 +163,10 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             "assigned",
         )
         self.assertEqual(summary["serviceAccountRolesAction"], "updated")
-        self.assertEqual(summary["bootstrapTestUsersAction"], "create=4")
+        self.assertEqual(
+            summary["bootstrapTestUsersAction"],
+            f"create={user_count}",
+        )
         self.assertEqual(summary["dockerSecretAction"], "created")
         self.assertIs(summary["keycloakStateVerified"], True)
         self.assertIs(summary["dockerSecretBindingVerified"], True)
@@ -199,20 +208,15 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.scope_roles, {"manage-users"})
         self.assertEqual(
             set(self.client.application_access.realm_roles),
-            {"user", "admin", "manager", "service-provider"},
+            {role.name for role in self.identity.realm_roles},
         )
         self.assertEqual(
             self.client.frontend_scope_roles,
-            {"user", "admin", "manager", "service-provider"},
+            {role.name for role in self.identity.realm_roles},
         )
         self.assertEqual(
             set(self.client.application_access.users),
-            {
-                "test-user",
-                "test-admin",
-                "test-manager",
-                "test-service-provider",
-            },
+            {user.username for user in self.identity.bootstrap_test_users},
         )
         self.assertEqual(
             self.client.application_access.passwords_set,
@@ -273,7 +277,7 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             for blocker in plan["blockers"]
             if "Delete bootstrap test user before production" in blocker
         ]
-        self.assertEqual(len(cleanup), 4)
+        self.assertEqual(len(cleanup), len(self.identity.bootstrap_test_users))
 
     def test_skipping_one_declared_user_requires_only_its_cleanup(self) -> None:
         """Apply the per-user lifecycle without disabling selected users.
@@ -283,10 +287,11 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         """
 
         self._run_bootstrap()
+        skipped_username = self.identity.bootstrap_test_users[-1].username
         selected_users = tuple(
             replace(
                 user,
-                selected_for_bootstrap=(user.username != "test-manager"),
+                selected_for_bootstrap=(user.username != skipped_username),
             )
             for user in self.identity.bootstrap_test_users
         )
@@ -308,7 +313,10 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         ]
         self.assertEqual(
             cleanup,
-            ["Delete bootstrap test user before production: test-manager"],
+            [
+                "Delete bootstrap test user before production: "
+                f"{skipped_username}"
+            ],
         )
 
     def test_disabled_realm_blocks_a_new_secret_proof(self) -> None:
@@ -348,15 +356,20 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
 
         self._run_bootstrap()
         summary, _ = self._run_bootstrap()
+        role_count = len(self.identity.realm_roles)
+        user_count = len(self.identity.bootstrap_test_users)
 
         self.assertEqual(summary["realmAction"], "kept")
-        self.assertEqual(summary["realmRolesAction"], "keep=4")
+        self.assertEqual(summary["realmRolesAction"], f"keep={role_count}")
         self.assertEqual(summary["frontendAction"], "kept")
         self.assertEqual(summary["backendAction"], "kept")
         self.assertEqual(summary["audienceMapperAction"], "kept")
         self.assertEqual(summary["frontendRealmRoleScopeAction"], "kept")
         self.assertEqual(summary["serviceAccountRolesAction"], "kept")
-        self.assertEqual(summary["bootstrapTestUsersAction"], "keep=4")
+        self.assertEqual(
+            summary["bootstrapTestUsersAction"],
+            f"keep={user_count}",
+        )
 
     def test_selected_role_subset_removes_obsolete_user_and_scope_mappings(
         self,
@@ -368,7 +381,12 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         """
 
         self._run_bootstrap()
-        role_names = {"user", "admin"}
+        self.assertGreaterEqual(len(self.identity.realm_roles), 2)
+        original_role_names = {
+            role.name for role in self.identity.realm_roles
+        }
+        selected_role_name = self.identity.realm_roles[0].name
+        role_names = {selected_role_name}
         selected_roles = tuple(
             role for role in self.identity.realm_roles if role.name in role_names
         )
@@ -378,7 +396,7 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
                 realm_roles=tuple(
                     role for role in user.realm_roles if role in role_names
                 )
-                or ("user",),
+                or (selected_role_name,),
             )
             for user in self.identity.bootstrap_test_users
         )
@@ -398,7 +416,7 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.frontend_scope_roles, role_names)
         self.assertEqual(
             set(self.client.application_access.realm_roles),
-            {"user", "admin", "manager", "service-provider"},
+            original_role_names,
         )
         for user in selected_users:
             user_uuid = self.client.application_access.users[user.username]["id"]
@@ -415,7 +433,10 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         """
 
         self._run_bootstrap()
-        self.client.application_access.passwords_set.remove("test-manager")
+        recovered_username = self.identity.bootstrap_test_users[-1].username
+        self.client.application_access.passwords_set.remove(
+            recovered_username
+        )
 
         plan = build_reconciliation_plan(
             self.client,
@@ -424,16 +445,17 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            plan["bootstrapTestUserActions"]["test-manager"],
+            plan["bootstrapTestUserActions"][recovered_username],
             "set-password",
         )
         summary, _ = self._run_bootstrap()
+        kept_count = len(self.identity.bootstrap_test_users) - 1
         self.assertEqual(
             summary["bootstrapTestUsersAction"],
-            "keep=3, set-password=1",
+            f"keep={kept_count}, set-password=1",
         )
         self.assertIn(
-            "test-manager",
+            recovered_username,
             self.client.application_access.passwords_set,
         )
 

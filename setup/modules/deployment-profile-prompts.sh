@@ -20,9 +20,7 @@ _DEPLOYMENT_PROFILE_PROMPTS_LOADED=1
 
 # Shared optional memory-limit normalization and operator guidance.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deployment-memory-policy.sh"
-
-# Public operator documentation used by every validated public-domain prompt.
-PUBLIC_DOMAIN_CREATE_INFO_URL="https://wiki.fe-wi.com/en/deployment/create-subdomain"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deployment-field-help.sh"
 
 # ------------------------------------------------------------------------------
 # _deployment_public_domain_prompt_label
@@ -178,8 +176,8 @@ prompt_deployment_value() {
         label="$(_deployment_public_domain_prompt_label "$label")"
     elif [ "$validation_kind" = "memory" ]; then
         default_value="$(normalize_deployment_memory_limit "$default_value")"
-        print_deployment_memory_limit_help
     fi
+    print_deployment_field_help "$target_name" "$validation_kind" prompt
 
     while true; do
         read -r -p "${label} [${default_value}]: " selected
@@ -228,6 +226,7 @@ prompt_deployment_choice() {
         return 1
     fi
 
+    print_deployment_field_help "$target_name" choice prompt
     echo ""
     echo "${label}:"
     for index in "${!choices[@]}"; do

@@ -61,7 +61,7 @@ def _rename_profile_value(value: object) -> object:
 
     if isinstance(value, dict):
         return {
-            str(key): _rename_profile_value(item)
+            str(_rename_profile_value(str(key))): _rename_profile_value(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -283,8 +283,8 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             "sokrates1989/flutter-aurora-web:1.0.5",
         )
         self.assertEqual(identity.realm, "aurora")
-        self.assertEqual(identity.frontend_client_id, "aurora-new-frontend")
-        self.assertEqual(identity.backend_client_id, "aurora-new-backend")
+        self.assertEqual(identity.frontend_client_id, "aurora-frontend")
+        self.assertEqual(identity.backend_client_id, "aurora-backend")
         self.assertEqual(identity.docker_secret, "AURORA_KEYCLOAK_ADMIN_CLIENT_SECRET")
         self.assertIn("aurora-app.fe-wi.com", stack)
         self.assertIn("AURORA_DB_PASSWORD", stack)
@@ -475,6 +475,43 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         ):
             load_config_defaults(self.root, "felix")
 
+    def test_generated_secret_file_guidance_is_complete_and_constrained(
+        self,
+    ) -> None:
+        """Reject missing help and manually editable Keycloak credentials.
+
+        Returns:
+            Nothing.
+        """
+
+        missing_help = copy.deepcopy(self.felix_config)
+        del missing_help["secretsConfig"]["valueHelp"][
+            "FELIX_DB_PASSWORD"
+        ]
+        keycloak_help = copy.deepcopy(self.felix_config)
+        keycloak_help["secretsConfig"]["valueHelp"][
+            "FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET"
+        ] = "Must remain reconciliation-owned."
+        cases = (
+            (
+                missing_help,
+                "Generated secret-file workflow requires value help",
+            ),
+            (
+                keycloak_help,
+                "references non-editable secrets",
+            ),
+        )
+
+        for invalid, message in cases:
+            with self.subTest(expected=message):
+                self._write_config("felix", invalid)
+                with self.assertRaisesRegex(
+                    ExecutableProfileError,
+                    message,
+                ):
+                    load_config_defaults(self.root, "felix")
+
     def test_keycloak_clients_use_exact_profile_callbacks_and_origins(self) -> None:
         """Build mobile/Web callback and audience clients from profile data.
 
@@ -539,17 +576,12 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             tuple(role.name for role in identity.realm_roles),
-            ("user", "admin", "manager", "service-provider"),
+            ("user", "admin"),
         )
         self.assertTrue(identity.bootstrap_test_users_enabled)
         self.assertEqual(
             tuple(user.username for user in identity.bootstrap_test_users),
-            (
-                "test-user",
-                "test-admin",
-                "test-manager",
-                "test-service-provider",
-            ),
+            ("user", "admin"),
         )
 
     def test_keycloak_bootstrap_policy_rejects_invalid_schema_values(

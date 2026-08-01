@@ -46,6 +46,12 @@ profile values never fall back to renderer-specific raw text prompts. Values
 validated as public domains automatically show the shared Wiki subdomain-
 creation link, so new profile capabilities inherit the same operator guidance.
 
+### `deployment-field-help.sh`
+
+Owns the shared accepted-value explanations used by both guided prompts and
+the generated public `.env` editor. It also annotates freshly generated files
+without evaluating dotenv content, keeping instructions DRY across setup modes.
+
 ### `deployment-memory-policy.sh`
 
 Owns the shared optional-memory contract for both renderer families. It
@@ -150,8 +156,10 @@ failures retain and name the recovery object without printing its value.
 ### `docker-secrets-menu.sh`
 
 Profiles with `secretsConfig.prefixed=false` use exact declared required,
-optional, enabled-capability, and enabled-pgAdmin names. A declared
-`secretsConfig.template` also enables batch creation through `secrets.env`.
+optional, enabled-capability, and enabled-pgAdmin names. Any profile with a
+manually importable secret receives a temporary `secrets.env` action. Shared
+templates are generated from `secretsConfig.valueHelp`; a declared specialized
+`secretsConfig.template` remains available for structured value shapes.
 Keycloak client secrets cannot be entered manually; that action routes to the
 shared Keycloak bootstrap.
 
@@ -161,10 +169,12 @@ application-driven.
 
 ### `profile-secret-file-workflow.sh`
 
-Resolves the profile-owned batch template and passes an active secret-name
-allowlist to the shared importer. Edited exact-name files cannot create Docker
-secrets that are absent from the selected profile. Keycloak client credentials
-are excluded and remain bootstrap/rotation-only.
+Generates or resolves the profile-owned batch template and passes active
+required keys plus an exact secret-name allowlist to the shared importer.
+Edited exact-name files cannot create undeclared secrets. Keycloak client
+credentials are excluded and remain bootstrap/rotation-only. A complete import
+deletes the protected values file automatically; validation or creation errors
+retain it for correction.
 
 ### `deploy-stack.sh`
 
@@ -223,6 +233,7 @@ quick-start
 setup-wizard
 ├── site_helpers
 ├── deployment-profile-prompts
+├── deployment-field-help
 ├── deployment-profile-routing
 ├── deployment-profile-services
 ├── deployment-profile-inputs

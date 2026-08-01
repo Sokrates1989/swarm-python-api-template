@@ -516,6 +516,112 @@ _validate_secret_env_keys() {
 }
 
 # ------------------------------------------------------------------------------
+# _validate_required_secret_env_values
+# ------------------------------------------------------------------------------
+# Requires each profile-declared batch key to have a non-empty value before
+# any Docker secret is created. Optional empty entries remain valid and are
+# skipped by the importer.
+#
+# Arguments:
+#   $1 - Secret values file.
+#   $2 - Newline-separated required keys; empty disables this check.
+#
+# Returns:
+#   0 when every required key has a value; otherwise 1.
+# ------------------------------------------------------------------------------
+_validate_required_secret_env_values() {
+    local secrets_file="$1"
+    local required_keys="${2:-}"
+    local required_key=""
+    local key=""
+    local value=""
+    local found="false"
+    local missing=0
+
+    while IFS= read -r required_key; do
+        [ -n "$required_key" ] || continue
+        found="false"
+        while IFS='=' read -r key value || [ -n "$key" ]; do
+            key="${key%$'\r'}"
+            value="${value%$'\r'}"
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key%"${key##*[![:space:]]}"}"
+            case "$key" in
+                export\ *) key="${key#export }" ;;
+            esac
+            [ "$key" = "$required_key" ] || continue
+            value="${value#\"}"
+            value="${value%\"}"
+            value="${value#\'}"
+            value="${value%\'}"
+            if [ -n "$value" ]; then
+                found="true"
+            fi
+            break
+        done < "$secrets_file"
+        if [ "$found" != "true" ]; then
+            echo "[ERROR] Required Docker secret value is empty: ${required_key}" >&2
+            missing=$((missing + 1))
+        fi
+    done <<< "$required_keys"
+    [ "$missing" -eq 0 ]
+}
+
+# ------------------------------------------------------------------------------
+# _finalize_secret_values_file
+# ------------------------------------------------------------------------------
+# Applies the caller-selected plaintext-file retention policy after every
+# Docker secret has been created or retained successfully.
+#
+# Arguments:
+#   $1 - Secret values file.
+#   $2 - Deletion mode: prompt, always, or keep.
+#
+# Returns:
+#   0 after applying the policy; otherwise 1.
+# ------------------------------------------------------------------------------
+_finalize_secret_values_file() {
+    local secrets_file="$1"
+    local deletion_mode="$2"
+    local delete_file=""
+
+    case "$deletion_mode" in
+        always)
+            if rm -f "$secrets_file" 2>/dev/null; then
+                echo "[OK] Deleted temporary secret values file: $secrets_file"
+            else
+                echo "[ERROR] Docker secrets were created, but the temporary" >&2
+                echo "        values file could not be deleted: $secrets_file" >&2
+                return 1
+            fi
+            ;;
+        keep)
+            echo "[WARN] $secrets_file still exists and may contain sensitive values."
+            ;;
+        prompt)
+            echo ""
+            read -p "Delete $secrets_file now? (recommended) (Y/n): " delete_file
+            delete_file="${delete_file:-Y}"
+            if [[ "$delete_file" =~ ^[Yy]$ ]]; then
+                if rm -f "$secrets_file" 2>/dev/null; then
+                    echo "✅ Deleted $secrets_file"
+                else
+                    echo "[ERROR] Could not delete $secrets_file" >&2
+                    return 1
+                fi
+            else
+                echo "⚠️  $secrets_file still exists and may contain sensitive values."
+                echo "   Please delete it soon: rm -f \"$secrets_file\""
+            fi
+            ;;
+        *)
+            echo "[ERROR] Unknown secret values-file deletion mode: ${deletion_mode}" >&2
+            return 1
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
 # create_secrets_from_env_file
 # ------------------------------------------------------------------------------
 # Creates Docker secrets from a secrets.env file. This is the main workflow
@@ -533,6 +639,8 @@ _validate_secret_env_keys() {
 #   $4 - allowed_keys: optional newline-separated exact-name allowlist
 #   $5 - enforce_allowlist: true for exact-name profile enforcement; false by
 #        default for legacy prefixed imports.
+#   $6 - deletion mode: prompt (default), always, or keep after success.
+#   $7 - required_keys: optional newline-separated keys that must have values.
 #
 # Returns:
 #   0 on success, 1 on failure
@@ -547,6 +655,8 @@ create_secrets_from_env_file() {
     local prefix="${3:-}"
     local allowed_keys="${4:-}"
     local enforce_allowlist="${5:-false}"
+    local deletion_mode="${6:-prompt}"
+    local required_keys="${7:-}"
 
     echo ""
     echo "🔐 Create Docker Secrets from File"
@@ -563,6 +673,7 @@ create_secrets_from_env_file() {
             return 1
         fi
     fi
+    chmod 600 "$secrets_file"
 
     # Sync missing keys from template
     if declare -F sync_missing_secret_template_entries >/dev/null 2>&1; then
@@ -599,9 +710,15 @@ create_secrets_from_env_file() {
         echo "[ERROR] No Docker secrets were changed."
         return 1
     fi
+    if ! _validate_required_secret_env_values \
+        "$secrets_file" \
+        "$required_keys"; then
+        echo "[ERROR] No Docker secrets were changed."
+        return 1
+    fi
 
     # Parse and create secrets
-    local key value created=0 skipped=0 kept=0
+    local key value created=0 skipped=0 kept=0 failed=0
     while IFS='=' read -r key value || [ -n "$key" ]; do
         # Remove carriage returns (Windows line endings)
         key="${key%$'\r'}"
@@ -646,6 +763,8 @@ create_secrets_from_env_file() {
                         skipped=$((skipped + 1))
                         ;;
                 esac
+            else
+                failed=$((failed + 1))
             fi
         else
             skipped=$((skipped + 1))
@@ -660,20 +779,15 @@ create_secrets_from_env_file() {
     if [ $skipped -gt 0 ]; then
         echo "   Skipped $skipped empty value(s)"
     fi
-
-    # Offer to delete the secrets file
-    echo ""
-    local delete_file=""
-    read -p "Delete $secrets_file now? (recommended) (Y/n): " delete_file
-    delete_file="${delete_file:-Y}"
-    if [[ "$delete_file" =~ ^[Yy]$ ]]; then
-        rm -f "$secrets_file" 2>/dev/null && echo "✅ Deleted $secrets_file"
-    else
-        echo "⚠️  $secrets_file still exists and may contain sensitive values."
-        echo "   Please delete it soon: rm -f \"$secrets_file\""
+    if [ $failed -gt 0 ]; then
+        echo "[ERROR] Failed to create or replace $failed secret(s)."
+        echo "        ${secrets_file} was retained for correction and retry."
+        return 1
     fi
 
-    return 0
+    # Profile imports delete immediately; direct legacy callers may retain the
+    # historical confirmation prompt by using the default mode.
+    _finalize_secret_values_file "$secrets_file" "$deletion_mode"
 }
 
 # ------------------------------------------------------------------------------

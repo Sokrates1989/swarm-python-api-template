@@ -35,9 +35,9 @@ The contract records these reviewed release defaults and boundaries:
 - candidate WebApp `felix-app.fe-wi.com`;
 - candidate API `api.felix-app.fe-wi.com`;
 - shared existing realm `felix`;
-- clients/audience `felix-new-frontend` and `felix-new-backend`;
-- application roles `user`, `admin`, `manager`, and `service-provider`;
-- four profile-declared temporary test identities, enabled by default for the
+- clients/audience `felix-frontend` and `felix-backend`;
+- application roles `user` and `admin`;
+- two profile-declared temporary test identities, enabled by default for the
   candidate bootstrap and requiring explicit production cleanup;
 - legacy host `felix.app.fe-wi.com`;
 - protected separate legacy realm `felixappnew` plus protected legacy clients

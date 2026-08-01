@@ -356,6 +356,97 @@ def _validate_secret_declarations(data: Mapping[str, object]) -> None:
         )
 
 
+def _editable_secret_value_names(data: Mapping[str, object]) -> set[str]:
+    """Return exact profile secrets eligible for manual file import.
+
+    Args:
+        data: Executable site profile containing secret declarations.
+
+    Returns:
+        Required, optional, capability, and pgAdmin secret names excluding
+        Keycloak client credentials owned by verified reconciliation.
+    """
+
+    names = {
+        str(value)
+        for value in (
+            *sequence(data["secrets"], "secrets"),
+            *sequence(data.get("optionalSecrets", []), "optionalSecrets"),
+        )
+    }
+    keycloak_names: set[str] = set()
+    mounts = list(sequence(data["secretMounts"], "secretMounts"))
+    capabilities = mapping(data.get("capabilities", {}), "capabilities")
+    for capability_name, raw_capability in capabilities.items():
+        capability = mapping(
+            raw_capability,
+            f"capabilities.{capability_name}",
+        )
+        mounts.extend(
+            sequence(
+                capability.get("secretMounts", []),
+                f"capabilities.{capability_name}.secretMounts",
+            )
+        )
+    for index, raw_mount in enumerate(mounts):
+        mount = mapping(raw_mount, f"secretMounts[{index}]")
+        name = str(mount.get("name", ""))
+        names.add(name)
+        if mount.get("envKey") in {
+            "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE",
+            "KEYCLOAK_CLIENT_SECRET_FILE",
+        }:
+            keycloak_names.add(name)
+    database = mapping(data["database"], "database")
+    pgadmin_secret = str(database.get("pgadminSecret", ""))
+    if pgadmin_secret:
+        names.add(pgadmin_secret)
+    return {name for name in names - keycloak_names if name}
+
+
+def _validate_secret_value_help(
+    data: Mapping[str, object],
+    config: Mapping[str, object],
+) -> None:
+    """Validate config-driven guidance for generated secret values files.
+
+    Args:
+        data: Full executable site profile.
+        config: Validated ``secretsConfig`` mapping.
+
+    Raises:
+        ExecutableProfileError: If guidance is unsafe, references an
+            unavailable secret, or is incomplete without a static template.
+    """
+
+    editable = _editable_secret_value_names(data)
+    value_help = mapping(config.get("valueHelp", {}), "secretsConfig.valueHelp")
+    names = set(value_help)
+    unknown = sorted(names - editable)
+    if unknown:
+        raise ExecutableProfileError(
+            "secretsConfig.valueHelp references non-editable secrets: "
+            + ", ".join(unknown)
+        )
+    for name, raw_help in value_help.items():
+        if not SECRET_PATTERN.fullmatch(name):
+            raise ExecutableProfileError(
+                f"secretsConfig.valueHelp contains an unsafe key: {name}"
+            )
+        help_text = text(raw_help, f"secretsConfig.valueHelp.{name}")
+        if "\n" in help_text or "\r" in help_text:
+            raise ExecutableProfileError(
+                f"secretsConfig.valueHelp.{name} must be one line."
+            )
+    if "template" not in config:
+        missing = sorted(editable - names)
+        if missing:
+            raise ExecutableProfileError(
+                "Generated secret-file workflow requires value help for: "
+                + ", ".join(missing)
+            )
+
+
 def _validate_secret_naming_policy(data: Mapping[str, object]) -> None:
     """Require an explicit exact-name policy for executable profiles.
 
@@ -373,6 +464,7 @@ def _validate_secret_naming_policy(data: Mapping[str, object]) -> None:
         raise ExecutableProfileError(
             "Executable profiles require secretsConfig.prefixed=false."
         )
+    _validate_secret_value_help(data, config)
     if "template" not in config:
         return
     template = text(config["template"], "secretsConfig.template")

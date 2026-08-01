@@ -16,21 +16,17 @@
     "apiOrigin": "https://api.felix-app.fe-wi.com",
     "issuerUrl": "https://keycloak.fe-wi.com/realms/felix",
     "realm": "felix",
-    "frontendClientId": "felix-new-frontend",
-    "backendAudience": "felix-new-backend",
-    "backendAdminClientId": "felix-new-backend",
+    "frontendClientId": "felix-frontend",
+    "backendAudience": "felix-backend",
+    "backendAdminClientId": "felix-backend",
     "applicationRealmRoles": [
       "user",
-      "admin",
-      "manager",
-      "service-provider"
+      "admin"
     ],
     "bootstrapTestUsersDefaultEnabled": true,
     "bootstrapTestUsernames": [
-      "test-user",
-      "test-admin",
-      "test-manager",
-      "test-service-provider"
+      "user",
+      "admin"
     ],
     "backendServiceAccountClientRoles": {
       "realm-management": [

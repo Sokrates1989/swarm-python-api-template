@@ -197,6 +197,11 @@ run_deployment_setup_actions() {
 
     if [ "${SECRETS_REQUIRED:-false}" = "true" ]; then
         choices+=("secrets|Manage profile Docker secrets")
+        if profile_supports_secret_file_workflow; then
+            choices+=(
+                "secret-file|Create all editable Docker secrets from temporary secrets.env"
+            )
+        fi
     fi
     if _deployment_profile_uses_keycloak; then
         choices+=("keycloak|Bootstrap / update Keycloak realm")
@@ -224,6 +229,10 @@ run_deployment_setup_actions() {
             ;;
         secrets)
             manage_docker_secrets_menu
+            ;;
+        secret-file)
+            create_profile_secrets_from_env_file \
+                "${PROJECT_ROOT}/secrets.env"
             ;;
         keycloak)
             run_profile_keycloak_bootstrap

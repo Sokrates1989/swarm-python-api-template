@@ -36,14 +36,15 @@ _profile_declares_secret_template() {
 }
 
 # profile_supports_secret_file_workflow
-# Checks whether saved/template-based batch entry is valid for this profile.
+# Checks whether template-based batch entry is valid for this profile.
 #
 # Returns:
-#   0 for prefixed profiles or exact-name profiles with an explicit template;
-#   otherwise 1.
+#   0 for prefixed profiles or exact-name profiles with at least one declared
+#   importable secret; otherwise 1. A static template cannot make a
+#   reconciliation-owned Keycloak credential manually editable.
 profile_supports_secret_file_workflow() {
     if _profile_secrets_use_exact_names; then
-        _profile_declares_secret_template
+        [ -n "$(_profile_batch_secret_names)" ]
         return $?
     fi
     return 0
@@ -142,6 +143,97 @@ _profile_batch_secret_names() {
     ' "$profile_file"
 }
 
+# _profile_batch_required_secret_names
+# Lists active required exact-name secrets accepted by the batch importer.
+# Reconciliation-owned Keycloak client secrets are deliberately omitted.
+#
+# Outputs:
+#   One required exact Docker secret name per line.
+#
+# Returns:
+#   Status from the active-profile helpers.
+_profile_batch_required_secret_names() {
+    local secret_name=""
+    local required_names=""
+
+    required_names="$(_profile_required_secret_names)" || return 1
+    while IFS= read -r secret_name; do
+        [ -n "$secret_name" ] || continue
+        if ! _profile_secret_is_keycloak "$secret_name"; then
+            printf '%s\n' "$secret_name"
+        fi
+    done <<< "$required_names"
+}
+
+# _profile_secret_value_help
+# Reads profile-owned guidance for one editable secret value.
+#
+# Arguments:
+#   $1 - Exact Docker secret identifier.
+#
+# Outputs:
+#   Concise operator guidance with a safe generic fallback.
+#
+# Returns:
+#   jq status.
+_profile_secret_value_help() {
+    local secret_name="$1"
+    local profile_file=""
+
+    profile_file="$(_active_profile_json)" || return 1
+    jq -r --arg name "$secret_name" '
+      .secretsConfig.valueHelp[$name] //
+      "Enter the single-line value stored in this Docker secret."
+    ' "$profile_file"
+}
+
+# _write_generated_profile_secrets_template
+# Generates a mode-safe, commented values template entirely from site-profile
+# declarations. Required and optional values remain distinguishable, while
+# Keycloak client credentials stay excluded from manual entry.
+#
+# Arguments:
+#   $1 - Destination template path.
+#
+# Returns:
+#   0 after writing at least one editable secret; otherwise 1.
+_write_generated_profile_secrets_template() {
+    local destination="$1"
+    local required_names=""
+    local all_names=""
+    local secret_name=""
+    local help_text=""
+    local count=0
+
+    required_names="$(_profile_batch_required_secret_names)" || return 1
+    all_names="$(_profile_batch_secret_names)" || return 1
+    [ -n "$all_names" ] || {
+        echo "[INFO] This profile has no manually importable secrets."
+        return 1
+    }
+    {
+        echo "# Temporary Docker secret values generated from the selected site profile."
+        echo "# Fill required values and any optional values you want to create."
+        echo "# Empty optional values are skipped. This file is deleted after success."
+        echo "# Keycloak client secrets are transferred only by verified bootstrap/rotation."
+        echo ""
+        while IFS= read -r secret_name; do
+            [ -n "$secret_name" ] || continue
+            help_text="$(_profile_secret_value_help "$secret_name")" || return 1
+            if printf '%s\n' "$required_names" | grep -Fxq -- "$secret_name"; then
+                echo "# Required: ${help_text}"
+            else
+                echo "# Optional: ${help_text}"
+            fi
+            echo "${secret_name}="
+            echo ""
+            count=$((count + 1))
+        done <<< "$all_names"
+    } > "$destination"
+    chmod 600 "$destination"
+    [ "$count" -gt 0 ]
+}
+
 # validate_profile_secret_values_file
 # Validates a saved values file against the active profile before a caller
 # stops services or otherwise mutates runtime state.
@@ -182,21 +274,49 @@ validate_profile_secret_values_file() {
 create_profile_secrets_from_env_file() {
     local secrets_file="${1:-secrets.env}"
     local template_path=""
+    local generated_template=""
     local prefix=""
     local allowed_keys=""
+    local required_keys=""
     local enforce_allowlist="false"
+    local status=0
 
-    template_path="$(_profile_secrets_template_path)" || return 1
+    if _profile_declares_secret_template; then
+        template_path="$(_profile_secrets_template_path)" || return 1
+    elif _profile_secrets_use_exact_names; then
+        generated_template="$(mktemp)" || return 1
+        if ! _write_generated_profile_secrets_template "$generated_template"; then
+            rm -f "$generated_template"
+            return 1
+        fi
+        template_path="$generated_template"
+    else
+        template_path="$(_profile_secrets_template_path)" || return 1
+    fi
     if _profile_secrets_use_exact_names; then
-        allowed_keys="$(_profile_batch_secret_names)" || return 1
+        if ! allowed_keys="$(_profile_batch_secret_names)"; then
+            [ -z "$generated_template" ] || rm -f "$generated_template"
+            return 1
+        fi
+        if ! required_keys="$(_profile_batch_required_secret_names)"; then
+            [ -z "$generated_template" ] || rm -f "$generated_template"
+            return 1
+        fi
         enforce_allowlist="true"
     else
         prefix="$(_generic_secret_prefix)"
+        required_keys="$(_profile_required_secret_names)" || return 1
     fi
     create_secrets_from_env_file \
         "$secrets_file" \
         "$template_path" \
         "$prefix" \
         "$allowed_keys" \
-        "$enforce_allowlist"
+        "$enforce_allowlist" \
+        "always" \
+        "$required_keys" || status=$?
+    if [ -n "$generated_template" ]; then
+        rm -f "$generated_template"
+    fi
+    return "$status"
 }

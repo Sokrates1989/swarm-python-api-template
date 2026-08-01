@@ -17,8 +17,8 @@ Felix differs only through profile data:
 - backend image `sokrates1989/python-api-felix`;
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
-- Keycloak realm/client defaults `felix`, `felix-new-frontend`, and
-  `felix-new-backend`, with protected legacy identity, selectable realm
+- Keycloak realm/client defaults `felix`, `felix-frontend`, and
+  `felix-backend`, with protected legacy identity, selectable realm
   settings, application roles, and temporary test identities; and
 - exact Docker secret identifiers and file mounts.
 
@@ -63,6 +63,13 @@ profile values as defaults but may be changed in the guided bootstrap. Valid
 selections are persisted to the ignored root `.env` and rebuild the generated
 stack. It preserves all other realm settings, unrelated clients, and social
 identity providers.
+
+`secretsConfig.valueHelp` supplies the operator guidance used to generate a
+temporary `secrets.env` for every manually importable exact-name Docker secret.
+The shared workflow derives required/optional status from active profile
+capabilities, excludes the Keycloak client credential owned by verified
+bootstrap/rotation, and deletes the values file immediately after successful
+creation. No Felix-specific secret template or script branch is required.
 Every declared frontend callback is also admitted as a post-logout redirect,
 including the native `felixkc:/callback`, while browser origins additionally
 receive their Web wildcard.
@@ -73,8 +80,8 @@ service-account assignment or the backend client's dedicated scope, direct
 realm roles other than Keycloak's generated default role, roles on undeclared
 clients, and the unmanaged default `test` user block automatic apply.
 
-The profile declares the selectable production-facing role catalog `user`,
-`admin`, `manager`, and `service-provider`. An installer-style checkbox menu
+The profile declares the selectable production-facing role catalog `user` and
+`admin`. An installer-style checkbox menu
 uses Up/Down, Space, and Enter to choose the exact subset for the current run.
 The bootstrap creates or updates selected roles and adds them to the restricted
 frontend client's realm-role scope. These role
@@ -82,8 +89,8 @@ names are a forward-looking authorization contract; the current Felix API and
 Flutter clients must still add feature-level enforcement as booking behavior
 is implemented.
 
-The initial profile default also enables four temporary identities:
-`test-user`, `test-admin`, `test-manager`, and `test-service-provider`. Their
+The initial profile default also enables two temporary identities: `user` and
+`admin`. Their
 role assignments and public metadata are tracked, but their passwords are not.
 The dialogue asks about each identity independently, offers an exact role
 multiselect from the selected catalog, asks whether its password must change at
@@ -93,7 +100,7 @@ a hidden password after showing the authenticated plan and sends it only to
 Keycloak. Every bootstrap
 summary repeats: **Once you enter production mode, remember to delete those
 users.** Turning the lifecycle switch off does not auto-delete identities; the
-plan blocks until all four are explicitly removed from Keycloak. The managed
+plan blocks until both are explicitly removed from Keycloak. The managed
 application roles remain after that cleanup.
 
 Administrator password and backend client secret are never printed, written

@@ -57,11 +57,15 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
         self.assertEqual(candidate["webOrigin"], "https://felix-app.fe-wi.com")
         self.assertEqual(candidate["apiOrigin"], "https://api.felix-app.fe-wi.com")
         self.assertEqual(candidate["realm"], "felix")
-        self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
-        self.assertEqual(candidate["backendAudience"], "felix-new-backend")
+        self.assertEqual(candidate["frontendClientId"], "felix-frontend")
+        self.assertEqual(candidate["backendAudience"], "felix-backend")
         self.assertEqual(
             candidate["applicationRealmRoles"],
-            ["user", "admin", "manager", "service-provider"],
+            ["user", "admin"],
+        )
+        self.assertEqual(
+            candidate["bootstrapTestUsernames"],
+            ["user", "admin"],
         )
         self.assertIs(candidate["bootstrapTestUsersDefaultEnabled"], True)
         self.assertEqual(boundary["candidateStackName"], "felix")

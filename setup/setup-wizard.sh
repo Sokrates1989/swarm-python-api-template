@@ -60,32 +60,77 @@ fi
 # ------------------------------------------------------------------------------
 # select_setup_mode
 # ------------------------------------------------------------------------------
-# Chooses interactive reconfiguration or validation/rendering from existing
-# values. The numbered presentation is shared across all profile renderers.
+# Chooses guided questions, a generated public values file, or fast reuse of an
+# existing environment after the deployment profile is known.
 #
 # Returns:
 #   0 after setting SETUP_MODE.
 # ------------------------------------------------------------------------------
 select_setup_mode() {
     SETUP_MODE="interactive"
-    if [ ! -f "${PROJECT_ROOT}/.env" ]; then
-        return 0
-    fi
-
     echo ""
-    echo "Existing .env file detected."
-    prompt_deployment_choice \
-        SETUP_MODE \
-        "Configuration source" \
-        "interactive" \
-        "from_env|Use existing .env values and skip prompts (fast re-setup)" \
-        "interactive|Answer questions interactively"
-    if [ "$SETUP_MODE" = "from_env" ]; then
-        echo "Using existing .env values."
+    if [ -f "${PROJECT_ROOT}/.env" ]; then
+        echo "Existing .env file detected."
+        prompt_deployment_choice \
+            SETUP_MODE \
+            "Configuration method" \
+            "from_env" \
+            "from_env|Use existing .env values unchanged (fast re-setup)" \
+            "interactive|Guided setup questions" \
+            "file|Edit a regenerated, commented .env using current values"
     else
-        echo "Interactive mode selected. Existing values are offered as defaults."
+        prompt_deployment_choice \
+            SETUP_MODE \
+            "Configuration method" \
+            "interactive" \
+            "interactive|Guided setup questions (recommended)" \
+            "file|Edit a generated, commented .env file"
     fi
+    case "$SETUP_MODE" in
+        from_env) echo "Using existing .env values unchanged." ;;
+        interactive) echo "Guided setup selected." ;;
+        file) echo "File-based public configuration selected." ;;
+    esac
     echo ""
+}
+
+# ------------------------------------------------------------------------------
+# edit_generated_deployment_environment
+# ------------------------------------------------------------------------------
+# Opens the generated public environment and verifies that its selected profile
+# identity was not changed. Runtime rendering performs complete value checks.
+#
+# Returns:
+#   0 after a non-empty matching file is saved; otherwise 1.
+# ------------------------------------------------------------------------------
+edit_generated_deployment_environment() {
+    local environment_file="${PROJECT_ROOT}/.env"
+    local selected_profile=""
+
+    choose_editor || {
+        echo "[ERROR] Install nano, vim, or vi for file-based setup."
+        return 1
+    }
+    echo ""
+    echo "Edit public deployment values in: ${environment_file}"
+    echo "Comments describe accepted values and profile-owned fields."
+    echo "Do not add passwords, tokens, private keys, or client secrets."
+    echo "Save and close ${SELECTED_EDITOR}; the same renderer validation used"
+    echo "by guided setup runs before the final action menu is shown."
+    echo ""
+    read -r -p "Press Enter to open ${environment_file} in ${SELECTED_EDITOR}..." _
+    "$SELECTED_EDITOR" "$environment_file"
+    chmod 600 "$environment_file"
+    if [ ! -s "$environment_file" ]; then
+        echo "[ERROR] Public deployment environment is empty."
+        return 1
+    fi
+    selected_profile="$(_root_env_value "$environment_file" DEPLOYMENT_PROFILE_ID)"
+    if [ "$selected_profile" != "$APP_CONFIG_ID" ]; then
+        echo "[ERROR] DEPLOYMENT_PROFILE_ID must remain '${APP_CONFIG_ID}'."
+        return 1
+    fi
+    echo "[OK] Saved public deployment values: ${environment_file}"
 }
 
 # ------------------------------------------------------------------------------
@@ -97,7 +142,7 @@ select_setup_mode() {
 #   Adapter status.
 #
 # Side effects:
-#   Replaces root .env during interactive setup.
+#   Replaces root .env during guided or file-based setup and may open an editor.
 # ------------------------------------------------------------------------------
 write_selected_profile_environment() {
     if [ "${SETUP_MODE:-interactive}" = "from_env" ]; then
@@ -108,9 +153,13 @@ write_selected_profile_environment() {
     echo ""
     echo "Validating and writing public deployment configuration..."
     if [ "${APP_RENDERER_TYPE:-generic}" = "executable" ]; then
-        write_executable_profile_environment
+        write_executable_profile_environment || return 1
     else
-        write_legacy_profile_environment
+        write_legacy_profile_environment || return 1
+    fi
+    annotate_deployment_environment_file "${PROJECT_ROOT}/.env" || return 1
+    if [ "${SETUP_MODE:-interactive}" = "file" ]; then
+        edit_generated_deployment_environment
     fi
 }
 
@@ -163,7 +212,6 @@ run_setup_wizard() {
     echo "site-configs/ holds deployment profiles describing what this deployment needs."
     echo ""
 
-    select_setup_mode
     echo "Step 1: Select the deployment profile for this instance."
     echo ""
     selected_config="$(show_app_selector "$PROJECT_ROOT")"
@@ -175,6 +223,7 @@ run_setup_wizard() {
     load_app_config "$PROJECT_ROOT" "$selected_config"
     initialize_deployment_profile_context
     show_selected_deployment_profile
+    select_setup_mode
     collect_deployment_configuration
     write_selected_profile_environment
     render_selected_profile_stack

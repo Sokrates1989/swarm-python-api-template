@@ -9,9 +9,11 @@ Normal operator use starts at the repository root:
 ./quick-start.sh
 ```
 
-Choose **Run setup wizard**, select a site profile, and follow the same
-numbered dialogue for every profile. Running `./setup/setup-wizard.sh`
-directly is supported for setup validation, but it is not a separate workflow.
+Choose **Run setup wizard**, select a site profile, then choose guided setup
+(the first-run default) or edit a generated, commented `.env`. Both paths use
+the same defaults, help catalog, validation, renderers, and final-action menu.
+Running `./setup/setup-wizard.sh` directly is supported for setup validation,
+but it is not a separate workflow.
 
 ## What setup creates
 
@@ -37,9 +39,9 @@ Passwords, tokens, private keys, and client-secret values never belong in
 
 1. select a JSON profile from `site-configs/`;
 2. load its capabilities and safe defaults;
-3. collect applicable stack, domain, database, proxy/TLS, network, service,
-   image, resource, port, storage, and admin-service values; storage uses an
-   optional profile recommendation or the deployment checkout root;
+3. collect applicable values through guided questions, or generate those same
+   defaults with shared comments and open them in the selected editor; storage
+   uses an optional profile recommendation or the deployment checkout root;
 4. write root `.env` through the selected persistence adapter;
 5. render and Compose-check `swarm-stack.yml` through the selected renderer;
    and
@@ -49,10 +51,12 @@ Enum and boolean questions are numbered. Pressing Enter accepts the displayed
 default. Questions are skipped only when the selected profile declares that a
 capability does not apply.
 
-If `.env` already exists, the wizard offers:
+On first setup, the wizard offers guided setup by default or generated-file
+editing. If `.env` already exists, it additionally offers:
 
 1. use its values and skip the dialogue for a fast re-render; or
-2. answer interactively with existing values offered as defaults.
+2. answer guided questions with existing values offered as defaults; or
+3. regenerate the commented file from the existing values and edit it.
 
 An existing `.env` is accepted only for its recorded deployment profile.
 
@@ -64,6 +68,7 @@ setup/
   modules/
     site_helpers.sh
     deployment-profile-prompts.sh
+    deployment-field-help.sh
     deployment-profile-inputs.sh
     deployment-profile-routing.sh
     deployment-profile-services.sh
@@ -94,6 +99,9 @@ setup/
   input. Every public-domain question automatically includes the shared
   subdomain-creation guide, including API, WebApp, and database-management
   service domains.
+- `deployment-field-help.sh` is the single source for prompt explanations and
+  generated `.env` comments, including accepted value shapes and profile-owned
+  identity warnings.
 - `deployment-profile-inputs.sh` coordinates the only deployment dialogue.
 - `deployment-profile-routing.sh` owns proxy, TLS, distinct Traefik overlay
   network/provider-label settings, and direct-port questions.
@@ -112,8 +120,9 @@ setup/
 - `config-builder.sh` and Compose modules render compatibility profiles.
 - `admin-ui-compose.sh` renders a profile-selected database-management
   service without adding service-specific branches to the shared builder.
-- `profile-secret-file-workflow.sh` constrains saved secret files to names
-  declared by the selected profile before Docker is mutated.
+- `profile-secret-file-workflow.sh` generates or resolves a profile-constrained
+  temporary `secrets.env`, requires active required values, excludes Keycloak
+  client credentials, and deletes the file after successful Docker creation.
 - Secret, Keycloak, deploy, health, logs, and rollback modules are shared by
   the quick-start operations menu.
 

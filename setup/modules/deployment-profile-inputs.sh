@@ -389,6 +389,141 @@ _derive_shared_deployment_values() {
 }
 
 # ------------------------------------------------------------------------------
+# _initialize_default_routing_values
+# ------------------------------------------------------------------------------
+# Derives non-interactive routing defaults from the selected site profile for
+# the editable-file setup path.
+#
+# Returns:
+#   0 after setting stack, public/internal routing, proxy, TLS, and port values.
+# ------------------------------------------------------------------------------
+_initialize_default_routing_values() {
+    STACK_NAME="$(_deployment_default_stack_name)"
+    API_PUBLISHED_PORT="${APP_ROUTING_API_PUBLISHED_PORT:-8083}"
+    WEB_PUBLISHED_PORT="${APP_ROUTING_WEB_PUBLISHED_PORT:-8084}"
+    PGADMIN_PUBLISHED_PORT="${APP_ROUTING_PGADMIN_PUBLISHED_PORT:-5054}"
+    TRAEFIK_CERT_RESOLVER="${APP_ROUTING_TRAEFIK_CERT_RESOLVER:-le}"
+    TRAEFIK_CONSTRAINT_LABEL="${APP_ROUTING_TRAEFIK_CONSTRAINT_LABEL:-traefik-public}"
+    if [ "$APP_IS_INTERNAL" = "true" ]; then
+        DOMAIN="${APP_INTERNAL_URL:-http://${APP_INTERNAL_SERVICE}:${APP_ROUTING_CONTAINER_PORT}}"
+        API_BASE_URL="$DOMAIN"
+        WEB_DOMAIN=""
+        WEB_BASE_URL=""
+        INTERNAL_NETWORK="${APP_INTERNAL_NETWORK:-${STACK_NAME}_internal}"
+        PROXY_TYPE="none"
+        SSL_MODE=""
+        TRAEFIK_NETWORK=""
+        TRAEFIK_CONSTRAINT_LABEL=""
+        API_PUBLISHED_PORT=""
+        WEB_PUBLISHED_PORT=""
+        return 0
+    fi
+    WEB_DOMAIN="${APP_ROUTING_WEB_DOMAIN:-}"
+    WEB_BASE_URL="${APP_ROUTING_WEB_BASE_URL:-}"
+    if [ -n "$WEB_DOMAIN" ] && [ -z "$WEB_BASE_URL" ]; then
+        WEB_BASE_URL="https://${WEB_DOMAIN}"
+    fi
+    DOMAIN="${APP_ROUTING_DOMAIN:-}"
+    if [ -z "$DOMAIN" ] && [ -n "$WEB_DOMAIN" ]; then
+        DOMAIN="api.${WEB_DOMAIN}"
+    fi
+    API_BASE_URL="${APP_ROUTING_API_BASE_URL:-}"
+    if [ -n "$DOMAIN" ] && [ -z "$API_BASE_URL" ]; then
+        API_BASE_URL="https://${DOMAIN}"
+    fi
+    if [ "${APP_EXPOSURE_TRAEFIK:-true}" = "true" ]; then
+        PROXY_TYPE="traefik"
+        SSL_MODE="${APP_ROUTING_DEFAULT_SSL_MODE:-letsencrypt}"
+        TRAEFIK_NETWORK="${APP_ROUTING_TRAEFIK_NETWORK:-traefik-public}"
+    else
+        PROXY_TYPE="none"
+        SSL_MODE=""
+        TRAEFIK_NETWORK=""
+        TRAEFIK_CONSTRAINT_LABEL=""
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# _initialize_default_database_values
+# ------------------------------------------------------------------------------
+# Derives non-secret database identity and connectivity defaults for file mode.
+#
+# Returns:
+#   0 after setting database type, mode, host, port, name, and user.
+# ------------------------------------------------------------------------------
+_initialize_default_database_values() {
+    DB_TYPE="$APP_DB_TYPE"
+    DB_MODE="$APP_DB_DEFAULT_MODE"
+    DB_NAME="$APP_DB_DEFAULT_NAME"
+    DB_USER="$APP_DB_DEFAULT_USER"
+    if [ "$DB_TYPE" = "none" ]; then
+        DB_HOST=""
+        DB_PORT=""
+    elif [ "$DB_MODE" = "external" ]; then
+        DB_HOST="${APP_DB_EXTERNAL_HOST_DEFAULT:-$APP_DB_DEFAULT_HOST}"
+        DB_PORT="${APP_DB_EXTERNAL_PORT_DEFAULT:-$APP_DB_DEFAULT_PORT}"
+    else
+        DB_HOST="$APP_DB_DEFAULT_HOST"
+        DB_PORT="$APP_DB_DEFAULT_PORT"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# _initialize_default_service_values
+# ------------------------------------------------------------------------------
+# Derives service, resource, storage, optional admin UI, and redirect defaults.
+#
+# Returns:
+#   0 after setting every renderer-neutral service value used by both writers.
+# ------------------------------------------------------------------------------
+_initialize_default_service_values() {
+    IMAGE_NAME="$APP_IMAGE_NAME"
+    IMAGE_VERSION="$APP_IMAGE_DEFAULT_VERSION"
+    API_REPLICAS="$APP_DEFAULT_REPLICAS"
+    NGINX_REPLICAS="$API_REPLICAS"
+    MEMORY_LIMIT="$APP_DEFAULT_MEMORY_LIMIT"
+    DATA_ROOT="$APP_DATA_ROOT"
+    WEB_ENABLED="${APP_REQUIRES_WEB:-false}"
+    WEB_IMAGE_NAME="${APP_WEB_IMAGE_NAME:-}"
+    WEB_IMAGE_VERSION="${APP_WEB_IMAGE_DEFAULT_VERSION:-}"
+    WEB_REPLICAS="${APP_WEB_DEFAULT_REPLICAS:-1}"
+    WEB_MEMORY_LIMIT="${APP_WEB_DEFAULT_MEMORY_LIMIT:-unlimited}"
+    PGADMIN_ENABLED="${APP_ADMIN_UI_DEFAULT_ENABLED:-false}"
+    PGADMIN_DOMAIN="${APP_ADMIN_UI_DEFAULT_DOMAIN:-}"
+    PGADMIN_EMAIL="${APP_ADMIN_UI_DEFAULT_EMAIL:-}"
+    PGADMIN_REPLICAS="0"
+    if [ "$PGADMIN_ENABLED" = "true" ]; then
+        PGADMIN_REPLICAS="${APP_ADMIN_UI_DEFAULT_REPLICAS:-1}"
+        [ "$PGADMIN_REPLICAS" -gt 0 ] 2>/dev/null || PGADMIN_REPLICAS="1"
+    fi
+    MONGO_EXPRESS_URL="$PGADMIN_DOMAIN"
+    MONGO_EXPRESS_USERNAME="dbadmin"
+    MONGO_EXPRESS_REPLICAS="$PGADMIN_REPLICAS"
+    REDIRECT_TARGET_BASE_URL="${APP_REDIRECT_TARGET_BASE_URL:-}"
+    REDIRECT_STATUS_CODE="${APP_REDIRECT_STATUS_CODE:-302}"
+}
+
+# ------------------------------------------------------------------------------
+# initialize_deployment_configuration_defaults
+# ------------------------------------------------------------------------------
+# Builds the same profile-owned defaults used by guided prompts without reading
+# the terminal. Existing environments are rehydrated instead of overwritten.
+#
+# Returns:
+#   0 after setting the complete writer input contract; otherwise nonzero.
+# ------------------------------------------------------------------------------
+initialize_deployment_configuration_defaults() {
+    if [ -f "${PROJECT_ROOT}/.env" ]; then
+        load_deployment_configuration_from_env
+        return $?
+    fi
+    _initialize_default_routing_values
+    _initialize_default_database_values
+    _initialize_default_service_values
+    _derive_shared_deployment_values
+}
+
+# ------------------------------------------------------------------------------
 # load_deployment_configuration_from_env
 # ------------------------------------------------------------------------------
 # Loads an existing environment through the shared profile-independent path.
@@ -438,6 +573,14 @@ collect_deployment_configuration() {
     if [ "${SETUP_MODE:-interactive}" = "from_env" ]; then
         echo "Fast setup mode: loading all values from existing .env"
         load_deployment_configuration_from_env
+        return $?
+    fi
+    if [ "${SETUP_MODE:-interactive}" = "file" ]; then
+        echo "Step 2: File-based Deployment Configuration"
+        echo "============================================"
+        echo "Profile defaults and existing public values will be written with"
+        echo "shared comments, then opened in your selected terminal editor."
+        initialize_deployment_configuration_defaults
         return $?
     fi
 

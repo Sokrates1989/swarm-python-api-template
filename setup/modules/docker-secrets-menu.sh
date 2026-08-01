@@ -387,17 +387,16 @@ _show_profile_secret_status() {
 # Prompts for one secret from a newline-delimited declared-name list.
 #
 # Arguments:
-#   $1 - Menu label.
-#   $2 - Newline-delimited secret names.
-#
-# Outputs:
-#   Selected exact secret name.
+#   $1 - Caller-owned result variable.
+#   $2 - Menu label.
+#   $3 - Newline-delimited secret names.
 #
 # Returns:
 #   0 after a valid selection; 1 when the list is empty or selection is invalid.
 _select_profile_secret() {
-    local label="$1"
-    local names="$2"
+    local target_name="$1"
+    local label="$2"
+    local names="$3"
     local choice=""
     local index=1
     local -a secrets=()
@@ -427,7 +426,7 @@ _select_profile_secret() {
         echo "[WARN] Invalid secret selection."
         return 1
     fi
-    printf '%s\n' "${secrets[$((choice - 1))]}"
+    printf -v "$target_name" '%s' "${secrets[$((choice - 1))]}"
 }
 
 # _create_profile_editor_secret
@@ -509,7 +508,7 @@ _create_selected_profile_secret() {
     else
         names="$(_profile_optional_secret_names)"
     fi
-    selected="$(_select_profile_secret "$category" "$names")" || return 1
+    _select_profile_secret selected "$category" "$names" || return 1
     _create_profile_editor_secret "$selected"
 }
 
@@ -539,7 +538,7 @@ _manage_profile_docker_secrets() {
         profile_supports_keycloak_bootstrap; then
         keycloak_available="true"
     fi
-    if _profile_declares_secret_template; then
+    if profile_supports_secret_file_workflow; then
         template_choice="$next_choice"
         next_choice=$((next_choice + 1))
     fi
@@ -558,7 +557,7 @@ _manage_profile_docker_secrets() {
         echo "  1) Create or replace a required secret"
         echo "  2) Create or replace an optional secret"
         if [ -n "$template_choice" ]; then
-            echo "  ${template_choice}) Create secrets from the profile template"
+            echo "  ${template_choice}) Create all editable secrets from temporary secrets.env"
         fi
         if [ -n "$keycloak_bootstrap_choice" ]; then
             echo "  ${keycloak_bootstrap_choice}) Bootstrap/update Keycloak and create a missing client secret"
@@ -639,7 +638,7 @@ _manage_legacy_docker_secrets() {
         _secret_status_line "$db_ui_admin_password_secret" || true
     fi
     echo ""
-    echo "  1) Create secrets from secrets.env file"
+    echo "  1) Create all editable secrets from temporary secrets.env"
     echo "  2) Create secrets interactively"
     echo "  3) List all Docker secrets"
     echo "  0) Back"
@@ -647,10 +646,8 @@ _manage_legacy_docker_secrets() {
     case "$choice" in
         1)
             _require_stopped_stack_for_secret_change || return 0
-            create_secrets_from_env_file \
-                "secrets.env" \
-                "${PROJECT_ROOT}/setup/templates/secrets.env.template" \
-                "$prefix_upper"
+            create_profile_secrets_from_env_file \
+                "${PROJECT_ROOT}/secrets.env"
             ;;
         2)
             _require_stopped_stack_for_secret_change || return 0

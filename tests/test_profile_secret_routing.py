@@ -72,6 +72,29 @@ class ProfileSecretRoutingStaticTests(unittest.TestCase):
         )
         self.assertGreater(len(profile["secrets"]), 0)
 
+    def test_felix_declares_generated_secret_value_guidance(self) -> None:
+        """Drive Felix's batch editor from profile data without custom code.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = json.loads(
+            (REPOSITORY_ROOT / "site-configs" / "felix.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertNotIn("template", profile["secretsConfig"])
+        self.assertIn(
+            "FELIX_DB_PASSWORD",
+            profile["secretsConfig"]["valueHelp"],
+        )
+        self.assertNotIn(
+            "FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET",
+            profile["secretsConfig"]["valueHelp"],
+        )
+
     def test_secret_menus_do_not_route_by_renderer_or_database(self) -> None:
         """Reject the former schema and DB-type shortcuts.
 
@@ -96,6 +119,23 @@ class ProfileSecretRoutingStaticTests(unittest.TestCase):
         )
         self.assertIn("site_profile_declares_secrets", requires)
         self.assertNotIn("profile_uses_executable_renderer", requires)
+
+    def test_legacy_secret_menu_uses_the_profile_batch_adapter(self) -> None:
+        """Apply required-value and deletion policy to prefixed profiles too.
+
+        Returns:
+            Nothing.
+        """
+
+        source = SECRET_MENU.read_text(encoding="utf-8")
+        legacy_menu = source[
+            source.index("_manage_legacy_docker_secrets()") : source.index(
+                "# manage_docker_secrets_menu"
+            )
+        ]
+
+        self.assertIn("create_profile_secrets_from_env_file", legacy_menu)
+        self.assertNotIn("create_secrets_from_env_file", legacy_menu)
 
     def test_keycloak_failures_are_not_silently_discarded(self) -> None:
         """Require menu call sites to report rather than erase failures.
@@ -142,7 +182,7 @@ class ProfileSecretFailurePropagationLinuxTests(unittest.TestCase):
         script = f"""
 source {bash_quote(SECRET_MENU)}
 _show_profile_secret_status() {{ :; }}
-_profile_declares_secret_template() {{ return 1; }}
+profile_supports_secret_file_workflow() {{ return 1; }}
 profile_supports_keycloak_bootstrap() {{ return 0; }}
 run_profile_keycloak_bootstrap() {{
     echo bootstrap-failed
@@ -167,6 +207,116 @@ printf 'STATUS=%s\\n' "$status"
         self.assertIn("Keycloak bootstrap did not complete", completed.stdout)
         self.assertIn("STATUS=23", completed.stdout)
 
+    def test_secret_chooser_prints_menu_before_reading_selection(self) -> None:
+        """Keep menu rendering outside the selected-value assignment channel.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(SECRET_MENU)}
+selected=''
+_select_profile_secret selected required $'FIRST_SECRET\nSECOND_SECRET' <<< '2'
+printf 'SELECTED=%s\n' "$selected"
+"""
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("1) FIRST_SECRET", completed.stdout)
+        self.assertIn("2) SECOND_SECRET", completed.stdout)
+        self.assertIn("SELECTED=SECOND_SECRET", completed.stdout)
+
+    def test_successful_batch_import_deletes_temporary_values_file(self) -> None:
+        """Delete secret plaintext immediately after all creations succeed.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "secrets.env"
+            template_file = Path(temporary) / "secrets.env.template"
+            values_file.write_text("REQUIRED_SECRET=value\n", encoding="utf-8")
+            template_file.write_text(
+                "REQUIRED_SECRET=\n",
+                encoding="utf-8",
+            )
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+choose_editor() {{ SELECTED_EDITOR=true; }}
+create_secret_from_value() {{
+    CREATE_SECRET_FROM_VALUE_ACTION=created
+    return 0
+}}
+create_secrets_from_env_file \
+    {bash_quote(values_file)} \
+    {bash_quote(template_file)} \
+    '' \
+    REQUIRED_SECRET \
+    true \
+    always \
+    REQUIRED_SECRET <<< ''
+[ ! -e {bash_quote(values_file)} ]
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "Deleted temporary secret values file",
+            completed.stdout,
+        )
+
+    def test_failed_batch_import_retains_temporary_values_file(self) -> None:
+        """Retain secret plaintext when any Docker creation fails.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "secrets.env"
+            template_file = Path(temporary) / "secrets.env.template"
+            values_file.write_text("REQUIRED_SECRET=value\n", encoding="utf-8")
+            template_file.write_text(
+                "REQUIRED_SECRET=\n",
+                encoding="utf-8",
+            )
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+choose_editor() {{ SELECTED_EDITOR=true; }}
+create_secret_from_value() {{ return 1; }}
+! create_secrets_from_env_file \
+    {bash_quote(values_file)} \
+    {bash_quote(template_file)} \
+    '' \
+    REQUIRED_SECRET \
+    true \
+    always \
+    REQUIRED_SECRET <<< ''
+[ -e {bash_quote(values_file)} ]
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(values_file.exists())
+        self.assertIn("retained for correction", completed.stdout)
+
 
 @unittest.skipUnless(
     NATIVE_BASH_AND_JQ,
@@ -174,6 +324,38 @@ printf 'STATUS=%s\\n' "$status"
 )
 class ProfileSecretRoutingLinuxTests(unittest.TestCase):
     """Exercise exact secret template routing with the real Bash module."""
+
+    def test_prefixed_profile_batch_requires_all_declared_values(self) -> None:
+        """Preserve legacy prefixes while enforcing profile-required keys.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(SECRET_MENU)}
+create_secrets_from_env_file() {{
+    printf 'PREFIX=%s\nDELETE=%s\nREQUIRED=%s\n' "$3" "$6" "$7"
+}}
+PROJECT_ROOT={bash_quote(REPOSITORY_ROOT)}
+DEPLOYMENT_PROFILE_ID=demo_app
+STACK_NAME=demo-app
+create_profile_secrets_from_env_file /tmp/demo-secrets.env
+"""
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("PREFIX=DEMO_APP", completed.stdout)
+        self.assertIn("DELETE=always", completed.stdout)
+        self.assertIn("DB_PASSWORD", completed.stdout)
+        self.assertIn("ADMIN_API_KEY", completed.stdout)
+        self.assertIn("BACKUP_RESTORE_API_KEY", completed.stdout)
+        self.assertIn("BACKUP_DELETE_API_KEY", completed.stdout)
 
     def test_secure_messaging_uses_unprefixed_profile_template(self) -> None:
         """Pass literal names and the declared template to the shared importer.
@@ -286,8 +468,10 @@ PGADMIN_ENABLED=false
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Undeclared Docker secret key", completed.stderr)
 
-    def test_batch_menu_requires_a_valid_profile_template(self) -> None:
-        """Expose saved-file workflow only when exact names have a template.
+    def test_batch_menu_supports_static_or_generated_profile_templates(
+        self,
+    ) -> None:
+        """Expose static and config-generated exact-name file workflows.
 
         Returns:
             Nothing.
@@ -299,7 +483,7 @@ PROJECT_ROOT={bash_quote(REPOSITORY_ROOT)}
 DEPLOYMENT_PROFILE_ID=secure_messaging
 profile_supports_secret_file_workflow
 DEPLOYMENT_PROFILE_ID=felix
-! profile_supports_secret_file_workflow
+profile_supports_secret_file_workflow
 """
         completed = subprocess.run(
             ["bash", "-c", script],
@@ -309,6 +493,72 @@ DEPLOYMENT_PROFILE_ID=felix
         )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_felix_generated_template_is_complete_and_excludes_keycloak(
+        self,
+    ) -> None:
+        """Generate required and optional Felix entries solely from its profile.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "generated-secrets.env"
+            script = f"""
+source {bash_quote(SECRET_MENU)}
+PROJECT_ROOT={bash_quote(REPOSITORY_ROOT)}
+DEPLOYMENT_PROFILE_ID=felix
+PGADMIN_ENABLED=true
+_write_generated_profile_secrets_template {bash_quote(destination)}
+cat {bash_quote(destination)}
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("FELIX_DB_PASSWORD=", completed.stdout)
+        self.assertIn("FELIX_PGADMIN_PASSWORD=", completed.stdout)
+        self.assertIn("FELIX_AI_CHAT_API_KEY=", completed.stdout)
+        self.assertIn("FELIX_WEB_PUSH_VAPID_PRIVATE_KEY=", completed.stdout)
+        self.assertNotIn(
+            "FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET=",
+            completed.stdout,
+        )
+        self.assertIn("This file is deleted after success", completed.stdout)
+
+    def test_required_batch_values_are_rejected_before_mutation(self) -> None:
+        """Retain a values file when one required entry remains empty.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "secrets.env"
+            values_file.write_text(
+                "REQUIRED_ONE=\nOPTIONAL_ONE=value\n",
+                encoding="utf-8",
+            )
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+! _validate_required_secret_env_values \
+    {bash_quote(values_file)} \
+    REQUIRED_ONE
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Required Docker secret value is empty", completed.stderr)
 
     def test_keycloak_action_requires_a_supported_profile_contract(self) -> None:
         """Hide reconciliation when a profile cannot execute the adapter.

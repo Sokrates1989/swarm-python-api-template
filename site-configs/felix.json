@@ -81,7 +81,14 @@
     "dataRoot": "/swarm/prod/felix"
   },
   "secretsConfig": {
-    "prefixed": false
+    "prefixed": false,
+    "valueHelp": {
+      "FELIX_DB_PASSWORD": "Strong, unique PostgreSQL password used by the Felix database and backend.",
+      "FELIX_PGADMIN_PASSWORD": "Strong pgAdmin login password used only when database management is enabled.",
+      "FELIX_AI_CHAT_API_KEY": "Provider API key for the optional AI chat capability.",
+      "FELIX_WEB_PUSH_VAPID_PUBLIC_KEY": "URL-safe VAPID public key from the Web Push signing-key pair.",
+      "FELIX_WEB_PUSH_VAPID_PRIVATE_KEY": "Confidential URL-safe VAPID private key matching the configured public key."
+    }
   },
   "pgadmin": {
     "enabled": false,

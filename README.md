@@ -6,9 +6,9 @@ Docker Swarm deployment management for Python API and full-stack services.
 
 Production setup is menu-driven and site-config-driven. Start
 `./quick-start.sh`, choose **Run setup wizard**, and select a profile. The
-wizard uses one numbered dialogue for every profile, writes the ignored public
-root `.env`, and renders `swarm-stack.yml`; passwords and client secrets are
-never stored there.
+wizard offers guided questions or a generated, commented `.env` for every
+profile, then renders `swarm-stack.yml`; passwords and client secrets are never
+stored in the public environment.
 
 `site-configs/<profile>.json` is the only application-specific dispatch and
 capability boundary. Setup, rendering, secrets, Keycloak, deployment, health,
@@ -78,20 +78,19 @@ The quick-start script will:
 4. Show a deployment overview.
 5. Open the operations menu.
 
-### Fast Re-Setup from Saved .env
+### Configuration Methods and Fast Re-Setup
 
-If you have a saved `.env` from a previous deployment, the setup wizard will
-offer to use it directly (skipping all prompts):
+After profile selection, first-time setup offers:
 
 ```text
-📁 Existing .env file detected.
-
-How would you like to configure deployment settings?
-  1) Use existing .env values and skip prompts (fast re-setup)
-  2) Answer questions interactively (recommended for first setup)
+Configuration method:
+  1) Guided setup questions (recommended)
+  2) Edit a generated, commented .env file
 ```
 
-This allows quick restoration of a deployment from a backed-up `.env` file.
+The comments and guided explanations come from one shared field-help catalog.
+When `.env` already exists, a third fast-re-setup choice retains it unchanged;
+the file editor regenerates comments while preserving its current values.
 
 ## Setup Wizard
 
@@ -102,15 +101,17 @@ This allows quick restoration of a deployment from a backed-up `.env` file.
 The wizard:
 
 1. Lets you select which **deployment profile** to use (from `site-configs/`).
-2. Uses the same numbered sections for every applicable stack name, database,
+2. Lets you answer the same numbered sections or edit their generated public
+   values with comments explaining accepted formats and fixed profile fields.
+3. Uses the same normalized contract for every applicable stack name, database,
    proxy, TLS, Traefik network, service image, tag, replica, memory, port, and
    storage choice. The storage prompt uses the profile recommendation when one
    exists and otherwise defaults to the deployment checkout.
-3. Adds or skips questions only from profile capabilities such as an internal
+4. Adds or skips questions only from profile capabilities such as an internal
    service, WebApp, database management, redirector, or Keycloak.
-4. Generates the root `.env`, then selects the legacy compatibility or
+5. Generates the root `.env`, then selects the legacy compatibility or
    executable renderer adapter.
-5. Builds root `swarm-stack.yml` and offers one shared final-action menu.
+6. Builds root `swarm-stack.yml` and offers one shared final-action menu.
 
 Renderer type never selects a second wizard. Site configs provide defaults and
 allowed capabilities; the operator can change deployment-instance values such
@@ -152,6 +153,7 @@ setup/
   modules/
     site_helpers.sh                ← profile loading and root .env parsing
     deployment-profile-prompts.sh  ← numbered choice/value primitives
+    deployment-field-help.sh       ← shared prompt and .env guidance
     deployment-profile-inputs.sh   ← single capability-driven dialogue
     deployment-profile-routing.sh  ← proxy, TLS, network, and port section
     deployment-profile-services.sh ← service, resource, and storage section
@@ -275,17 +277,19 @@ Secrets use a predictable naming pattern derived from `SECRETS_PREFIX`:
 
 ### secrets.env Workflow
 
-You can create Docker secrets from a `secrets.env` file (similar to `swarm-figma-website`):
+You can create Docker secrets from a temporary `secrets.env` file:
 
-1. **Setup wizard** → Select "Create secrets from secrets.env file (recommended)"
-2. **Quick-start menu** → Select "Manage Docker secrets" → "Create secrets from secrets.env file"
+1. **Setup final-action menu** → “Create all editable Docker secrets from temporary secrets.env”
+2. **Quick-start menu** → **Manage Docker secrets** → the same generated-file action
 
-The template is at `setup/templates/secrets.env.template`. The workflow:
-- Creates `secrets.env` from template if it doesn't exist
-- Syncs missing keys from template to existing files
+The workflow:
+- Generates exact names and comments from the active site profile, or uses a
+  declared specialized template for structured values
+- Limits imports to profile-declared names and requires every active required value
 - Opens your chosen editor (nano/vim/vi) to fill values
-- Creates Docker secrets with your `SECRET_PREFIX`
-- Optionally deletes `secrets.env` for security
+- Excludes Keycloak client credentials, which remain bootstrap/rotation-owned
+- Creates the Docker secrets and immediately deletes `secrets.env` on complete success
+- Retains the file only when validation or creation fails, so it can be corrected
 
 ### Admin UI Credentials
 
@@ -313,10 +317,8 @@ To move or restore a deployment to a new server:
 # Save .env (non-secret configuration)
 cp .env /backup/myapp.env
 
-# Save secrets.env (create from current Docker secrets)
-# Use menu: Manage Docker secrets → Create secrets from secrets.env file
-# Then copy the file before it gets deleted
-cp secrets.env /backup/myapp-secrets.env
+# Back up secret values separately when they are originally issued.
+# Docker Swarm cannot reveal an existing Docker secret value for export.
 ```
 
 ### 2. Restore (on target server)
@@ -335,7 +337,7 @@ cp /backup/myapp.env .env
 # → 4) Quick restore from saved secrets.env
 ```
 
-Or use the setup wizard's fast mode which auto-detects existing `.env`:
+Or use the setup wizard's fast mode after selecting the matching profile:
 ```bash
 ./setup/setup-wizard.sh
 # → Select option 1: "Use existing .env values and skip prompts"

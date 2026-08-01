@@ -81,7 +81,11 @@
     "dataRoot": ""
   },
   "secretsConfig": {
-    "prefixed": false
+    "prefixed": false,
+    "valueHelp": {
+      "EXAMPLE_APP_DB_PASSWORD": "Strong, unique database password used by the application and local database.",
+      "EXAMPLE_APP_PGADMIN_PASSWORD": "Strong pgAdmin login password used only when database management is enabled."
+    }
   },
   "pgadmin": {
     "enabled": false,

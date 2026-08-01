@@ -31,12 +31,11 @@ quick-start.sh
         |
         +-- select site-config
         +-- load profile capabilities and defaults
-        +-- collect normalized answers once
-        |     +-- stack and domains
-        |     +-- database mode and connection defaults
-        |     +-- proxy, TLS, network, and direct ports
-        |     +-- API/WebApp images and resources
-        |     +-- storage and optional admin service
+        +-- choose one shared configuration method
+        |     +-- guided numbered questions (default)
+        |     +-- generated commented .env editor
+        |     +-- unchanged existing .env (fast re-setup)
+        +-- normalize one answer contract
         |
         +-- persist through selected adapter
         |     +-- version 3.0/3.1 compatibility environment
@@ -50,6 +49,7 @@ quick-start.sh
               +-- return without external changes
               +-- create data directories
               +-- manage declared Docker secrets
+              +-- generate/edit/import temporary secrets.env
               +-- reconcile declared Keycloak identity
               +-- deploy through the common stack action
 ```
@@ -80,6 +80,7 @@ field guide.
 | Operator-selected production values | ignored root `.env` |
 | Passwords, tokens, and client secrets | Docker secrets |
 | Numbered setup interaction | `deployment-profile-*.sh` modules |
+| Prompt and generated-file guidance | `deployment-field-help.sh` |
 | Version-3 persistence | `legacy-profile-environment.sh` |
 | Version-3 rendering | `scripts/build-site-stack.sh` and compose modules |
 | Version-5 persistence | `executable-profile-wizard.sh` and Python validators |
@@ -118,6 +119,7 @@ setup/
   modules/
     site_helpers.sh
     deployment-profile-prompts.sh
+    deployment-field-help.sh
     deployment-profile-inputs.sh
     deployment-profile-routing.sh
     deployment-profile-services.sh
@@ -195,7 +197,11 @@ shared setup and operations sources.
 
 - Root `.env` is public configuration and must never contain passwords,
   tokens, private keys, or client-secret values.
+- Guided questions and generated `.env` comments share one field-help source;
+  both paths feed the same persistence, validation, and rendering adapters.
 - Docker secret identifiers and file mounts come from the selected profile.
+- Temporary secret files accept only profile-declared manually editable names,
+  exclude Keycloak client credentials, and are deleted after full success.
 - Keycloak actions update the existing platform through its Admin API; they do
   not deploy another Keycloak instance.
 - Setup and rendering do not deploy automatically. Deployment is an explicit

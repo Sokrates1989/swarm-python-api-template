@@ -75,7 +75,7 @@ Version 5.0 owns these main objects:
 | `cors`, `auth` | Browser-origin, authentication identity, realm policy, and verification contract |
 | `environment`, `envKeys` | Exact public runtime environment allowlist |
 | `secrets`, `optionalSecrets`, `secretMounts` | Exact Docker secret identifiers and file mounts |
-| `secretsConfig` | Exact-versus-prefixed naming and optional batch-entry template |
+| `secretsConfig` | Exact-versus-prefixed naming, value help, and optional specialized batch template |
 | `capabilities` | Optional environment and secret-mount bundles |
 | `health` | Expected public health identity |
 
@@ -141,6 +141,15 @@ The same rule applies to:
 the Traefik provider to select those services and defaults to
 `traefik-public`. These values may be equal, but one must never be inferred
 from the other.
+
+For exact-name profiles, `secretsConfig.valueHelp` maps declared manually
+editable Docker secret names to concise value guidance. The shared secret menu
+generates a protected temporary `secrets.env` directly from those declarations,
+while reconciliation-owned Keycloak client secrets are always excluded. A
+specialized static `secretsConfig.template` remains available for structured
+value shapes such as JSON maps. Successful profile imports delete their
+temporary values file automatically; failed or incomplete imports retain it for
+correction.
 
 Release image tags must be semantic versions. Infrastructure images must be
 registry-digest pinned. Secret values, passwords, tokens, and private keys are

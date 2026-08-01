@@ -39,6 +39,9 @@ PROMPTS_MODULE = (
 MEMORY_POLICY_MODULE = (
     REPOSITORY_ROOT / "setup" / "modules" / "deployment-memory-policy.sh"
 )
+FIELD_HELP_MODULE = (
+    REPOSITORY_ROOT / "setup" / "modules" / "deployment-field-help.sh"
+)
 EXECUTABLE_ADAPTER = (
     REPOSITORY_ROOT / "setup" / "modules" / "executable-profile-wizard.sh"
 )
@@ -103,6 +106,30 @@ class SetupWizardUxTests(unittest.TestCase):
             coordinator.index("render_selected_profile_stack"),
         )
         self.assertNotIn("run_executable_profile_setup", coordinator)
+
+    def test_configuration_method_is_selected_after_the_site_profile(
+        self,
+    ) -> None:
+        """Offer guided and file-driven setup only after profile selection.
+
+        Returns:
+            Nothing.
+        """
+
+        source = SETUP_WIZARD.read_text(encoding="utf-8")
+        coordinator = source[source.index("run_setup_wizard()") :]
+
+        self.assertLess(
+            coordinator.index("show_selected_deployment_profile"),
+            coordinator.index("select_setup_mode"),
+        )
+        self.assertIn("Guided setup questions (recommended)", source)
+        self.assertIn("Edit a generated, commented .env file", source)
+        self.assertIn("annotate_deployment_environment_file", source)
+        self.assertLess(
+            coordinator.index("write_selected_profile_environment"),
+            coordinator.index("render_selected_profile_stack"),
+        )
 
     def test_executable_adapter_has_no_operator_dialogue(self) -> None:
         """Keep schema-5 code behind the shared input boundary.
@@ -207,11 +234,13 @@ class SetupWizardUxTests(unittest.TestCase):
         """
 
         prompts = PROMPTS_MODULE.read_text(encoding="utf-8")
+        field_help = FIELD_HELP_MODULE.read_text(encoding="utf-8")
         inputs = INPUTS_MODULE.read_text(encoding="utf-8")
         services = SERVICES_MODULE.read_text(encoding="utf-8")
         guide = "https://wiki.fe-wi.com/en/deployment/create-subdomain"
 
-        self.assertIn(f'PUBLIC_DOMAIN_CREATE_INFO_URL="{guide}"', prompts)
+        self.assertIn(f'PUBLIC_DOMAIN_CREATE_INFO_URL="{guide}"', field_help)
+        self.assertIn("deployment-field-help.sh", prompts)
         self.assertIn('if [ "$validation_kind" = "domain" ]', prompts)
         self.assertIn("API domain (e.g. api.example.com)", inputs)
         self.assertIn("WebApp domain (e.g. app.example.com)", inputs)
@@ -248,12 +277,76 @@ class SetupWizardUxTests(unittest.TestCase):
 
         prompts = PROMPTS_MODULE.read_text(encoding="utf-8")
         policy = MEMORY_POLICY_MODULE.read_text(encoding="utf-8")
+        field_help = FIELD_HELP_MODULE.read_text(encoding="utf-8")
 
-        self.assertIn("print_deployment_memory_limit_help", prompts)
+        self.assertIn("print_deployment_field_help", prompts)
+        self.assertIn("print_deployment_memory_limit_help", field_help)
         self.assertIn("bytes, not bits", policy)
         self.assertIn("K/M/G/T (1024-based)", policy)
         self.assertIn("enter unlimited/0", policy)
         self.assertIn("###MEMORY_LIMIT_START###", policy)
+
+    def test_public_env_comments_and_prompts_share_field_help(self) -> None:
+        """Use one guidance catalog for terminal and editable-file setup.
+
+        Returns:
+            Nothing.
+        """
+
+        prompts = PROMPTS_MODULE.read_text(encoding="utf-8")
+        help_source = FIELD_HELP_MODULE.read_text(encoding="utf-8")
+
+        self.assertIn("print_deployment_field_help", prompts)
+        self.assertIn("deployment_field_help_text", help_source)
+        self.assertIn("annotate_deployment_environment_file", help_source)
+        self.assertIn("Profile-owned identity value", help_source)
+        self.assertIn("Do not add passwords", SETUP_WIZARD.read_text(encoding="utf-8"))
+
+    @unittest.skipIf(
+        sys.platform.startswith("win") or shutil.which("bash") is None,
+        "Native Bash environment-annotation test runs on Linux hosts.",
+    )
+    def test_generated_public_environment_has_help_for_every_value(self) -> None:
+        """Annotate assignments without changing or evaluating their values.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            environment_file = Path(temporary) / ".env"
+            environment_file.write_text(
+                "STACK_NAME=felix\n"
+                "MEMORY_LIMIT=unlimited\n"
+                "KEYCLOAK_REALM_DISPLAY_NAME=Felix\n"
+                "UNMAPPED_PROFILE_VALUE=preserved\n",
+                encoding="utf-8",
+            )
+            script = f"""
+source {shlex_quote(PROMPTS_MODULE)}
+annotate_deployment_environment_file {shlex_quote(environment_file)}
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            annotated = environment_file.read_text(encoding="utf-8")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        lines = annotated.splitlines()
+        assignment_indexes = [
+            index for index, line in enumerate(lines) if "=" in line
+        ]
+        self.assertEqual(len(assignment_indexes), 4)
+        for index in assignment_indexes:
+            self.assertGreater(index, 0)
+            self.assertTrue(lines[index - 1].startswith("# "))
+        self.assertIn("K/M/G/T (1024-based)", annotated)
+        self.assertIn("Human-readable realm name", annotated)
+        self.assertIn("Site-profile deployment setting", annotated)
+        self.assertIn("UNMAPPED_PROFILE_VALUE=preserved", annotated)
 
     @unittest.skipIf(
         sys.platform.startswith("win") or shutil.which("bash") is None,

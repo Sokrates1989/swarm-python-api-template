@@ -125,8 +125,8 @@ Optionally enable secret-safe request tracing, then enter the existing
 Keycloak admin username and its password at the immediately following hidden
 Python prompt.
 
-The profile declares the application roles `user`, `admin`, `manager`, and
-`service-provider`, plus four temporary role-specific users. For each declared
+The profile declares the application roles `user` and `admin`, plus two
+temporary role-specific users. For each declared
 user, choose independently whether to create/update it, select its exact roles,
 and choose whether the initial password is temporary. The dialogue then loops
 over any additional manual bootstrap users. When a selected user or its
@@ -135,7 +135,7 @@ the hidden prompts shown after the authenticated live-state plan. Passwords are
 sent only to Keycloak and never enter JSON, `.env`, logs, plans, or summaries. Every run
 with temporary users enabled warns: **Once you enter production mode, remember
 to delete those users.** To enter production mode, disable the test-user
-lifecycle, explicitly delete the four declared users from Keycloak, and rerun
+lifecycle, explicitly delete the two declared users from Keycloak, and rerun
 the bootstrap until its cleanup blockers are gone. Application roles remain.
 
 If an existing Docker client secret belongs to a previously selected realm or
@@ -153,14 +153,14 @@ values replace the corresponding realm/client/root names below):
 
 - existing realm `felix` is reconciled without replacing unrelated clients or
   social identity providers;
-- public PKCE client `felix-new-frontend` has the exact Web and mobile callback
+- public PKCE client `felix-frontend` has the exact Web and mobile callback
   allowlist;
-- confidential service client `felix-new-backend` exists;
-- frontend access tokens receive audience `felix-new-backend`; and
-- application realm roles `user`, `admin`, `manager`, and `service-provider`
+- confidential service client `felix-backend` exists;
+- frontend access tokens receive audience `felix-backend`; and
+- application realm roles `user` and `admin`
   exist and are included in the restricted frontend client role scope;
-- when enabled, temporary users `test-user`, `test-admin`, `test-manager`, and
-  `test-service-provider` exist with their exact declared application roles;
+- when enabled, temporary users `user` and `admin` exist with their exact
+  declared application roles;
 - the backend service account receives only the declared
   `realm-management/manage-users` client role needed for identity deletion;
 - broader undeclared role grants fail closed for manual review; and
