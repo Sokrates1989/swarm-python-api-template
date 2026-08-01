@@ -365,9 +365,13 @@ Or use the setup wizard's fast mode after selecting the matching profile:
 ```
 
 Use the numbered build/deploy action. It parses `.env` as dotenv data, verifies
-required secrets, updates an existing stack in place, and runs acceptance
-health checks. The raw console deployment path is intentionally not the normal
-operator workflow.
+required secrets, prepares persistent host directories, updates an existing
+stack in place, and runs acceptance health checks. Before mutation, API log and
+backup mounts are recursively assigned to the shared image runtime identity
+`10001:10001`; this also self-heals directories created by an older root-run
+wizard. Run quick-start with permission to change ownership or deployment will
+stop before touching the stack. The raw console deployment path is
+intentionally not the normal operator workflow.
 
 ## Troubleshooting
 

@@ -19,6 +19,10 @@ if [ -n "${_DEPLOYMENT_SETUP_ACTIONS_LOADED:-}" ]; then
 fi
 _DEPLOYMENT_SETUP_ACTIONS_LOADED=1
 
+# Tracks preparation within one menu process so a full deployment does not
+# repeat recursive ownership work immediately before the stack mutation.
+_DEPLOYMENT_DATA_DIRECTORIES_READY=false
+
 # ------------------------------------------------------------------------------
 # _deployment_profile_uses_keycloak
 # ------------------------------------------------------------------------------
@@ -102,9 +106,29 @@ _check_configured_stack_health() {
 }
 
 # ------------------------------------------------------------------------------
+# _prepare_deployment_data_directories
+# ------------------------------------------------------------------------------
+# Creates and repairs all profile data directories once per menu process.
+#
+# Returns:
+#   0 when directories and runtime ownership are ready; otherwise nonzero.
+#
+# Side effects:
+#   May create host directories and repair ownership of API writable mounts.
+# ------------------------------------------------------------------------------
+_prepare_deployment_data_directories() {
+    if [ "$_DEPLOYMENT_DATA_DIRECTORIES_READY" = "true" ]; then
+        return 0
+    fi
+    create_data_directories "$DATA_ROOT" "$DB_TYPE" "$DB_MODE" || return 1
+    _DEPLOYMENT_DATA_DIRECTORIES_READY=true
+}
+
+# ------------------------------------------------------------------------------
 # _deploy_configured_stack
 # ------------------------------------------------------------------------------
-# Deploys the already-rendered stack and runs the common health check.
+# Repairs profile data-directory ownership, deploys the already-rendered stack,
+# and runs the common health check.
 #
 # Returns:
 #   0 after deployment and health verification; otherwise nonzero.
@@ -119,6 +143,7 @@ _deploy_configured_stack() {
         echo "[ERROR] swarm-stack.yml is missing. Build it first."
         return 1
     fi
+    _prepare_deployment_data_directories || return 1
     verify_required_docker_secrets "$stack_file" || return 1
     _prepare_profile_external_network || return 1
     deploy_stack "$STACK_NAME" "$stack_file" || return 1
@@ -140,7 +165,7 @@ _run_full_deployment() {
     echo ""
     echo "Full deploy sequence"
     echo "--------------------"
-    create_data_directories "$DATA_ROOT" "$DB_TYPE" "$DB_MODE" || return 1
+    _prepare_deployment_data_directories || return 1
     render_selected_profile_stack || return 1
     if [ "${SECRETS_REQUIRED:-false}" = "true" ]; then
         echo ""
@@ -222,7 +247,7 @@ run_deployment_setup_actions() {
             echo "Configuration saved; no runtime state was changed."
             ;;
         directories)
-            create_data_directories "$DATA_ROOT" "$DB_TYPE" "$DB_MODE"
+            _prepare_deployment_data_directories
             ;;
         render)
             render_selected_profile_stack

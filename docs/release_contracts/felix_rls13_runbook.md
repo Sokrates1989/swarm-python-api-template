@@ -193,9 +193,12 @@ required only when their corresponding site-config capability is enabled.
 
 Create the data directories offered by the setup wizard. With the current
 recommended default they are ignored subdirectories of `/swarm/prod/felix`;
-an explicitly selected external data root is also supported. Secret values
-must never be placed in site config, root `.env`, command arguments, logs, or
-tracked files.
+an explicitly selected external data root is also supported. The common deploy
+action repeats this idempotent preparation and repairs `logs/api` and `backups`
+for the API image's non-root `10001:10001` identity before updating the stack.
+This prevents a root-owned host bind mount from hiding the image's writable
+`/app/logs` directory. Secret values must never be placed in site config, root
+`.env`, command arguments, logs, or tracked files.
 
 ## First deployment
 

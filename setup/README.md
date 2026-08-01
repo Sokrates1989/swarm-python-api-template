@@ -30,6 +30,12 @@ automatically. After rendering, one shared final-action menu lets the operator
 return, prepare data directories, manage declared Docker secrets, reconcile a
 declared Keycloak realm, or invoke the common deployment action.
 
+The common deploy action always rechecks persistent directories immediately
+before stack mutation. API log and backup bind mounts are repaired for the
+shared non-root API runtime (`10001:10001`), including directories created by
+older root-run setup versions. A failed ownership repair blocks deployment and
+prints the required privilege correction instead of starting a restart loop.
+
 Passwords, tokens, private keys, and client-secret values never belong in
 `.env` or `swarm-stack.yml`.
 

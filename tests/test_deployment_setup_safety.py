@@ -280,11 +280,15 @@ verify_required_docker_secrets {bash_quote(stack_file)}
             stack_file.write_text("services: {}\n", encoding="utf-8")
             script = f"""
 source {bash_quote(ACTIONS_MODULE)}
+create_data_directories() {{ echo directories-ready; return 0; }}
 verify_required_docker_secrets() {{ echo secret-check-failed; return 1; }}
 check_stack_conflict() {{ echo CONFLICT_CHECK_RAN; }}
 deploy_stack() {{ echo DEPLOY_RAN; }}
 PROJECT_ROOT={bash_quote(Path(temporary_directory))}
 STACK_NAME=demo
+DATA_ROOT=/swarm/volumes/demo
+DB_TYPE=postgresql
+DB_MODE=local
 _deploy_configured_stack
 """
             completed = run_bash(script)

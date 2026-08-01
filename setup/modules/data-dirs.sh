@@ -4,8 +4,9 @@
 # ==============================================================================
 #
 # This module creates the data directories required by the active deployment
-# profile. Nginx-only and database-free profiles only need the data root; API
-# profiles keep the historical database, backup, and Redis directories.
+# profile. It also enforces the shared API-image UID/GID contract on writable
+# bind mounts so host directories do not hide writable image-owned paths behind
+# root-owned replacements. Nginx-only profiles only need the data root.
 #
 # Functions:
 #   create_data_directories - Create all required data directories
@@ -22,10 +23,20 @@
 #     logs/api/
 #     redis_data/     (unless APP_REQUIRES_REDIS=false)
 #
-# Directory structure created for nginx/no-database profiles:
+# Directory structure created for database-free API profiles:
+#   $DATA_ROOT/
+#     logs/api/
+#     backups/
+#
+# Directory structure created for nginx profiles:
 #   $DATA_ROOT/
 #
 # ==============================================================================
+
+# Shared Python API images run as this non-root identity. Operators may override
+# the values in the process environment when adopting a compatible custom image.
+API_RUNTIME_UID="${API_RUNTIME_UID:-10001}"
+API_RUNTIME_GID="${API_RUNTIME_GID:-10001}"
 
 # ------------------------------------------------------------------------------
 # _create_data_dir
@@ -89,6 +100,76 @@ _set_pgadmin_directory_owner() {
 }
 
 # ------------------------------------------------------------------------------
+# _set_api_writable_directory_owner
+# ------------------------------------------------------------------------------
+# Recursively assigns an API bind mount to the non-root runtime identity and
+# guarantees owner read/write access without widening group or public access.
+#
+# Arguments:
+#   $1 - path: existing API-owned writable directory.
+#
+# Returns:
+#   0 after ownership and owner permissions are correct; otherwise 1.
+#
+# Side effects:
+#   Changes ownership and owner permissions below the selected directory.
+# ------------------------------------------------------------------------------
+_set_api_writable_directory_owner() {
+    local path="$1"
+
+    if [ -z "$path" ] || [ "$path" = "/" ] || [ ! -d "$path" ]; then
+        echo "[ERROR] Refusing unsafe or missing API data directory: ${path:-<empty>}"
+        return 1
+    fi
+    case "$API_RUNTIME_UID" in
+        ''|*[!0-9]*)
+            echo "[ERROR] API_RUNTIME_UID must be a numeric UID."
+            return 1
+            ;;
+    esac
+    case "$API_RUNTIME_GID" in
+        ''|*[!0-9]*)
+            echo "[ERROR] API_RUNTIME_GID must be a numeric GID."
+            return 1
+            ;;
+    esac
+    if ! command -v chown >/dev/null 2>&1 || ! command -v chmod >/dev/null 2>&1; then
+        echo "[ERROR] chown and chmod are required for API writable directories."
+        return 1
+    fi
+    if ! chown -R -- "${API_RUNTIME_UID}:${API_RUNTIME_GID}" "$path"; then
+        echo "[ERROR] Could not assign API runtime ownership: $path"
+        echo "        Run quick-start with permission to chown deployment data."
+        return 1
+    fi
+    if ! chmod -R u+rwX -- "$path"; then
+        echo "[ERROR] Could not grant API owner access: $path"
+        return 1
+    fi
+    echo "[OK] API runtime ownership ready: ${path} (${API_RUNTIME_UID}:${API_RUNTIME_GID})"
+}
+
+# ------------------------------------------------------------------------------
+# _prepare_api_writable_directory
+# ------------------------------------------------------------------------------
+# Creates one API bind-mount directory and applies the runtime owner contract.
+#
+# Arguments:
+#   $1 - path: directory path to create and prepare.
+#   $2 - label: human-readable directory label for output.
+#
+# Returns:
+#   0 when the directory is writable by the API runtime; otherwise 1.
+# ------------------------------------------------------------------------------
+_prepare_api_writable_directory() {
+    local path="$1"
+    local label="$2"
+
+    _create_data_dir "$path" "$label" || return 1
+    _set_api_writable_directory_owner "$path"
+}
+
+# ------------------------------------------------------------------------------
 # create_data_directories
 # ------------------------------------------------------------------------------
 # Creates the data root and all profile-specific subdirectories. It skips service
@@ -115,10 +196,17 @@ create_data_directories() {
 
     _create_data_dir "$data_root" "Data root" || return 1
 
-    _create_data_dir "$data_root/logs/api" "API logs directory" || return 1
+    if [ "$stack_family" = "api" ]; then
+        _prepare_api_writable_directory \
+            "$data_root/logs/api" \
+            "API logs directory" || return 1
+        _prepare_api_writable_directory \
+            "$data_root/backups" \
+            "Backup data directory" || return 1
+    fi
 
     if [ "$stack_family" = "nginx" ] || [ "$db_type" = "none" ]; then
-        echo "[INFO] Profile does not require database, backup, or Redis data directories."
+        echo "[INFO] Profile does not require database or Redis data directories."
         echo ""
         echo "[OK] All data directories ready"
         echo ""
@@ -140,8 +228,6 @@ create_data_directories() {
     elif [ "$db_mode" = "external" ]; then
         echo "[INFO] External database selected; no local database directory is needed."
     fi
-
-    _create_data_dir "$data_root/backups" "Backup data directory" || return 1
 
     if [ "$requires_redis" != "false" ]; then
         _create_data_dir "$data_root/redis_data" "Redis data directory" || return 1

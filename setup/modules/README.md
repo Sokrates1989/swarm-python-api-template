@@ -90,7 +90,21 @@ render adapter. Both consume the same normalized answers. The latter calls
 ### `deployment-setup-actions.sh`
 
 Owns one dynamically numbered final-action menu. Docker secrets and Keycloak
-actions appear only when the profile declares those capabilities.
+actions appear only when the profile declares those capabilities. Every direct
+or full deployment first invokes the common data-directory preparation step;
+the operation is cached only within that one menu process after it succeeds.
+
+### `data-dirs.sh`
+
+Creates only the persistent directories required by the selected stack family
+and database capabilities. Shared Python API images run as non-root
+`10001:10001`, so `/app/logs` and `/app/backups` bind mounts are recursively
+assigned to that runtime identity and receive owner read/write access. This
+repairs directories previously created by root before any Swarm service is
+updated. The deploy fails closed with a permission hint if ownership cannot be
+set. A compatible custom API image may override `API_RUNTIME_UID` and
+`API_RUNTIME_GID` in the quick-start process environment; no application ID is
+hard-coded.
 
 ### `keycloak-bootstrap.sh`
 
