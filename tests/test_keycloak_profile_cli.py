@@ -9,7 +9,7 @@ Description:
 
 Dependencies:
     - Python standard library.
-    - scripts/keycloak_profile_bootstrap.py.
+    - scripts/keycloak_profile_bootstrap_cli.py.
     - scripts/keycloak_profile_cli.py.
 """
 
@@ -27,7 +27,7 @@ SCRIPTS_DIRECTORY = REPOSITORY_ROOT / "scripts"
 if str(SCRIPTS_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
-import keycloak_profile_bootstrap as bootstrap  # noqa: E402
+import keycloak_profile_bootstrap_cli as bootstrap  # noqa: E402
 from keycloak_profile_cli import (  # noqa: E402
     prompt_admin_user,
     prompt_bootstrap_values,

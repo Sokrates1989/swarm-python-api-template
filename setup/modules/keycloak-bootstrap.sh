@@ -226,7 +226,9 @@ _profile_keycloak_summary() {
     echo "Additional public user definitions remain secret-free runtime intent."
     echo "Missing selected-user passwords are requested without echo"
     echo "and are never stored. Production cleanup is shown as an explicit warning."
-    echo "The client-secret value is never displayed or stored in a file."
+    echo "The client-secret value is never printed or stored in deployment files."
+    echo "After creating/rotating it, you may open a private read-only temporary"
+    echo "copy in nano/vim/vi; that file is deleted as soon as the editor closes."
     echo "Optional debug tracing prints only HTTP methods, Admin API paths,"
     echo "query-key names, and status codes; credentials and payloads stay hidden."
 }
@@ -279,7 +281,8 @@ _profile_keycloak_reconcile() {
 # Side effects:
 #   Persists entered public deployment identity, authenticates, shows a
 #   read-only plan, and mutates only profile-policy-authorized Keycloak state
-#   and the declared missing Docker client secret after confirmation.
+#   and the declared missing Docker client secret after confirmation. A newly
+#   stored value may be opened in an opt-in self-deleting recovery view.
 run_profile_keycloak_bootstrap() {
     local python_command=""
 

@@ -188,7 +188,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.stack_name, "felix")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-felix:0.1.1",
+            "sokrates1989/python-api-felix:0.1.2",
         )
         self.assertEqual(
             profile.web_image_reference,
@@ -276,7 +276,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.deployment["APP_ID"], "aurora")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-aurora:0.1.1",
+            "sokrates1989/python-api-aurora:0.1.2",
         )
         self.assertEqual(
             profile.web_image_reference,
@@ -696,7 +696,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.stack_name, "felix-test")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-felix-test:0.1.1",
+            "sokrates1989/python-api-felix-test:0.1.2",
         )
         self.assertEqual(
             profile.web_image_reference,

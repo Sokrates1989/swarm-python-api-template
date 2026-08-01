@@ -29,6 +29,10 @@ second Keycloak and never depends on the local-development `keycloak`
 repository. The menu shows a sanitized plan, verifies state by reading it
 back, checks the public issuer and JWKS, and proves a newly bridged backend
 credential through the client-credentials endpoint without displaying it.
+For a newly created or rotated binding, the interactive menu may instead open
+an explicitly requested private read-only temporary recovery file. It is
+deleted immediately when the chosen editor closes and never enters the site
+profile, `.env`, plan, summary, logs, or command arguments.
 
 The contract records these reviewed release defaults and boundaries:
 

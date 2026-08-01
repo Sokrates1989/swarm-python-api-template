@@ -151,6 +151,16 @@ pass a read-only Admin API request. Only then is the same value sent to
 of being treated as an absent secret. Existing Docker secrets are reported as
 present but unverified because Swarm cannot reveal their value.
 
+Immediately after this run creates or rotates the proven Docker binding, the
+interactive CLI offers an opt-in recovery view. The operator selects an
+installed nano, vim, or vi editor; the exact value is placed in a mode-0400
+`temp_keycloak_secret.txt` inside a mode-0700 private directory, preferably on
+memory-backed runtime storage. The editor is launched read-only with swap and
+backup behavior disabled where supported. Closing or interrupting the editor
+deletes the secret file, any editor sidecars, and the private directory before
+the CLI continues. Declining the prompt creates no file. Existing opaque
+Docker secrets cannot use this path because their value is unavailable.
+
 Keycloak 26 derives redirect URIs and Web origins from a confidential
 service client's root URL. Those browser-only fields are deliberately outside
 the backend service-account client's owned verification set because standard

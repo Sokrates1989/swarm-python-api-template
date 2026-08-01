@@ -125,6 +125,7 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
         docker_action: str = "present-unverified",
         proof_effect: Callable[[str, str], None] | None = None,
         write_effect: Callable[..., str] | None = None,
+        secret_observer: Callable[[str], None] | None = None,
     ) -> tuple[dict[str, object], Mock, dict[str, Mock]]:
         """Run bootstrap orchestration with deterministic external boundaries.
 
@@ -136,6 +137,7 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
             docker_action: Docker bridge result when it is invoked.
             proof_effect: Optional client-credentials proof callback.
             write_effect: Optional Docker-write callback.
+            secret_observer: Optional runtime-only recovery-view callback.
 
         Returns:
             Summary, fake Admin client, and inspectable boundary mocks.
@@ -164,6 +166,7 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
                 "admin",
                 "admin-password",
                 replace_secret=replace_secret,
+                secret_observer=secret_observer,
             )
         return summary, admin_client, boundaries
 
@@ -344,6 +347,66 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
         self.assertEqual(evidence["length"], len(secret_value))
         self.assertNotIn(secret_value, json.dumps(summary))
 
+    def test_new_secret_is_offered_only_after_successful_docker_write(self) -> None:
+        """Expose the real value to a runtime observer after its exact write.
+
+        Returns:
+            Nothing.
+        """
+
+        secret_value = "keycloak-returned-recovery-sentinel"
+        events: list[str] = []
+
+        def record_write(
+            profile: object,
+            identity: object,
+            secret: str,
+            *,
+            replace: bool,
+        ) -> str:
+            """Record the proven Docker write before recovery viewing.
+
+            Args:
+                profile: Selected executable profile.
+                identity: Selected Keycloak identity.
+                secret: Exact secret being stored.
+                replace: Whether the fixed-name secret is replaced.
+
+            Returns:
+                Docker bridge action.
+            """
+
+            del profile, identity, replace
+            self.assertEqual(secret, secret_value)
+            events.append("written")
+            return "created"
+
+        def observe(secret: str) -> None:
+            """Require the observer to receive the exact post-write value.
+
+            Args:
+                secret: Exact newly stored Keycloak credential.
+
+            Returns:
+                Nothing.
+            """
+
+            self.assertEqual(secret, secret_value)
+            events.append("observed")
+
+        summary, _, _ = self._run_mocked_reconcile(
+            docker_secret_present=False,
+            replace_secret=False,
+            current_secret=secret_value,
+            docker_action="created",
+            write_effect=record_write,
+            secret_observer=observe,
+        )
+
+        self.assertEqual(events, ["written", "observed"])
+        self.assertEqual(summary["dockerSecretAction"], "created")
+        self.assertNotIn(secret_value, json.dumps(summary))
+
     def test_existing_docker_secret_remains_opaque(self) -> None:
         """Report an existing opaque Docker secret as unverified.
 
@@ -351,9 +414,11 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
             Nothing.
         """
 
+        observer = Mock()
         summary, admin_client, boundaries = self._run_mocked_reconcile(
             docker_secret_present=True,
             replace_secret=False,
+            secret_observer=observer,
         )
 
         self.assertEqual(
@@ -375,6 +440,7 @@ class KeycloakProfileSecretHandoffTests(unittest.TestCase):
         boundaries["rotateSecret"].assert_not_called()
         boundaries["writeSecret"].assert_not_called()
         admin_client.prove_client_credentials.assert_not_called()
+        observer.assert_not_called()
         self.assertNotIn("admin-password", json.dumps(summary))
 
 

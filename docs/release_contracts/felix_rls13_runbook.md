@@ -29,7 +29,7 @@ For the backend:
 2. select backend app `felix`;
 3. validate the Docker image release plan;
 4. build locally; and
-5. use **Build & Push API Docker Image** with version `0.1.1` or the later
+5. use **Build & Push API Docker Image** with version `0.1.2` or the later
    version deliberately selected for deployment.
 
 For the WebApp:

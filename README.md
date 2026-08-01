@@ -295,6 +295,15 @@ The workflow:
 - Creates the Docker secrets and immediately deletes `secrets.env` on complete success
 - Retains the file only when validation or creation fails, so it can be corrected
 
+When Keycloak bootstrap or explicit rotation creates a new proven backend
+client secret, it separately offers an opt-in one-time recovery view. The
+selected nano/vim/vi editor opens a private read-only
+`temp_keycloak_secret.txt`; closing the editor immediately deletes that file
+and its private directory. This is the only moment the value is available for
+copying to an operator-owned recovery store. It is never written to `.env`, a
+site config, logs, summaries, or command arguments, and an already-existing
+opaque Docker secret cannot be recovered this way.
+
 ### Admin UI Credentials
 
 When using **local database mode**, the wizard prompts for admin UI credentials:

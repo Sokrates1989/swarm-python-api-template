@@ -14,7 +14,8 @@ Felix differs only through profile data:
 - API host `api.felix-app.fe-wi.com`;
 - optional WebApp service enabled with image
   `sokrates1989/flutter-felix-web`;
-- backend image `sokrates1989/python-api-felix`;
+- backend image `sokrates1989/python-api-felix:0.1.2` (immutable release
+  default; never `latest`);
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
 - Keycloak realm/client defaults `felix`, `felix-frontend`, and
@@ -104,8 +105,11 @@ plan blocks until both are explicitly removed from Keycloak. The managed
 application roles remain after that cleanup.
 
 Administrator password and backend client secret are never printed, written
-to `.env`, put in command arguments, or saved to a repository file. The
-bootstrap first shows a sanitized live-state plan. After apply, it reads all
+to `.env`, put in command arguments, or saved to a repository file. After a
+new or rotated backend secret is proven and stored, the operator may opt into
+a private read-only `temp_keycloak_secret.txt` editor view for recovery; the
+file and its private directory are deleted immediately when the editor closes.
+The bootstrap first shows a sanitized live-state plan. After apply, it reads all
 owned state back and verifies the public issuer and JWKS. When the Docker
 secret is missing, the real current Keycloak credential is fetched, proven
 through the client-credentials token endpoint and a read-only realm-user

@@ -126,7 +126,9 @@ def print_target(
     print("The role catalog is profile-owned; this run reconciles selections.")
     print("Social providers remain unchanged.")
     print("The confidential secret comes from Keycloak's real client response;")
-    print("its value is never displayed or written to a file.")
+    print("it is never printed or persisted in deployment configuration.")
+    print("After a new/rotated value is stored, an opt-in private temporary")
+    print("editor view is available and deleted immediately after closing.")
 
 
 def _prompt_value(label: str, default: str) -> str:

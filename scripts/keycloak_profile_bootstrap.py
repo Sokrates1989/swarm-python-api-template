@@ -16,35 +16,18 @@ Dependencies:
 
 from __future__ import annotations
 
-import argparse
-import sys
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Callable
 
 from executable_profile import (
     ExecutableProfile,
-    ExecutableProfileError,
-    load_executable_profile,
 )
-from keycloak_profile_configuration import persist_keycloak_values
 from keycloak_profile_client import (
     KeycloakAdminClient,
     KeycloakIdentity,
     KeycloakProfileError,
     load_keycloak_identity,
     resolve_client_uuid as _resolve_client_uuid,
-)
-from keycloak_profile_cli import (
-    authenticate_and_plan,
-    confirm_apply,
-    print_completion,
-    print_plan,
-    print_target,
-    prompt_admin_user,
-    prompt_bootstrap_values,
-    prompt_bootstrap_test_user_passwords,
-    prompt_secret_safe_debug,
 )
 from keycloak_profile_application_access import (
     KeycloakApplicationAccessError,
@@ -204,6 +187,7 @@ def _bridge_client_secret(
     *,
     docker_secret_present: bool,
     replace_secret: bool,
+    secret_observer: Callable[[str], None] | None,
 ) -> tuple[str, dict[str, object]]:
     """Keep, create, or rotate the profile-declared Docker client secret.
 
@@ -215,6 +199,8 @@ def _bridge_client_secret(
         backend_action: Result of backend client reconciliation.
         docker_secret_present: Whether Docker already has the target secret.
         replace_secret: Whether explicit rotation was requested.
+        secret_observer: Optional runtime-only consumer invoked after the
+            proven value has been stored successfully.
 
     Returns:
         Docker secret action and secret-safe value evidence.
@@ -248,6 +234,8 @@ def _bridge_client_secret(
             secret,
             replace=replace_secret,
         )
+        if secret_observer is not None:
+            secret_observer(secret)
         return action, evidence
     finally:
         secret = ""
@@ -493,6 +481,7 @@ def _bridge_reconciled_secret(
     docker_secret_present: bool,
     replace_secret: bool,
     progress: Callable[[str], None] | None,
+    secret_observer: Callable[[str], None] | None,
 ) -> tuple[str, bool, dict[str, object]]:
     """Bridge the reconciled backend credential and report proof state.
 
@@ -504,6 +493,8 @@ def _bridge_reconciled_secret(
         docker_secret_present: Current Docker-secret presence.
         replace_secret: Whether explicit rotation was requested.
         progress: Optional secret-free progress callback.
+        secret_observer: Optional runtime-only consumer for a newly stored
+            Keycloak value.
 
     Returns:
         Docker action, whether this run proved the exact stored binding, and
@@ -523,6 +514,7 @@ def _bridge_reconciled_secret(
         actions[3],
         docker_secret_present=docker_secret_present,
         replace_secret=replace_secret,
+        secret_observer=secret_observer,
     )
     binding_verified = docker_action in {"created", "replaced"}
     _report_secret_bridge(progress, binding_verified)
@@ -582,6 +574,7 @@ def reconcile_authenticated(
     docker_secret_present: bool | None = None,
     progress: Callable[[str], None] | None = None,
     bootstrap_test_user_passwords: Mapping[str, str] | None = None,
+    secret_observer: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     """Reconcile and verify state through one authenticated Admin client.
 
@@ -593,6 +586,8 @@ def reconcile_authenticated(
         progress: Optional secret-free progress callback.
         bootstrap_test_user_passwords: Runtime-only passwords keyed by test
             usernames requiring creation or credential recovery.
+        secret_observer: Optional runtime-only consumer invoked only when this
+            run creates or replaces the proven Docker client secret.
 
     Returns:
         Secret-free action summary.
@@ -638,6 +633,7 @@ def reconcile_authenticated(
         docker_secret_present=docker_present,
         replace_secret=replace_secret,
         progress=progress,
+        secret_observer=secret_observer,
     )
     return _build_summary(
         profile,
@@ -657,6 +653,7 @@ def reconcile(
     replace_secret: bool,
     progress: Callable[[str], None] | None = None,
     bootstrap_test_user_passwords: Mapping[str, str] | None = None,
+    secret_observer: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     """Authenticate, reconcile, and strictly verify the selected profile.
 
@@ -669,6 +666,8 @@ def reconcile(
         bootstrap_test_user_passwords: Runtime-only passwords for test-user
             creation or credential recovery. Interactive callers collect these
             after the live plan.
+        secret_observer: Optional runtime-only consumer invoked only for a
+            newly created or rotated and stored client secret.
 
     Returns:
         Secret-free action and verification summary.
@@ -689,233 +688,23 @@ def reconcile(
         replace_secret=replace_secret,
         progress=progress,
         bootstrap_test_user_passwords=bootstrap_test_user_passwords,
+        secret_observer=secret_observer,
     )
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Build the profile-driven Keycloak bootstrap CLI parser.
-
-    Returns:
-        Configured argument parser.
-    """
-
-    parser = argparse.ArgumentParser(
-        description=(
-            "Reconcile the active site profile's Keycloak realm and clients."
-        )
-    )
-    parser.add_argument(
-        "--root",
-        type=Path,
-        default=Path(__file__).resolve().parents[1],
-        help="Deployment repository root containing .env.",
-    )
-    parser.add_argument(
-        "--admin-user",
-        default=None,
-        help=(
-            "Existing Keycloak administrator username. When omitted, the "
-            "interactive prompt follows the complete target summary."
-        ),
-    )
-    parser.add_argument(
-        "--replace-secret",
-        action="store_true",
-        help=(
-            "Rotate the Keycloak client secret and replace its Docker secret. "
-            "The selected stack must be stopped."
-        ),
-    )
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help="Apply the displayed sanitized plan without an interactive prompt.",
-    )
-    parser.add_argument(
-        "--accept-profile-values",
-        action="store_true",
-        help=(
-            "Accept the already validated public site-profile values without "
-            "the interactive value-by-value review."
-        ),
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help=(
-            "Print secret-safe Admin API method/path/query-key/status traces. "
-            "Bodies, headers, query values, and credentials remain hidden."
-        ),
-    )
-    return parser
-
-
-def _review_bootstrap_configuration(
-    profile: ExecutableProfile,
-    identity: KeycloakIdentity,
-    *,
-    skip_review: bool,
-) -> tuple[ExecutableProfile, KeycloakIdentity]:
-    """Collect, persist, and redisplay changed public Keycloak values.
-
-    Args:
-        profile: Current validated deployment profile.
-        identity: Current normalized Keycloak identity.
-        skip_review: Keep existing values without interactive questions.
-
-    Returns:
-        Active profile and identity after optional persistence and rendering.
-
-    Raises:
-        ExecutableProfileError: If entered values or stack rendering fail.
-        KeycloakProfileError: If the server trust anchor is changed.
-        OSError: If generated deployment artifacts cannot be replaced.
-    """
-
-    if skip_review:
-        return profile, identity
-    selected_values = prompt_bootstrap_values(identity)
-    prior_identity = identity
-    profile, changed = persist_keycloak_values(profile, selected_values)
-    persisted_identity = load_keycloak_identity(profile) if changed else identity
-    if changed:
-        print(
-            "\n[OK] Saved Keycloak deployment values to "
-            f"{profile.root / '.env'}"
-        )
-        print(
-            "[OK] Rebuilt generated stack at "
-            f"{profile.root / 'swarm-stack.yml'}"
-        )
-        print(
-            "[WARN] WebApp/mobile artifacts must be built with this "
-            "realm and client identity."
-        )
-        if (
-            persisted_identity.realm != prior_identity.realm
-            or persisted_identity.backend_client_id
-            != prior_identity.backend_client_id
-        ):
-            print(
-                "[WARN] An existing Docker client secret belongs to the prior "
-                "realm/backend client and requires explicit rotation with the "
-                "stack stopped."
-            )
-    identity = selected_values.apply_access_selection(persisted_identity)
-    print("")
-    print_target(profile, identity)
-    return profile, identity
-
-
-def _apply_interactive_plan(
-    profile: ExecutableProfile,
-    identity: KeycloakIdentity,
-    client: KeycloakAdminClient,
-    plan: Mapping[str, object],
-    docker_present: bool,
-    args: argparse.Namespace,
-) -> dict[str, object] | None:
-    """Collect runtime passwords, confirm, and apply one displayed plan.
-
-    Args:
-        profile: Active executable profile.
-        identity: Active profile-derived Keycloak identity.
-        client: Authenticated Keycloak Admin client used for the plan.
-        plan: Sanitized live-state plan already shown to the operator.
-        docker_present: Docker-secret state captured for that plan.
-        args: Parsed CLI options controlling confirmation and rotation.
-
-    Returns:
-        Secret-free bootstrap summary, or ``None`` when cancelled.
-
-    Raises:
-        KeycloakProfileError: If runtime password collection or apply fails.
-        KeycloakApplicationAccessError: If roles or users cannot reconcile.
-        KeycloakRoleError: If service-account role state is unsafe.
-        KeycloakSecretBridgeError: If Docker secret operations fail.
-    """
-
-    passwords = prompt_bootstrap_test_user_passwords(identity, plan)
-    if not confirm_apply(args.yes):
-        passwords.clear()
-        print("Keycloak bootstrap cancelled; no changes were applied.")
-        return None
-    print("")
-    print("Applying and verifying")
-    print("----------------------")
-    try:
-        return reconcile_authenticated(
-            profile,
-            client,
-            replace_secret=args.replace_secret,
-            docker_secret_present=docker_present,
-            progress=print,
-            bootstrap_test_user_passwords=passwords,
-        )
-    finally:
-        passwords.clear()
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run profile-driven Keycloak reconciliation.
+    """Delegate interactive execution to the extracted CLI module.
 
     Args:
         argv: Optional command-line arguments excluding executable name.
 
     Returns:
-        Process status.
+        Process status returned by the interactive CLI.
     """
 
-    args = build_parser().parse_args(argv)
-    try:
-        profile = load_executable_profile(args.root)
-        identity = load_keycloak_identity(profile)
-        print_target(profile, identity)
-        profile, identity = _review_bootstrap_configuration(
-            profile,
-            identity,
-            skip_review=args.accept_profile_values,
-        )
-        debug = args.debug
-        if not args.accept_profile_values and not debug:
-            debug = prompt_secret_safe_debug()
-        admin_user = args.admin_user or prompt_admin_user()
-        client, docker_present, plan = authenticate_and_plan(
-            identity,
-            admin_user,
-            replace_secret=args.replace_secret,
-            debug=debug,
-        )
-        print_plan(plan)
-        if plan["blockers"]:
-            raise KeycloakProfileError(
-                "Resolve every displayed blocker before bootstrap."
-            )
-        summary = _apply_interactive_plan(
-            profile,
-            identity,
-            client,
-            plan,
-            docker_present,
-            args,
-        )
-        if summary is None:
-            return 0
-        print_completion(identity, summary)
-        return 0
-    except KeyboardInterrupt:
-        print("\nKeycloak bootstrap cancelled; no further changes were applied.")
-        return 130
-    except (
-        ExecutableProfileError,
-        KeycloakProfileError,
-        KeycloakApplicationAccessError,
-        KeycloakRoleError,
-        KeycloakSecretBridgeError,
-        OSError,
-    ) as error:
-        print(f"[ERROR] {error}", file=sys.stderr)
-        return 1
+    from keycloak_profile_bootstrap_cli import main as run_cli
+
+    return run_cli(argv)
 
 
 if __name__ == "__main__":
