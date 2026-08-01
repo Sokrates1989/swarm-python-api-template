@@ -501,6 +501,33 @@ printf '%s\\n' {bash_quote(values_file)} |
         self.assertIn("validation-ran", completed.stdout)
         self.assertNotIn("DOCKER_RAN", completed.stdout)
 
+    def test_secret_restore_keeps_the_operator_saved_values_file(self) -> None:
+        """Use the non-ephemeral policy for an explicit backup input.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            values_file = Path(temporary_directory) / "saved-secrets.env"
+            values_file.write_text("declared=value\n", encoding="utf-8")
+            script = f"""
+source {bash_quote(RESTORE_MODULE)}
+validate_profile_secret_values_file() {{ return 0; }}
+docker() {{ return 0; }}
+create_profile_secrets_from_env_file() {{
+    printf 'RESTORE_FILE=%s\nCLEANUP_POLICY=%s\n' "$1" "$2"
+}}
+printf '%s\n' {bash_quote(values_file)} |
+    restore_profile_secrets demo
+"""
+            completed = run_bash(script)
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(values_file.exists())
+        self.assertIn(f"RESTORE_FILE={values_file}", completed.stdout)
+        self.assertIn("CLEANUP_POLICY=keep", completed.stdout)
+
     def test_failed_wizard_action_still_reloads_new_configuration(self) -> None:
         """Refresh menu globals even when a later wizard action fails.
 

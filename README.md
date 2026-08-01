@@ -292,8 +292,10 @@ The workflow:
 - Limits imports to profile-declared names and requires every active required value
 - Opens your chosen editor (nano/vim/vi) to fill values
 - Excludes Keycloak client credentials, which remain bootstrap/rotation-owned
-- Creates the Docker secrets and immediately deletes `secrets.env` on complete success
-- Retains the file only when validation or creation fails, so it can be corrected
+- Creates or updates the requested Docker secrets
+- Deletes the temporary `secrets.env` whenever the workflow ends, including
+  after validation errors, Docker creation failures, editor errors, or an
+  operator interrupt; rerunning generates a clean profile-derived file
 
 When Keycloak bootstrap or explicit rotation creates a new proven backend
 client secret, it separately offers an opt-in one-time recovery view. The

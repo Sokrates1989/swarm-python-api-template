@@ -225,5 +225,5 @@ restore_profile_secrets() {
         done
         echo "[OK] Stack removed."
     fi
-    create_profile_secrets_from_env_file "$saved_secrets_path"
+    create_profile_secrets_from_env_file "$saved_secrets_path" keep
 }

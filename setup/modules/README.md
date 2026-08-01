@@ -190,9 +190,18 @@ application-driven.
 Generates or resolves the profile-owned batch template and passes active
 required keys plus an exact secret-name allowlist to the shared importer.
 Edited exact-name files cannot create undeclared secrets. Keycloak client
-credentials are excluded and remain bootstrap/rotation-only. A complete import
-deletes the protected values file automatically; validation or creation errors
-retain it for correction.
+credentials are excluded and remain bootstrap/rotation-only. The protected
+temporary values file is deleted whenever the workflow ends, including after
+validation failures, editor/import errors, or operator interruption. Saved
+restore inputs use a separate explicit retention policy.
+
+### `secret-file-import.sh`
+
+Owns the shared editor, validation, Docker-import, signal handling, and
+plaintext cleanup lifecycle. `secret-manager.sh` sources this module to keep
+the established `create_secrets_from_env_file` interface available to every
+profile. Deletion mode `always` means ephemeral and is enforced on every exit;
+`prompt` and `keep` remain available only for explicit saved restore inputs.
 
 ### `deploy-stack.sh`
 

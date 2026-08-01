@@ -276,9 +276,10 @@ create_secrets_from_env_file \
             "Deleted temporary secret values file",
             completed.stdout,
         )
+        self.assertIn("including after validation/import errors", completed.stdout)
 
-    def test_failed_batch_import_retains_temporary_values_file(self) -> None:
-        """Retain secret plaintext when any Docker creation fails.
+    def test_failed_batch_import_deletes_temporary_values_file(self) -> None:
+        """Delete ephemeral plaintext when any Docker creation fails.
 
         Returns:
             Nothing.
@@ -304,6 +305,82 @@ create_secret_from_value() {{ return 1; }}
     true \
     always \
     REQUIRED_SECRET <<< ''
+[ ! -e {bash_quote(values_file)} ]
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(values_file.exists())
+        self.assertIn("Deleted temporary secret values file", completed.stdout)
+
+    def test_validation_failure_deletes_temporary_values_file(self) -> None:
+        """Delete an ephemeral file rejected for an undeclared secret key.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "secrets.env"
+            template_file = Path(temporary) / "secrets.env.template"
+            values_file.write_text("UNDECLARED_SECRET=value\n", encoding="utf-8")
+            template_file.write_text("REQUIRED_SECRET=\n", encoding="utf-8")
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+choose_editor() {{ SELECTED_EDITOR=true; }}
+create_secret_from_value() {{ echo MUTATION_MUST_NOT_RUN; return 0; }}
+! create_secrets_from_env_file \
+    {bash_quote(values_file)} \
+    {bash_quote(template_file)} \
+    '' \
+    REQUIRED_SECRET \
+    true \
+    always \
+    REQUIRED_SECRET <<< ''
+[ ! -e {bash_quote(values_file)} ]
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(values_file.exists())
+        self.assertIn("Undeclared Docker secret key", completed.stderr)
+        self.assertIn("Deleted temporary secret values file", completed.stdout)
+        self.assertNotIn("MUTATION_MUST_NOT_RUN", completed.stdout)
+
+    def test_failed_saved_import_keeps_non_ephemeral_values_file(self) -> None:
+        """Preserve an explicit restore input when Docker creation fails.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "saved-secrets.env"
+            template_file = Path(temporary) / "secrets.env.template"
+            values_file.write_text("REQUIRED_SECRET=value\n", encoding="utf-8")
+            template_file.write_text("REQUIRED_SECRET=\n", encoding="utf-8")
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+choose_editor() {{ SELECTED_EDITOR=true; }}
+create_secret_from_value() {{ return 1; }}
+! create_secrets_from_env_file \
+    {bash_quote(values_file)} \
+    {bash_quote(template_file)} \
+    '' \
+    REQUIRED_SECRET \
+    true \
+    keep \
+    REQUIRED_SECRET <<< ''
 [ -e {bash_quote(values_file)} ]
 """
             completed = subprocess.run(
@@ -315,7 +392,81 @@ create_secret_from_value() {{ return 1; }}
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertTrue(values_file.exists())
-        self.assertIn("retained for correction", completed.stdout)
+        self.assertIn("retained for correction or restore retry", completed.stdout)
+
+    def test_editor_failure_deletes_temporary_values_file(self) -> None:
+        """Delete ephemeral plaintext when the selected editor fails.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "secrets.env"
+            template_file = Path(temporary) / "secrets.env.template"
+            values_file.write_text("REQUIRED_SECRET=value\n", encoding="utf-8")
+            template_file.write_text("REQUIRED_SECRET=\n", encoding="utf-8")
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+choose_editor() {{ SELECTED_EDITOR=false; }}
+! create_secrets_from_env_file \
+    {bash_quote(values_file)} \
+    {bash_quote(template_file)} \
+    '' \
+    REQUIRED_SECRET \
+    true \
+    always \
+    REQUIRED_SECRET <<< ''
+[ ! -e {bash_quote(values_file)} ]
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(values_file.exists())
+        self.assertIn("Editor exited", completed.stderr)
+        self.assertIn("Deleted temporary secret values file", completed.stdout)
+
+    def test_interrupt_deletes_temporary_values_file_before_exit(self) -> None:
+        """Delete ephemeral plaintext before propagating an operator abort.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            values_file = Path(temporary) / "secrets.env"
+            template_file = Path(temporary) / "secrets.env.template"
+            values_file.write_text("REQUIRED_SECRET=value\n", encoding="utf-8")
+            template_file.write_text("REQUIRED_SECRET=\n", encoding="utf-8")
+            script = f"""
+source {bash_quote(SECRET_MANAGER)}
+interrupt_editor() {{ kill -INT "$$"; }}
+choose_editor() {{ SELECTED_EDITOR=interrupt_editor; }}
+create_secrets_from_env_file \
+    {bash_quote(values_file)} \
+    {bash_quote(template_file)} \
+    '' \
+    REQUIRED_SECRET \
+    true \
+    always \
+    REQUIRED_SECRET <<< ''
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 130, completed.stderr)
+            self.assertFalse(values_file.exists())
+        self.assertIn("Secret-file workflow interrupted", completed.stderr)
+        self.assertIn("Deleted temporary secret values file", completed.stdout)
 
 
 @unittest.skipUnless(
@@ -529,10 +680,11 @@ cat {bash_quote(destination)}
             "FELIX_KEYCLOAK_ADMIN_CLIENT_SECRET=",
             completed.stdout,
         )
-        self.assertIn("This file is deleted after success", completed.stdout)
+        self.assertIn("This temporary file is always deleted", completed.stdout)
+        self.assertIn("after validation/import errors", completed.stdout)
 
     def test_required_batch_values_are_rejected_before_mutation(self) -> None:
-        """Retain a values file when one required entry remains empty.
+        """Reject an empty required entry before any Docker mutation.
 
         Returns:
             Nothing.

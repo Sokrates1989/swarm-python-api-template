@@ -126,7 +126,8 @@ setup/
   service without adding service-specific branches to the shared builder.
 - `profile-secret-file-workflow.sh` generates or resolves a profile-constrained
   temporary `secrets.env`, requires active required values, excludes Keycloak
-  client credentials, and deletes the file after successful Docker creation.
+  client credentials, and deletes the file after success, failure, or operator
+  interruption.
 - Secret, Keycloak, deploy, health, logs, and rollback modules are shared by
   the quick-start operations menu.
 

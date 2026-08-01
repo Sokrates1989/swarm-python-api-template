@@ -214,7 +214,8 @@ _write_generated_profile_secrets_template() {
     {
         echo "# Temporary Docker secret values generated from the selected site profile."
         echo "# Fill required values and any optional values you want to create."
-        echo "# Empty optional values are skipped. This file is deleted after success."
+        echo "# Empty optional values are skipped. This temporary file is always deleted."
+        echo "# Cleanup also runs after validation/import errors or operator interruption."
         echo "# Keycloak client secrets are transferred only by verified bootstrap/rotation."
         echo ""
         while IFS= read -r secret_name; do
@@ -265,6 +266,8 @@ validate_profile_secret_values_file() {
 #
 # Arguments:
 #   $1 - Values file path. A missing file is created from the profile template.
+#   $2 - Plaintext cleanup policy. Defaults to `always` for generated
+#        temporary files; saved restore inputs explicitly pass `keep`.
 #
 # Returns:
 #   Status from create_secrets_from_env_file.
@@ -273,6 +276,7 @@ validate_profile_secret_values_file() {
 #   May open an editor and create or replace profile-declared Docker secrets.
 create_profile_secrets_from_env_file() {
     local secrets_file="${1:-secrets.env}"
+    local deletion_mode="${2:-always}"
     local template_path=""
     local generated_template=""
     local prefix=""
@@ -313,7 +317,7 @@ create_profile_secrets_from_env_file() {
         "$prefix" \
         "$allowed_keys" \
         "$enforce_allowlist" \
-        "always" \
+        "$deletion_mode" \
         "$required_keys" || status=$?
     if [ -n "$generated_template" ]; then
         rm -f "$generated_template"
