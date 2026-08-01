@@ -80,7 +80,8 @@ field guide.
 | Operator-selected production values | ignored root `.env` |
 | Passwords, tokens, and client secrets | Docker secrets |
 | Numbered setup interaction | `deployment-profile-*.sh` modules |
-| Prompt and generated-file guidance | `deployment-field-help.sh` |
+| Accepted-value guidance | `deployment-field-help.sh` |
+| Human-readable `.env` structure | `deployment-environment-format.sh` |
 | Version-3 persistence | `legacy-profile-environment.sh` |
 | Version-3 rendering | `scripts/build-site-stack.sh` and compose modules |
 | Version-5 persistence | `executable-profile-wizard.sh` and Python validators |
@@ -120,6 +121,7 @@ setup/
     site_helpers.sh
     deployment-profile-prompts.sh
     deployment-field-help.sh
+    deployment-environment-format.sh
     deployment-profile-inputs.sh
     deployment-profile-routing.sh
     deployment-profile-services.sh

@@ -39,17 +39,20 @@ deployment_field_validation_kind() {
         TRAEFIK_CERT_RESOLVER|INTERNAL_NETWORK)
             echo "name"
             ;;
-        DOMAIN|WEB_DOMAIN|PGADMIN_DOMAIN|MONGO_EXPRESS_URL)
+        DOMAIN|WEB_DOMAIN|API_URL|INTERNAL_URL|PGADMIN_DOMAIN|PGADMIN_URL|\
+        MONGO_EXPRESS_URL)
             echo "domain"
             ;;
         API_BASE_URL|WEB_BASE_URL|KEYCLOAK_BASE_URL|KEYCLOAK_ISSUER_URL|\
-        REDIRECT_TARGET_BASE_URL)
+        KEYCLOAK_SERVER_URL|KEYCLOAK_JWKS_URL|REDIRECT_TARGET_BASE_URL|\
+        REDIS_URL)
             echo "url"
             ;;
-        DB_HOST)
+        DB_HOST|POSTGRES_HOST|MONGODB_HOST|NEO4J_HOST|REDIS_HOST)
             echo "host"
             ;;
-        DB_NAME|DB_USER|KEYCLOAK_REALM|KEYCLOAK_AUDIENCE|\
+        DB_NAME|DB_USER|POSTGRES_DB|POSTGRES_USER|MONGODB_DB|MONGODB_USER|\
+        KEYCLOAK_REALM|KEYCLOAK_AUDIENCE|\
         KEYCLOAK_FRONTEND_CLIENT_ID|KEYCLOAK_BACKEND_CLIENT_ID|\
         MONGO_EXPRESS_USERNAME)
             echo "identifier"
@@ -63,17 +66,19 @@ deployment_field_validation_kind() {
         IMAGE_VERSION|WEB_IMAGE_VERSION)
             echo "tag"
             ;;
-        API_REPLICAS|WEB_REPLICAS|NGINX_REPLICAS)
+        API_REPLICAS|WEB_REPLICAS|NGINX_REPLICAS|POSTGRES_REPLICAS|\
+        REDIS_REPLICAS)
             echo "positive"
             ;;
-        PGADMIN_REPLICAS|MONGO_EXPRESS_REPLICAS|REDIS_REPLICAS)
+        PGADMIN_REPLICAS|MONGO_EXPRESS_REPLICAS)
             echo "integer"
             ;;
         MEMORY_LIMIT|WEB_MEMORY_LIMIT)
             echo "memory"
             ;;
         API_PUBLISHED_PORT|WEB_PUBLISHED_PORT|PGADMIN_PUBLISHED_PORT|\
-        PUBLISHED_PORT|DB_PORT)
+        PUBLISHED_PORT|PORT|DB_PORT|POSTGRES_PORT|MONGODB_PORT|NEO4J_PORT|\
+        REDIS_PORT)
             echo "port"
             ;;
         DATA_ROOT)
@@ -89,9 +94,66 @@ deployment_field_validation_kind() {
 }
 
 # ------------------------------------------------------------------------------
+# _deployment_field_specific_help_id
+# ------------------------------------------------------------------------------
+# Classifies fields whose guidance is more specific than their value shape.
+#
+# Arguments:
+#   $1 - Environment key or prompt target variable.
+#
+# Outputs:
+#   Stable help identifier for a recognized field group.
+#
+# Returns:
+#   0 for a recognized field; otherwise 1.
+# ------------------------------------------------------------------------------
+_deployment_field_specific_help_id() {
+    local key="$1"
+
+    case "$key" in
+        DB_MODE)
+            echo "database-mode"
+            ;;
+        PROXY_TYPE)
+            echo "proxy-type"
+            ;;
+        SSL_MODE)
+            echo "ssl-mode"
+            ;;
+        PGADMIN_ENABLED|WEB_ENABLED|KEYCLOAK_REALM_ENABLED|\
+        KEYCLOAK_REGISTRATION_ALLOWED|KEYCLOAK_RESET_PASSWORD_ALLOWED|\
+        KEYCLOAK_REMEMBER_ME|KEYCLOAK_VERIFY_EMAIL|\
+        KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED|\
+        KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED)
+            echo "boolean-toggle"
+            ;;
+        DEPLOYMENT_PROFILE_ID|PROFILE_SCHEMA_VERSION|APP_ID|APP_ENVIRONMENT|\
+        APP_PROFILE|BACKEND_APP_ID|BACKEND_DATA_PROFILE|AUTH_PROVIDER|\
+        STACK_FAMILY|STACK_ROLE|PRIMARY_SERVICE|DB_TYPE)
+            echo "profile-owned"
+            ;;
+        *_PASSWORD_FILE|*_SECRET_FILE|*_TOKEN_FILE|*_KEY_FILE|*_AUTH_FILE)
+            echo "secret-file-reference"
+            ;;
+        SECRETS_PREFIX|SECRET_PREFIX)
+            echo "secret-prefix"
+            ;;
+        CORS_ORIGINS)
+            echo "cors-origins"
+            ;;
+        KEYCLOAK_REALM_DISPLAY_NAME)
+            echo "realm-display-name"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
 # _deployment_field_specific_help
 # ------------------------------------------------------------------------------
-# Returns guidance owned by a particular deployment environment field.
+# Returns guidance owned by a particular deployment field group.
 #
 # Arguments:
 #   $1 - Environment key or prompt target variable.
@@ -104,44 +166,36 @@ deployment_field_validation_kind() {
 # ------------------------------------------------------------------------------
 _deployment_field_specific_help() {
     local key="$1"
+    local help_id=""
 
-    case "$key" in
-        DB_MODE)
+    help_id="$(_deployment_field_specific_help_id "$key")" || return 1
+    case "$help_id" in
+        database-mode)
             echo "Choose a database mode allowed by the selected site profile: local, external, or none."
-            return 0
             ;;
-        PROXY_TYPE)
+        proxy-type)
             echo "Use traefik for reverse-proxy routing/HTTPS or none for direct published ports."
-            return 0
             ;;
-        SSL_MODE)
+        ssl-mode)
             echo "Use letsencrypt when Traefik obtains certificates, or proxy when TLS terminates upstream."
-            return 0
             ;;
-        PGADMIN_ENABLED|WEB_ENABLED|KEYCLOAK_REALM_ENABLED|\
-        KEYCLOAK_REGISTRATION_ALLOWED|KEYCLOAK_RESET_PASSWORD_ALLOWED|\
-        KEYCLOAK_REMEMBER_ME|KEYCLOAK_VERIFY_EMAIL|\
-        KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED|\
-        KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED)
+        boolean-toggle)
             echo "Use true or false. Keep dependent replica/domain fields consistent when enabling a service."
-            return 0
             ;;
-        DEPLOYMENT_PROFILE_ID|PROFILE_SCHEMA_VERSION|APP_ID|APP_ENVIRONMENT|\
-        APP_PROFILE|BACKEND_APP_ID|BACKEND_DATA_PROFILE|AUTH_PROVIDER|\
-        STACK_FAMILY|STACK_ROLE|PRIMARY_SERVICE|DB_TYPE)
+        profile-owned)
             echo "Profile-owned identity value; keep the generated value unchanged."
-            return 0
             ;;
-        CORS_ORIGINS)
+        secret-file-reference)
+            echo "Docker secret mount path only; keep the generated reference and never enter the secret value here."
+            ;;
+        secret-prefix)
+            echo "Docker secret naming prefix; use only letters, digits, and underscores."
+            ;;
+        cors-origins)
             echo "Comma-separated allowed browser origins, each including its http:// or https:// scheme."
-            return 0
             ;;
-        KEYCLOAK_REALM_DISPLAY_NAME)
+        realm-display-name)
             echo "Human-readable realm name shown on Keycloak login and administration screens."
-            return 0
-            ;;
-        *)
-            return 1
             ;;
     esac
 }
@@ -243,6 +297,31 @@ deployment_field_help_text() {
 }
 
 # ------------------------------------------------------------------------------
+# deployment_field_help_id
+# ------------------------------------------------------------------------------
+# Returns a stable identifier used to consolidate repeated field guidance in
+# generated environment sections.
+#
+# Arguments:
+#   $1 - Environment key or prompt target variable.
+#   $2 - Validation kind.
+#
+# Outputs:
+#   Field-specific or validation-kind help identifier.
+# ------------------------------------------------------------------------------
+deployment_field_help_id() {
+    local key="$1"
+    local validation_kind="$2"
+    local specific_id=""
+
+    if specific_id="$(_deployment_field_specific_help_id "$key")"; then
+        echo "field:${specific_id}"
+    else
+        echo "validation:${validation_kind}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # print_deployment_field_help
 # ------------------------------------------------------------------------------
 # Prints shared prompt guidance. Domain prompts already include the shared Wiki
@@ -262,47 +341,4 @@ print_deployment_field_help() {
         return 0
     fi
     deployment_field_help_text "$key" "$validation_kind"
-}
-
-# ------------------------------------------------------------------------------
-# annotate_deployment_environment_file
-# ------------------------------------------------------------------------------
-# Adds shared field guidance before every assignment in a freshly generated
-# public environment without changing values or evaluating dotenv content.
-#
-# Arguments:
-#   $1 - Existing generated public environment file.
-#
-# Returns:
-#   0 after atomic replacement; otherwise 1.
-# ------------------------------------------------------------------------------
-annotate_deployment_environment_file() {
-    local environment_file="$1"
-    local temporary=""
-    local line=""
-    local key=""
-    local validation_kind=""
-    local help_text=""
-    local help_line=""
-
-    [ -f "$environment_file" ] || {
-        echo "[ERROR] Public environment is missing: ${environment_file}" >&2
-        return 1
-    }
-    temporary="$(mktemp "${environment_file}.help.XXXXXX")" || return 1
-    while IFS= read -r line || [ -n "$line" ]; do
-        if [[ "$line" =~ ^([A-Z][A-Z0-9_]*)= ]]; then
-            key="${BASH_REMATCH[1]}"
-            validation_kind="$(deployment_field_validation_kind "$key")"
-            help_text="$(deployment_field_help_text "$key" "$validation_kind")"
-            if [ -n "$help_text" ]; then
-                while IFS= read -r help_line; do
-                    echo "# ${help_line}" >> "$temporary"
-                done <<< "$help_text"
-            fi
-        fi
-        echo "$line" >> "$temporary"
-    done < "$environment_file"
-    chmod 600 "$temporary"
-    mv -f "$temporary" "$environment_file"
 }

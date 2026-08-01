@@ -89,8 +89,11 @@ Configuration method:
 ```
 
 The comments and guided explanations come from one shared field-help catalog.
-When `.env` already exists, a third fast-re-setup choice retains it unchanged;
-the file editor regenerates comments while preserving its current values.
+The generated file groups values into profile-neutral blocks such as identity,
+routing, authentication, database, backend, storage, and WebApp, with repeated
+accepted-value notes consolidated per block. When `.env` already exists, a
+third fast-re-setup choice retains it unchanged; the file editor regenerates
+the structured comments while preserving its current values.
 
 ## Setup Wizard
 
@@ -153,7 +156,8 @@ setup/
   modules/
     site_helpers.sh                ← profile loading and root .env parsing
     deployment-profile-prompts.sh  ← numbered choice/value primitives
-    deployment-field-help.sh       ← shared prompt and .env guidance
+    deployment-field-help.sh       ← shared accepted-value guidance
+    deployment-environment-format.sh ← structured human-readable .env blocks
     deployment-profile-inputs.sh   ← single capability-driven dialogue
     deployment-profile-routing.sh  ← proxy, TLS, network, and port section
     deployment-profile-services.sh ← service, resource, and storage section

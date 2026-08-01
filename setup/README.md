@@ -69,6 +69,7 @@ setup/
     site_helpers.sh
     deployment-profile-prompts.sh
     deployment-field-help.sh
+    deployment-environment-format.sh
     deployment-profile-inputs.sh
     deployment-profile-routing.sh
     deployment-profile-services.sh
@@ -100,8 +101,11 @@ setup/
   subdomain-creation guide, including API, WebApp, and database-management
   service domains.
 - `deployment-field-help.sh` is the single source for prompt explanations and
-  generated `.env` comments, including accepted value shapes and profile-owned
-  identity warnings.
+  generated `.env` accepted-value notes, including value shapes and
+  profile-owned identity warnings.
+- `deployment-environment-format.sh` groups generated values into canonical
+  blocks corresponding to site-profile responsibilities and consolidates
+  repeated field guidance without evaluating dotenv values.
 - `deployment-profile-inputs.sh` coordinates the only deployment dialogue.
 - `deployment-profile-routing.sh` owns proxy, TLS, distinct Traefik overlay
   network/provider-label settings, and direct-port questions.

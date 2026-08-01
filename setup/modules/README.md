@@ -49,8 +49,16 @@ creation link, so new profile capabilities inherit the same operator guidance.
 ### `deployment-field-help.sh`
 
 Owns the shared accepted-value explanations used by both guided prompts and
-the generated public `.env` editor. It also annotates freshly generated files
-without evaluating dotenv content, keeping instructions DRY across setup modes.
+the generated public `.env` editor, keeping instructions DRY across setup
+modes.
+
+### `deployment-environment-format.sh`
+
+Formats freshly generated public environments into canonical, visually
+separated blocks aligned with site-profile responsibilities. It consolidates
+repeated accepted-value notes per block, preserves assignment values exactly,
+rejects duplicate or unsupported generated lines, and replaces the file with
+mode `0600` without evaluating dotenv content.
 
 ### `deployment-memory-policy.sh`
 
@@ -234,6 +242,7 @@ setup-wizard
 ├── site_helpers
 ├── deployment-profile-prompts
 ├── deployment-field-help
+├── deployment-environment-format
 ├── deployment-profile-routing
 ├── deployment-profile-services
 ├── deployment-profile-inputs

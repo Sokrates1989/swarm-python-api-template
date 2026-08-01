@@ -34,6 +34,7 @@ cd "$PROJECT_ROOT"
 source "$SCRIPT_DIR/modules/site_helpers.sh"
 source "$SCRIPT_DIR/modules/user-prompts.sh"
 source "$SCRIPT_DIR/modules/deployment-profile-prompts.sh"
+source "$SCRIPT_DIR/modules/deployment-environment-format.sh"
 source "$SCRIPT_DIR/modules/deployment-profile-routing.sh"
 source "$SCRIPT_DIR/modules/deployment-profile-services.sh"
 source "$SCRIPT_DIR/modules/deployment-profile-inputs.sh"
@@ -157,7 +158,7 @@ write_selected_profile_environment() {
     else
         write_legacy_profile_environment || return 1
     fi
-    annotate_deployment_environment_file "${PROJECT_ROOT}/.env" || return 1
+    format_deployment_environment_file "${PROJECT_ROOT}/.env" || return 1
     if [ "${SETUP_MODE:-interactive}" = "file" ]; then
         edit_generated_deployment_environment
     fi
