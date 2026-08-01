@@ -121,8 +121,8 @@
     "bootstrapTestUsersEnabled": true,
     "bootstrapTestUsers": [
       {
-        "username": "test-user",
-        "email": "test-user@example.invalid",
+        "username": "user",
+        "email": "user@example.invalid",
         "firstName": "Test",
         "lastName": "User",
         "enabled": true,
@@ -134,9 +134,9 @@
         "productionCleanupRequired": true
       },
       {
-        "username": "test-admin",
-        "email": "test-admin@example.invalid",
-        "firstName": "Test",
+        "username": "admin",
+        "email": "admin@example.invalid",
+        "firstName": "Admin",
         "lastName": "Administrator",
         "enabled": true,
         "emailVerified": true,
@@ -144,34 +144,6 @@
         "realmRoles": [
           "user",
           "admin"
-        ],
-        "productionCleanupRequired": true
-      },
-      {
-        "username": "test-manager",
-        "email": "test-manager@example.invalid",
-        "firstName": "Test",
-        "lastName": "Manager",
-        "enabled": true,
-        "emailVerified": true,
-        "temporaryPassword": false,
-        "realmRoles": [
-          "user",
-          "manager"
-        ],
-        "productionCleanupRequired": true
-      },
-      {
-        "username": "test-service-provider",
-        "email": "test-service-provider@example.invalid",
-        "firstName": "Test",
-        "lastName": "Service Provider",
-        "enabled": true,
-        "emailVerified": true,
-        "temporaryPassword": false,
-        "realmRoles": [
-          "user",
-          "service-provider"
         ],
         "productionCleanupRequired": true
       }
