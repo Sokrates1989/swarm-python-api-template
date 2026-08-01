@@ -414,7 +414,7 @@ class StatefulKeycloakAdminClient:
         body: Any,
         query: dict[str, str] | None,
     ) -> Response | None:
-        """Read or add application realm roles in the frontend client scope.
+        """Read, add, or remove roles in the frontend client scope.
 
         Args:
             method: HTTP method.
@@ -443,6 +443,13 @@ class StatefulKeycloakAdminClient:
             if not isinstance(body, list):
                 raise AssertionError("Frontend role scope body must be a list.")
             self.frontend_scope_roles.update(
+                str(role["name"]) for role in body
+            )
+            return 204, None
+        if method == "DELETE":
+            if not isinstance(body, list):
+                raise AssertionError("Frontend role scope body must be a list.")
+            self.frontend_scope_roles.difference_update(
                 str(role["name"]) for role in body
             )
             return 204, None

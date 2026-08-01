@@ -73,9 +73,11 @@ service-account assignment or the backend client's dedicated scope, direct
 realm roles other than Keycloak's generated default role, roles on undeclared
 clients, and the unmanaged default `test` user block automatic apply.
 
-The profile declares the production-facing application roles `user`, `admin`,
-`manager`, and `service-provider`. The bootstrap creates or updates those roles
-and adds them to the restricted frontend client's realm-role scope. These role
+The profile declares the selectable production-facing role catalog `user`,
+`admin`, `manager`, and `service-provider`. An installer-style checkbox menu
+uses Up/Down, Space, and Enter to choose the exact subset for the current run.
+The bootstrap creates or updates selected roles and adds them to the restricted
+frontend client's realm-role scope. These role
 names are a forward-looking authorization contract; the current Felix API and
 Flutter clients must still add feature-level enforcement as booking behavior
 is implemented.
@@ -83,8 +85,11 @@ is implemented.
 The initial profile default also enables four temporary identities:
 `test-user`, `test-admin`, `test-manager`, and `test-service-provider`. Their
 role assignments and public metadata are tracked, but their passwords are not.
-For a missing user or password credential, the bootstrap prompts twice for a
-hidden password after showing the authenticated plan and sends it only to
+The dialogue asks about each identity independently, offers an exact role
+multiselect from the selected catalog, asks whether its password must change at
+first login, and then offers a loop for additional validated users. For a
+selected missing user or password credential, the bootstrap prompts twice for
+a hidden password after showing the authenticated plan and sends it only to
 Keycloak. Every bootstrap
 summary repeats: **Once you enter production mode, remember to delete those
 users.** Turning the lifecycle switch off does not auto-delete identities; the

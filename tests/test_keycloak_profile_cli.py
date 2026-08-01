@@ -141,6 +141,38 @@ class KeycloakProfileCliTests(unittest.TestCase):
         ), self.assertRaisesRegex(KeycloakProfileError, "differs"):
             prompt_bootstrap_test_user_passwords(SimpleNamespace(), plan)
 
+    def test_password_prompt_repeats_selected_roles_and_mode(self) -> None:
+        """Show exact user intent before collecting a hidden credential.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(
+            bootstrap_test_users=(
+                SimpleNamespace(
+                    username="manual-admin",
+                    realm_roles=("user", "admin"),
+                    temporary_password=True,
+                ),
+            )
+        )
+        plan = {
+            "bootstrapTestUserActions": {"manual-admin": "create"}
+        }
+        with patch(
+            "keycloak_profile_cli.getpass.getpass",
+            side_effect=["runtime-secret", "runtime-secret"],
+        ), patch("builtins.print") as printed:
+            passwords = prompt_bootstrap_test_user_passwords(identity, plan)
+
+        rendered = "\n".join(
+            str(call.args[0]) for call in printed.call_args_list if call.args
+        )
+        self.assertEqual(passwords, {"manual-admin": "runtime-secret"})
+        self.assertIn("Roles: user, admin", rendered)
+        self.assertIn("temporary; change required", rendered)
+
     def test_changed_backend_client_becomes_matching_audience_default(
         self,
     ) -> None:
@@ -217,6 +249,9 @@ class KeycloakProfileCliTests(unittest.TestCase):
         identity = object()
         client = object()
         plan: dict[str, object] = {"blockers": []}
+        selected_values = SimpleNamespace(
+            apply_access_selection=lambda active_identity: active_identity
+        )
 
         with (
             patch.object(
@@ -237,7 +272,9 @@ class KeycloakProfileCliTests(unittest.TestCase):
             patch.object(
                 bootstrap,
                 "prompt_bootstrap_values",
-                side_effect=lambda *_args: events.append("values") or object(),
+                side_effect=lambda *_args: (
+                    events.append("values") or selected_values
+                ),
             ),
             patch.object(
                 bootstrap,
@@ -304,6 +341,7 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "target",
                 "values",
                 "persist",
+                "target",
                 "debug",
                 "username",
                 "password",

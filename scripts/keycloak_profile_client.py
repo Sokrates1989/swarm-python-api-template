@@ -102,7 +102,9 @@ class KeycloakIdentity:
         realm: Realm name.
         realm_display_name: Human-readable realm name.
         realm_settings: Exact profile-owned realm boolean settings.
-        realm_roles: Application realm roles declared by the site profile.
+        realm_roles: Application realm roles selected for this reconciliation.
+        realm_role_catalog: Full profile-owned role catalog used to remove
+            obsolete assignments without deleting live realm roles.
         bootstrap_test_users_enabled: Whether declared temporary users should
             exist for this deployment.
         bootstrap_test_users: Secret-free temporary user identities and roles.
@@ -138,6 +140,7 @@ class KeycloakIdentity:
     docker_secret: str
     service_account_client_roles: tuple[tuple[str, tuple[str, ...]], ...]
     realm_roles: tuple[KeycloakRealmRole, ...] = ()
+    realm_role_catalog: tuple[KeycloakRealmRole, ...] = ()
     bootstrap_test_users_enabled: bool = False
     bootstrap_test_users: tuple[KeycloakBootstrapTestUser, ...] = ()
 
@@ -693,11 +696,14 @@ def _realm_roles(raw: dict[str, Any]) -> tuple[KeycloakRealmRole, ...]:
 
 def _bootstrap_test_users(
     raw: dict[str, Any],
+    selected_by_default: bool,
 ) -> tuple[KeycloakBootstrapTestUser, ...]:
     """Normalize secret-free temporary test-user declarations.
 
     Args:
         raw: Validated Keycloak authentication mapping.
+        selected_by_default: Whether every profile declaration is initially
+            selected for the interactive bootstrap.
 
     Returns:
         Immutable test-user definitions in profile order.
@@ -716,6 +722,7 @@ def _bootstrap_test_users(
             production_cleanup_required=bool(
                 user["productionCleanupRequired"]
             ),
+            selected_for_bootstrap=selected_by_default,
         )
         for user in raw["bootstrapTestUsers"]
     )
@@ -735,19 +742,25 @@ def _identity_policy_values(
         Keyword values for the normalized identity model.
     """
 
+    bootstrap_users_enabled = _active_boolean(
+        deployment,
+        "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+        bool(raw["bootstrapTestUsersEnabled"]),
+    )
+    realm_role_catalog = _realm_roles(raw)
     return {
         "realm_display_name": (
             deployment["KEYCLOAK_REALM_DISPLAY_NAME"]
             or str(raw["realmDisplayName"])
         ),
         "realm_settings": _realm_settings(raw, deployment),
-        "realm_roles": _realm_roles(raw),
-        "bootstrap_test_users_enabled": _active_boolean(
-            deployment,
-            "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
-            bool(raw["bootstrapTestUsersEnabled"]),
+        "realm_roles": realm_role_catalog,
+        "realm_role_catalog": realm_role_catalog,
+        "bootstrap_test_users_enabled": bootstrap_users_enabled,
+        "bootstrap_test_users": _bootstrap_test_users(
+            raw,
+            bootstrap_users_enabled,
         ),
-        "bootstrap_test_users": _bootstrap_test_users(raw),
         "audience_mapper_name": str(raw["audienceMapperName"]),
         "forbidden_default_usernames": tuple(
             str(value) for value in raw["forbiddenDefaultUsernames"]

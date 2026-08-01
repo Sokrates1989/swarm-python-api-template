@@ -275,6 +275,42 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         ]
         self.assertEqual(len(cleanup), 4)
 
+    def test_skipping_one_declared_user_requires_only_its_cleanup(self) -> None:
+        """Apply the per-user lifecycle without disabling selected users.
+
+        Returns:
+            Nothing.
+        """
+
+        self._run_bootstrap()
+        selected_users = tuple(
+            replace(
+                user,
+                selected_for_bootstrap=(user.username != "test-manager"),
+            )
+            for user in self.identity.bootstrap_test_users
+        )
+        self.client.identity = replace(
+            self.identity,
+            bootstrap_test_users=selected_users,
+        )
+
+        plan = build_reconciliation_plan(
+            self.client,
+            docker_secret_present=True,
+            replace_secret=False,
+        )
+
+        cleanup = [
+            blocker
+            for blocker in plan["blockers"]
+            if "Delete bootstrap test user before production" in blocker
+        ]
+        self.assertEqual(
+            cleanup,
+            ["Delete bootstrap test user before production: test-manager"],
+        )
+
     def test_disabled_realm_blocks_a_new_secret_proof(self) -> None:
         """Require an enabled realm while creating the backend credential.
 
@@ -321,6 +357,55 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         self.assertEqual(summary["frontendRealmRoleScopeAction"], "kept")
         self.assertEqual(summary["serviceAccountRolesAction"], "kept")
         self.assertEqual(summary["bootstrapTestUsersAction"], "keep=4")
+
+    def test_selected_role_subset_removes_obsolete_user_and_scope_mappings(
+        self,
+    ) -> None:
+        """Make the chosen role subset exact without deleting realm roles.
+
+        Returns:
+            Nothing.
+        """
+
+        self._run_bootstrap()
+        role_names = {"user", "admin"}
+        selected_roles = tuple(
+            role for role in self.identity.realm_roles if role.name in role_names
+        )
+        selected_users = tuple(
+            replace(
+                user,
+                realm_roles=tuple(
+                    role for role in user.realm_roles if role in role_names
+                )
+                or ("user",),
+            )
+            for user in self.identity.bootstrap_test_users
+        )
+        self.identity = replace(
+            self.identity,
+            realm_roles=selected_roles,
+            bootstrap_test_users=selected_users,
+        )
+        self.client.identity = self.identity
+
+        summary, _ = self._run_bootstrap()
+
+        self.assertEqual(
+            summary["frontendRealmRoleScopeAction"],
+            "reconciled",
+        )
+        self.assertEqual(self.client.frontend_scope_roles, role_names)
+        self.assertEqual(
+            set(self.client.application_access.realm_roles),
+            {"user", "admin", "manager", "service-provider"},
+        )
+        for user in selected_users:
+            user_uuid = self.client.application_access.users[user.username]["id"]
+            self.assertEqual(
+                self.client.application_access.user_roles[user_uuid],
+                set(user.realm_roles),
+            )
 
     def test_existing_user_without_password_is_recovered(self) -> None:
         """Detect and repair a partial user-creation result on a later run.

@@ -96,15 +96,18 @@ permits an intentional safe absolute override.
 
 For Keycloak profiles, the tracked server URL is the administrator-credential
 trust anchor. Realm/display name, managed client IDs, audience, all allowlisted
-realm booleans, temporary-test-user lifecycle, and active service roots are
+realm booleans, aggregate temporary-test-user lifecycle, and active service
+roots are
 validated deployment-instance choices stored in `.env`. When audience and
 backend client ID previously matched, changing the backend ID updates the
 audience prompt default while retaining an explicit independent override.
-Protected legacy identity, application roles, secret-free temporary-user
-declarations, and realm/client policy remain tracked profile data. Missing
-test-user passwords are accepted only as hidden runtime input. Disabling test
-users turns any retained declared account into a production-cleanup blocker;
-it never silently deletes identity state.
+Protected legacy identity, the selectable application-role catalog,
+secret-free temporary-user defaults, and realm/client policy remain tracked
+profile data. Interactive runtime intent chooses a role subset, each declared
+user independently, exact per-user roles/password mode, and optional additional
+users. Missing test-user passwords are accepted only as hidden runtime input.
+Skipping users turns any retained declared account into a production-cleanup
+blocker; it never silently deletes identity state.
 
 ## Current file structure
 

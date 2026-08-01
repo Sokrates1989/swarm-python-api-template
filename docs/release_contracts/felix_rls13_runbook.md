@@ -110,8 +110,10 @@ Let's Encrypt mode.
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
 Review the server, realm, display name, frontend/backend client IDs, frontend
-and backend roots, audience, all six managed realm settings, and the temporary
-test-user lifecycle through their Enter-default prompts. Entered values replace
+and backend roots, audience, and all six managed realm settings through their
+Enter-default prompts. Then use the installer-style role chooser: Up/Down moves,
+Space selects or clears, and Enter confirms the exact profile roles this run
+may create and assign. Entered deployment values replace
 the defaults, are validated against protected legacy identity, persist to root
 `.env`, and rebuild `swarm-stack.yml` before authentication. If the prior
 audience matched the prior backend client ID, entering a different backend ID
@@ -124,8 +126,11 @@ Keycloak admin username and its password at the immediately following hidden
 Python prompt.
 
 The profile declares the application roles `user`, `admin`, `manager`, and
-`service-provider`, plus four temporary role-specific users. When an enabled
-user or its password credential is missing, enter and confirm its password at
+`service-provider`, plus four temporary role-specific users. For each declared
+user, choose independently whether to create/update it, select its exact roles,
+and choose whether the initial password is temporary. The dialogue then loops
+over any additional manual bootstrap users. When a selected user or its
+password credential is missing, enter and confirm its password at
 the hidden prompts shown after the authenticated live-state plan. Passwords are
 sent only to Keycloak and never enter JSON, `.env`, logs, plans, or summaries. Every run
 with temporary users enabled warns: **Once you enter production mode, remember

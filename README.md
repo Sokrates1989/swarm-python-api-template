@@ -235,12 +235,16 @@ No app-specific module is permitted. A new app receives the same behavior by
 copying `_template.json` to a schema-5 profile and replacing only its data.
 Keycloak protected identity, application roles, secret-free temporary test
 users, and service-account roles are profile fields, as are the Traefik
-certificate resolver, direct service ports, and optional pgAdmin. Realm booleans and
-the test-user lifecycle are operator-selectable public `.env` values; test-user
-passwords are requested without echo only when an enabled account or its
-password credential is missing. The bootstrap reminds the operator to remove
-temporary identities before production and blocks a disabled lifecycle while
-declared users still exist.
+certificate resolver, direct service ports, and optional pgAdmin. Realm
+booleans and the aggregate test-user lifecycle are operator-selectable public
+`.env` values. Before authentication, an installer-style checkbox dialogue
+selects the profile role catalog subset, asks independently about every
+predefined user and its exact roles/password mode, and can collect additional
+secret-free users in a loop. Arrow keys navigate, Space toggles, and Enter
+confirms. Passwords are requested without echo only when authenticated live
+state shows that a selected account lacks one. The bootstrap reminds the
+operator to remove temporary identities before production and blocks a skipped
+declared user while that account still exists.
 
 Site configs store safe defaults and allowed capabilities. Final
 deployment-instance selections such as domain, proxy, SSL ownership, image

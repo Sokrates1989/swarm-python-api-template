@@ -10,7 +10,7 @@ Description:
 
 Dependencies:
     - Python standard library.
-    - Executable profile and Keycloak profile client, configuration,
+    - Executable profile and Keycloak access-dialog, client, configuration,
       verification, and Docker-secret modules.
 """
 
@@ -21,13 +21,14 @@ import json
 from collections.abc import Mapping
 
 from executable_profile import ExecutableProfile
+from keycloak_profile_access_dialog import prompt_application_access
+from keycloak_profile_application_access import required_test_user_passwords
 from keycloak_profile_configuration import KeycloakBootstrapValues
 from keycloak_profile_client import (
     KeycloakAdminClient,
     KeycloakIdentity,
     KeycloakProfileError,
 )
-from keycloak_profile_application_access import required_test_user_passwords
 from keycloak_profile_secret_bridge import docker_secret_exists
 from keycloak_profile_verification import build_reconciliation_plan
 
@@ -52,12 +53,23 @@ def _print_application_access_target(identity: KeycloakIdentity) -> None:
             print(f"  - {role.name}: {role.description}")
     else:
         print("  - none")
-    state = "enabled" if identity.bootstrap_test_users_enabled else "disabled"
-    print(f"Bootstrap test users: {state}")
+    selected_count = sum(
+        identity.bootstrap_test_users_enabled and user.selected_for_bootstrap
+        for user in identity.bootstrap_test_users
+    )
+    print(f"Bootstrap users selected: {selected_count}")
     for user in identity.bootstrap_test_users:
-        print(f"  - {user.username}: {', '.join(user.realm_roles)}")
+        selected = (
+            identity.bootstrap_test_users_enabled
+            and user.selected_for_bootstrap
+        )
+        state = "create/update" if selected else "skip"
+        print(
+            f"  - [{state}] {user.username}: "
+            f"{', '.join(user.realm_roles)}"
+        )
     print("")
-    if identity.bootstrap_test_users_enabled:
+    if selected_count:
         print("[WARN] Temporary bootstrap test users are enabled.")
         print(
             "[WARN] Once you enter production mode, remember to delete "
@@ -111,7 +123,8 @@ def print_target(
     for client_id, roles in identity.service_account_client_roles:
         print(f"  - {client_id}: {', '.join(roles)}")
     _print_application_access_target(identity)
-    print("Application roles are profile-owned; social providers remain unchanged.")
+    print("The role catalog is profile-owned; this run reconciles selections.")
+    print("Social providers remain unchanged.")
     print("The confidential secret comes from Keycloak's real client response;")
     print("its value is never displayed or written to a file.")
 
@@ -182,35 +195,6 @@ def _prompt_realm_settings(
         (name, _prompt_boolean(label, configured[name]))
         for name, label in labels
     )
-
-
-def _prompt_bootstrap_test_user_lifecycle(identity: KeycloakIdentity) -> bool:
-    """Choose whether profile-declared temporary users should be maintained.
-
-    Args:
-        identity: Active identity containing secret-free user declarations.
-
-    Returns:
-        True when the bootstrap should create or maintain declared test users.
-        False when no users are declared or the operator disables them.
-    """
-
-    if not identity.bootstrap_test_users:
-        return False
-    print("")
-    print("Profile-declared temporary test users:")
-    for user in identity.bootstrap_test_users:
-        print(f"  - {user.username}: {', '.join(user.realm_roles)}")
-    selected = _prompt_boolean(
-        "Create/update these bootstrap test users",
-        identity.bootstrap_test_users_enabled,
-    )
-    if selected:
-        print(
-            "[WARN] Once you enter production mode, remember to delete "
-            "those users."
-        )
-    return selected
 
 
 def _prompt_public_identity_values(
@@ -288,15 +272,21 @@ def prompt_bootstrap_values(
     print(f"Keycloak server URL (fixed trust anchor): {identity.server_url}")
     selected = _prompt_public_identity_values(identity)
     realm_settings = _prompt_realm_settings(identity)
-    bootstrap_test_users_enabled = _prompt_bootstrap_test_user_lifecycle(
-        identity
+    realm_roles, bootstrap_test_users = prompt_application_access(
+        identity,
+        _prompt_boolean,
+    )
+    bootstrap_test_users_enabled = any(
+        user.selected_for_bootstrap for user in bootstrap_test_users
     )
     return KeycloakBootstrapValues(
         server_url=identity.server_url,
         realm=selected["realm"],
         realm_display_name=selected["realm_display_name"],
         realm_settings=realm_settings,
+        realm_roles=realm_roles,
         bootstrap_test_users_enabled=bootstrap_test_users_enabled,
+        bootstrap_test_users=bootstrap_test_users,
         frontend_client_id=selected["frontend_client_id"],
         backend_client_id=selected["backend_client_id"],
         frontend_root_url=selected["frontend_root_url"],
@@ -324,17 +314,32 @@ def prompt_bootstrap_test_user_passwords(
 
     raw_actions = plan.get("bootstrapTestUserActions", {})
     actions = raw_actions if isinstance(raw_actions, Mapping) else {}
-    usernames = required_test_user_passwords(actions)
-    if not usernames:
+    required = set(required_test_user_passwords(actions))
+    if not required:
         return {}
     print("")
     print("Temporary test-user credentials")
     print("--------------------------------")
     print("Passwords are read without echo and are sent only to Keycloak.")
     print("They are never written to the profile, .env, plan, or summary.")
+    users = tuple(getattr(identity, "bootstrap_test_users", ()))
+    by_name = {user.username: user for user in users}
+    ordered = [user.username for user in users if user.username in required]
+    ordered.extend(sorted(required - set(ordered)))
     passwords: dict[str, str] = {}
-    for username in usernames:
-        password = getpass.getpass(f"Password for test user {username}: ")
+    for username in ordered:
+        user = by_name.get(username)
+        if user is not None:
+            password_mode = (
+                "temporary; change required at first login"
+                if user.temporary_password
+                else "regular; no forced first-login change"
+            )
+            print("")
+            print(f"User: {username}")
+            print(f"Roles: {', '.join(user.realm_roles)}")
+            print(f"Password mode: {password_mode}")
+        password = getpass.getpass(f"Initial password for {username}: ")
         confirmation = getpass.getpass(f"Confirm password for {username}: ")
         if not password:
             raise KeycloakProfileError(
@@ -507,7 +512,10 @@ def print_completion(
         "Admin console: "
         f"{identity.server_url}/admin/master/console/#/{identity.realm}"
     )
-    if identity.bootstrap_test_users_enabled:
+    if any(
+        identity.bootstrap_test_users_enabled and user.selected_for_bootstrap
+        for user in identity.bootstrap_test_users
+    ):
         print("")
         print("[WARN] Temporary bootstrap test users remain enabled.")
         print(

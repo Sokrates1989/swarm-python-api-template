@@ -5,6 +5,7 @@ Description:
     Models and reconciles site-profile-declared application realm roles and
     explicitly temporary bootstrap test users. Passwords are supplied only at
     runtime for missing users and never enter the profile, plan, or summary.
+    Interactive callers may select each declared user independently.
 
 Dependencies:
     - Python standard library only.
@@ -49,6 +50,8 @@ class KeycloakBootstrapTestUser:
         temporary_password: Whether first login must replace the password.
         realm_roles: Exact profile-owned application roles assigned to user.
         production_cleanup_required: Whether production must remove the user.
+        selected_for_bootstrap: Whether this run should create or maintain the
+            user. A false value never deletes an existing account silently.
     """
 
     username: str
@@ -60,6 +63,7 @@ class KeycloakBootstrapTestUser:
     temporary_password: bool
     realm_roles: tuple[str, ...]
     production_cleanup_required: bool
+    selected_for_bootstrap: bool = True
 
 
 class _Identity(Protocol):
@@ -67,6 +71,7 @@ class _Identity(Protocol):
 
     realm: str
     realm_roles: tuple[KeycloakRealmRole, ...]
+    realm_role_catalog: tuple[KeycloakRealmRole, ...]
     bootstrap_test_users_enabled: bool
     bootstrap_test_users: tuple[KeycloakBootstrapTestUser, ...]
 
@@ -86,6 +91,20 @@ class _AdminClient(Protocol):
         expected: tuple[int, ...] = (200,),
     ) -> tuple[int, Any]:
         """Send one authenticated Keycloak Admin API request."""
+
+
+def _owned_role_catalog(identity: _Identity) -> tuple[KeycloakRealmRole, ...]:
+    """Return the full profile-owned role catalog with legacy fallback.
+
+    Args:
+        identity: Active Keycloak identity.
+
+    Returns:
+        Full role catalog, or selected roles for pre-catalog test identities.
+    """
+
+    catalog = getattr(identity, "realm_role_catalog", ())
+    return catalog or identity.realm_roles
 
 
 def _realm_path(identity: _Identity, suffix: str = "") -> str:
@@ -394,7 +413,9 @@ def _user_action(
         return "set-password"
     desired = _user_payload(user)
     metadata_matches = all(current[1].get(k) == v for k, v in desired.items())
-    application_roles = {role.name for role in client.identity.realm_roles}
+    application_roles = {
+        role.name for role in _owned_role_catalog(client.identity)
+    }
     assigned = _read_user_realm_roles(client, current[0]) & application_roles
     roles_match = assigned == set(user.realm_roles)
     return "keep" if metadata_matches and roles_match else "update"
@@ -419,7 +440,11 @@ def inspect_bootstrap_test_users(
     actions: dict[str, str] = {}
     for user in client.identity.bootstrap_test_users:
         current = _read_user(client, user.username) if realm_exists else None
-        if not client.identity.bootstrap_test_users_enabled:
+        selected = (
+            client.identity.bootstrap_test_users_enabled
+            and user.selected_for_bootstrap
+        )
+        if not selected:
             actions[user.username] = (
                 "absent" if current is None else "remove-before-production"
             )
@@ -480,7 +505,9 @@ def _role_representations(
         KeycloakApplicationAccessError: If a required role is absent.
     """
 
-    declarations = {role.name: role for role in client.identity.realm_roles}
+    declarations = {
+        role.name: role for role in _owned_role_catalog(client.identity)
+    }
     representations: list[dict[str, Any]] = []
     for name in sorted(names):
         representation = _read_role(client, declarations[name])
@@ -510,7 +537,7 @@ def _reconcile_user_roles(
     """
 
     assigned = _read_user_realm_roles(client, user_uuid)
-    owned = {role.name for role in client.identity.realm_roles}
+    owned = {role.name for role in _owned_role_catalog(client.identity)}
     desired = set(desired_roles)
     escaped = urllib.parse.quote(user_uuid, safe="")
     path = _realm_path(client.identity, f"/users/{escaped}/role-mappings/realm")
@@ -640,11 +667,17 @@ def ensure_bootstrap_test_users(
         Sanitized action-count summary or ``disabled``.
     """
 
-    if not client.identity.bootstrap_test_users_enabled:
+    selected_users = tuple(
+        user
+        for user in client.identity.bootstrap_test_users
+        if client.identity.bootstrap_test_users_enabled
+        and user.selected_for_bootstrap
+    )
+    if not selected_users:
         return "disabled"
     actions = {
         user.username: _ensure_test_user(client, user, passwords)
-        for user in client.identity.bootstrap_test_users
+        for user in selected_users
     }
     return summarize_actions(actions)
 
@@ -670,9 +703,16 @@ def verify_application_access(client: _AdminClient) -> None:
             + ", ".join(sorted(drifted_roles))
         )
     user_actions = inspect_bootstrap_test_users(client, realm_exists=True)
-    expected = "keep" if client.identity.bootstrap_test_users_enabled else "absent"
     drifted_users = [
-        name for name, action in user_actions.items() if action != expected
+        user.username
+        for user in client.identity.bootstrap_test_users
+        if user_actions[user.username]
+        != (
+            "keep"
+            if client.identity.bootstrap_test_users_enabled
+            and user.selected_for_bootstrap
+            else "absent"
+        )
     ]
     if drifted_users:
         raise KeycloakApplicationAccessError(

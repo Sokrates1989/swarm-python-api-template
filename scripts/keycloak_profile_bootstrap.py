@@ -775,33 +775,33 @@ def _review_bootstrap_configuration(
     if skip_review:
         return profile, identity
     selected_values = prompt_bootstrap_values(identity)
-    profile, changed = persist_keycloak_values(profile, selected_values)
-    if not changed:
-        return profile, identity
     prior_identity = identity
-    identity = load_keycloak_identity(profile)
-    print("")
-    print(
-        "[OK] Saved Keycloak deployment values to "
-        f"{profile.root / '.env'}"
-    )
-    print(
-        "[OK] Rebuilt generated stack at "
-        f"{profile.root / 'swarm-stack.yml'}"
-    )
-    print(
-        "[WARN] WebApp/mobile artifacts must be built with this "
-        "realm and client identity."
-    )
-    if (
-        identity.realm != prior_identity.realm
-        or identity.backend_client_id != prior_identity.backend_client_id
-    ):
+    profile, changed = persist_keycloak_values(profile, selected_values)
+    persisted_identity = load_keycloak_identity(profile) if changed else identity
+    if changed:
         print(
-            "[WARN] An existing Docker client secret belongs to the prior "
-            "realm/backend client and requires explicit rotation with the "
-            "stack stopped."
+            "\n[OK] Saved Keycloak deployment values to "
+            f"{profile.root / '.env'}"
         )
+        print(
+            "[OK] Rebuilt generated stack at "
+            f"{profile.root / 'swarm-stack.yml'}"
+        )
+        print(
+            "[WARN] WebApp/mobile artifacts must be built with this "
+            "realm and client identity."
+        )
+        if (
+            persisted_identity.realm != prior_identity.realm
+            or persisted_identity.backend_client_id
+            != prior_identity.backend_client_id
+        ):
+            print(
+                "[WARN] An existing Docker client secret belongs to the prior "
+                "realm/backend client and requires explicit rotation with the "
+                "stack stopped."
+            )
+    identity = selected_values.apply_access_selection(persisted_identity)
     print("")
     print_target(profile, identity)
     return profile, identity
@@ -903,6 +903,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print_completion(identity, summary)
         return 0
+    except KeyboardInterrupt:
+        print("\nKeycloak bootstrap cancelled; no further changes were applied.")
+        return 130
     except (
         ExecutableProfileError,
         KeycloakProfileError,

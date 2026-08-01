@@ -28,6 +28,7 @@ class _Identity(Protocol):
 
     realm: str
     realm_roles: tuple[KeycloakRealmRole, ...]
+    realm_role_catalog: tuple[KeycloakRealmRole, ...]
 
 
 class _AdminClient(Protocol):
@@ -45,6 +46,20 @@ class _AdminClient(Protocol):
         expected: tuple[int, ...] = (200,),
     ) -> tuple[int, Any]:
         """Send one authenticated Keycloak Admin API request."""
+
+
+def _owned_role_catalog(identity: _Identity) -> tuple[KeycloakRealmRole, ...]:
+    """Return every profile-owned role with a legacy-identity fallback.
+
+    Args:
+        identity: Active Keycloak identity.
+
+    Returns:
+        Full catalog, or the selected role set when no catalog is available.
+    """
+
+    catalog = getattr(identity, "realm_role_catalog", ())
+    return catalog or identity.realm_roles
 
 
 def _realm_path(identity: _Identity, suffix: str) -> str:
@@ -119,16 +134,23 @@ def inspect_frontend_realm_role_scope(
         frontend_uuid: Existing frontend UUID, or ``None`` when missing.
 
     Returns:
-        ``none declared``, ``assign``, or ``keep``.
+        ``none declared``, ``assign``, ``reconcile``, or ``keep``.
     """
 
     desired = {role.name for role in client.identity.realm_roles}
-    if not desired:
+    owned = {role.name for role in _owned_role_catalog(client.identity)}
+    if not desired and not owned:
         return "none declared"
     if frontend_uuid is None:
-        return "assign"
+        return "assign" if desired else "none declared"
     assigned = _read_scope_roles(client, frontend_uuid)
-    return "keep" if desired <= assigned else "assign"
+    missing = desired - assigned
+    obsolete = (assigned & owned) - desired
+    if obsolete:
+        return "reconcile"
+    if missing:
+        return "assign"
+    return "keep" if desired else "none declared"
 
 
 def _role_representations(
@@ -148,7 +170,9 @@ def _role_representations(
         KeycloakApplicationAccessError: If a declared role is absent.
     """
 
-    roles = {role.name: role for role in client.identity.realm_roles}
+    roles = {
+        role.name: role for role in _owned_role_catalog(client.identity)
+    }
     representations: list[dict[str, Any]] = []
     for name in sorted(names):
         escaped = urllib.parse.quote(name, safe="")
@@ -176,23 +200,36 @@ def ensure_frontend_realm_role_scope(
         frontend_uuid: Internal frontend client UUID.
 
     Returns:
-        ``none declared``, ``assigned``, or ``kept``.
+        ``none declared``, ``assigned``, ``reconciled``, or ``kept``.
     """
 
     desired = {role.name for role in client.identity.realm_roles}
-    if not desired:
+    owned = {role.name for role in _owned_role_catalog(client.identity)}
+    if not desired and not owned:
         return "none declared"
     assigned = _read_scope_roles(client, frontend_uuid)
     missing = desired - assigned
-    if not missing:
-        return "kept"
-    client.request(
-        "POST",
-        _scope_path(client.identity, frontend_uuid),
-        body=_role_representations(client, missing),
-        expected=(204,),
-    )
-    return "assigned"
+    obsolete = (assigned & owned) - desired
+    path = _scope_path(client.identity, frontend_uuid)
+    if missing:
+        client.request(
+            "POST",
+            path,
+            body=_role_representations(client, missing),
+            expected=(204,),
+        )
+    if obsolete:
+        client.request(
+            "DELETE",
+            path,
+            body=_role_representations(client, obsolete),
+            expected=(204,),
+        )
+    if obsolete:
+        return "reconciled"
+    if missing:
+        return "assigned"
+    return "kept" if desired else "none declared"
 
 
 def verify_frontend_realm_role_scope(
@@ -213,13 +250,18 @@ def verify_frontend_realm_role_scope(
     """
 
     desired = {role.name for role in client.identity.realm_roles}
-    if not desired:
+    owned = {role.name for role in _owned_role_catalog(client.identity)}
+    if not owned:
         return
-    missing = desired - _read_scope_roles(client, frontend_uuid)
-    if missing:
+    assigned = _read_scope_roles(client, frontend_uuid) & owned
+    if assigned != desired:
+        missing = desired - assigned
+        obsolete = assigned - desired
         raise KeycloakApplicationAccessError(
-            "Frontend client scope is missing application realm roles: "
-            + ", ".join(sorted(missing))
+            "Frontend client application-role scope remains drifted; missing="
+            + ",".join(sorted(missing))
+            + "; obsolete="
+            + ",".join(sorted(obsolete))
         )
 
 

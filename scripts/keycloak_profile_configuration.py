@@ -9,14 +9,14 @@ Description:
 Dependencies:
     - Python standard library.
     - Executable profile environment, model, and stack renderer modules.
-    - Keycloak profile client identity model.
+    - Keycloak profile client and application-access identity models.
 """
 
 from __future__ import annotations
 
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -36,6 +36,10 @@ from keycloak_profile_client import (
     KeycloakProfileError,
     load_keycloak_identity,
 )
+from keycloak_profile_application_access import (
+    KeycloakBootstrapTestUser,
+    KeycloakRealmRole,
+)
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,11 @@ class KeycloakBootstrapValues:
         realm: Operator-selected realm name.
         realm_display_name: Operator-selected human-readable realm name.
         realm_settings: Operator-selected realm boolean settings.
-        bootstrap_test_users_enabled: Whether profile test users should exist.
+        realm_roles: Application roles selected for this bootstrap run.
+        bootstrap_test_users_enabled: Whether at least one temporary user is
+            selected for this deployment.
+        bootstrap_test_users: Individually configured profile and manual users
+            without passwords.
         frontend_client_id: Operator-selected public PKCE client ID.
         backend_client_id: Operator-selected confidential service client ID.
         frontend_root_url: Operator-selected WebApp origin.
@@ -59,7 +67,9 @@ class KeycloakBootstrapValues:
     realm: str
     realm_display_name: str
     realm_settings: tuple[tuple[str, bool], ...]
+    realm_roles: tuple[KeycloakRealmRole, ...]
     bootstrap_test_users_enabled: bool
+    bootstrap_test_users: tuple[KeycloakBootstrapTestUser, ...]
     frontend_client_id: str
     backend_client_id: str
     frontend_root_url: str
@@ -85,14 +95,43 @@ class KeycloakBootstrapValues:
             realm=identity.realm,
             realm_display_name=identity.realm_display_name,
             realm_settings=identity.realm_settings,
+            realm_roles=identity.realm_roles,
             bootstrap_test_users_enabled=(
                 identity.bootstrap_test_users_enabled
             ),
+            bootstrap_test_users=identity.bootstrap_test_users,
             frontend_client_id=identity.frontend_client_id,
             backend_client_id=identity.backend_client_id,
             frontend_root_url=identity.frontend_root_url,
             api_root_url=identity.api_root_url,
             audience=identity.audience,
+        )
+
+    def apply_access_selection(
+        self,
+        identity: KeycloakIdentity,
+    ) -> KeycloakIdentity:
+        """Apply the runtime-only role and user selection to an identity.
+
+        Args:
+            identity: Reloaded identity containing persisted public values.
+
+        Returns:
+            Identity used for planning and reconciliation in this process.
+
+        Note:
+            Passwords are not part of this object. Role/user choices remain
+            runtime bootstrap intent; only the aggregate test-user lifecycle
+            boolean is persisted for the next guided default.
+        """
+
+        return replace(
+            identity,
+            realm_roles=self.realm_roles,
+            bootstrap_test_users_enabled=(
+                self.bootstrap_test_users_enabled
+            ),
+            bootstrap_test_users=self.bootstrap_test_users,
         )
 
 

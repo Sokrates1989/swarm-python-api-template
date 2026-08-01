@@ -105,7 +105,8 @@ For Keycloak profiles, `auth.serverUrl`, protected legacy identity, callbacks,
 mapper policy, application-role declarations, secret-free temporary test-user
 declarations, forbidden users, service-account roles, and the Docker-secret
 target remain tracked safety policy. Realm name/display name, the allowlisted
-realm booleans, temporary-test-user lifecycle switch, frontend/backend client
+realm booleans, aggregate temporary-test-user lifecycle switch,
+frontend/backend client
 IDs, audience, and active frontend/API roots are editable deployment values.
 The bootstrap persists them to root `.env` and rebuilds the stack. The server
 URL is deliberately not an interactive override because the following
@@ -148,7 +149,8 @@ forbidden in site configs and root `.env`.
 For `auth.provider=keycloak`, schema 5 also requires:
 
 - `realmDisplayName` and the exact boolean `realmSettings` allowlist;
-- `realmRoles`, containing unique application role names and descriptions;
+- `realmRoles`, containing the selectable application-role catalog with unique
+  names and descriptions;
 - `bootstrapTestUsersEnabled`, which supplies the initial deployment default;
 - `bootstrapTestUsers`, containing secret-free identities, exact declared
   application-role assignments, and mandatory production-cleanup markers;
@@ -160,6 +162,17 @@ For `auth.provider=keycloak`, schema 5 also requires:
 The shared validator rejects Keycloak's `master` realm, built-in managed
 client IDs, and any profile that reuses one client ID for both the public
 frontend and confidential backend.
+
+Before authentication, the interactive bootstrap presents the role catalog as
+an installer-style checkbox list. Up/Down navigates, Space toggles, Enter
+confirms, and all/none shortcuts are available. The selected subset becomes the
+only role set created, frontend-scoped, and assignable to users during that
+run; deselection never silently deletes a live role. Each profile-declared user
+then has an independent create/update choice, an exact role multiselect, and a
+regular-versus-temporary password-mode choice. Operators may append validated
+manual bootstrap users until declining the loop. These detailed choices are
+secret-free runtime intent; the site profile remains the allowed/default
+catalog and `.env` retains the aggregate lifecycle default.
 
 The bootstrap authenticates to the existing server, prints a read-only
 sanitized plan, applies only after confirmation, then verifies Admin API
@@ -183,11 +196,12 @@ operator evidence without revealing any credential characters. An existing
 Docker secret remains opaque and therefore reports unavailable value evidence
 until explicitly rotated.
 
-Test-user passwords never belong in JSON or `.env`. When an enabled user or its
+Test-user passwords never belong in JSON or `.env`. When a selected user or its
 password credential is missing, the bootstrap asks for that password without
-terminal echo after the authenticated plan and sends it directly to Keycloak.
-Disabling test-user
-management never silently deletes accounts. Existing declared test users are
+terminal echo after the authenticated plan, repeats the selected roles and
+password mode, and sends the credential directly to Keycloak. Skipping one user
+or disabling all test-user management never silently deletes accounts.
+Existing skipped declared test users are
 reported as production-cleanup blockers until the operator deletes them in
 Keycloak and reruns the plan. Application roles remain the production
 authorization contract after those temporary identities are gone. A disabled
