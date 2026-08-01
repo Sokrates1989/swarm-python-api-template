@@ -102,7 +102,7 @@
     "realmDisplayName": "Felix",
     "realmSettings": {
       "enabled": true,
-      "registrationAllowed": false,
+      "registrationAllowed": true,
       "resetPasswordAllowed": true,
       "rememberMe": true,
       "verifyEmail": true,
