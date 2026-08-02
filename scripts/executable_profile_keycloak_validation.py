@@ -76,6 +76,46 @@ EMAIL_PATTERN = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?"
 )
 
+# These special-use suffixes are rejected by the backend's Pydantic EmailStr
+# contract. Accepting them here would create Keycloak users that authenticate
+# successfully but cannot obtain an application-owned backend profile.
+BACKEND_INCOMPATIBLE_EMAIL_SUFFIXES = {
+    "invalid",
+    "local",
+    "localhost",
+    "test",
+}
+
+
+def is_backend_compatible_email(value: str) -> bool:
+    """Validate an email accepted by the shared backend user contract.
+
+    Args:
+        value: Candidate bootstrap-user email address.
+
+    Returns:
+        True for a bounded ASCII mailbox with valid domain labels and no
+        special-use suffix rejected by Pydantic's production email validator.
+    """
+
+    if len(value) > 254 or not EMAIL_PATTERN.fullmatch(value):
+        return False
+    local, domain = value.rsplit("@", 1)
+    if len(local) > 64 or local.startswith(".") or local.endswith("."):
+        return False
+    if ".." in local or ".." in domain:
+        return False
+    labels = domain.lower().split(".")
+    if len(labels) < 2 or any(
+        not label
+        or len(label) > 63
+        or not label[0].isalnum()
+        or not label[-1].isalnum()
+        for label in labels
+    ):
+        return False
+    return labels[-1] not in BACKEND_INCOMPATIBLE_EMAIL_SUFFIXES
+
 
 def _validate_realm_roles(auth: Mapping[str, object]) -> set[str]:
     """Validate profile-owned application realm-role declarations.
@@ -147,8 +187,10 @@ def _validate_test_user_identity(
     text(user["lastName"], f"{field}.lastName")
     if not NAME_PATTERN.fullmatch(username):
         raise ExecutableProfileError(f"{field}.username is unsafe.")
-    if not EMAIL_PATTERN.fullmatch(email):
-        raise ExecutableProfileError(f"{field}.email is invalid.")
+    if not is_backend_compatible_email(email):
+        raise ExecutableProfileError(
+            f"{field}.email is not accepted by the backend email contract."
+        )
     boolean_fields = (
         "enabled",
         "emailVerified",

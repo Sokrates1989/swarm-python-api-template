@@ -18,7 +18,7 @@
   "release": {
     "stackId": "felix",
     "versionPolicy": "monotonic-floor",
-    "versionFloor": "1.0.7",
+    "versionFloor": "1.0.8",
     "components": [
       "api",
       "web",
@@ -69,13 +69,13 @@
   },
   "image": {
     "name": "sokrates1989/python-api-felix",
-    "defaultVersion": "1.0.7",
+    "defaultVersion": "1.0.8",
     "mutableTagsAllowed": false
   },
   "web": {
     "image": {
       "name": "sokrates1989/flutter-felix-web",
-      "defaultVersion": "1.0.7",
+      "defaultVersion": "1.0.8",
       "mutableTagsAllowed": false
     },
     "resources": {
@@ -140,7 +140,7 @@
     "bootstrapTestUsers": [
       {
         "username": "user",
-        "email": "user@example.invalid",
+        "email": "felix-test-user@example.com",
         "firstName": "Test",
         "lastName": "User",
         "enabled": true,
@@ -153,7 +153,7 @@
       },
       {
         "username": "admin",
-        "email": "admin@example.invalid",
+        "email": "felix-test-admin@example.com",
         "firstName": "Admin",
         "lastName": "Administrator",
         "enabled": true,
@@ -202,7 +202,7 @@
     "BACKEND_APP_ID": "felix",
     "APP_PROFILE": "felix",
     "PORT": "8080",
-    "IMAGE_TAG": "1.0.7",
+    "IMAGE_TAG": "1.0.8",
     "REDIS_URL": "redis://redis:6379/0",
     "DB_TYPE": "postgresql",
     "DB_MODE": "local",

@@ -188,13 +188,13 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.stack_name, "felix")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-felix:1.0.7",
+            "sokrates1989/python-api-felix:1.0.8",
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-felix-web:1.0.7",
+            "sokrates1989/flutter-felix-web:1.0.8",
         )
-        self.assertEqual(profile.environment["IMAGE_TAG"], "1.0.7")
+        self.assertEqual(profile.environment["IMAGE_TAG"], "1.0.8")
         self.assertIn("\n  web:\n", stack)
         self.assertIn("\n  api:\n", stack)
         self.assertIn("\n  redis:\n", stack)
@@ -277,11 +277,11 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.deployment["APP_ID"], "aurora")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-aurora:1.0.7",
+            "sokrates1989/python-api-aurora:1.0.8",
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-aurora-web:1.0.7",
+            "sokrates1989/flutter-aurora-web:1.0.8",
         )
         self.assertEqual(identity.realm, "aurora")
         self.assertEqual(identity.frontend_client_id, "aurora-frontend")
@@ -615,6 +615,10 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         unsafe_cleanup["auth"]["bootstrapTestUsers"][0][
             "productionCleanupRequired"
         ] = False
+        backend_incompatible_email = copy.deepcopy(self.felix_config)
+        backend_incompatible_email["auth"]["bootstrapTestUsers"][0][
+            "email"
+        ] = "user@example.invalid"
         missing_roles = copy.deepcopy(self.felix_config)
         del missing_roles["auth"]["serviceAccountClientRoles"]
         shared_client = copy.deepcopy(self.felix_config)
@@ -640,6 +644,10 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             (test_user_secret, "contains unsupported fields: password"),
             (unknown_test_role, "reference undeclared realm roles"),
             (unsafe_cleanup, "must require production cleanup"),
+            (
+                backend_incompatible_email,
+                "email is not accepted by the backend email contract",
+            ),
             (missing_roles, "missing required keys: serviceAccountClientRoles"),
             (shared_client, "frontendClientId and auth.adminClientId must differ"),
             (reserved_client, "must not use built-in clients"),
@@ -697,11 +705,11 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.stack_name, "felix-test")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-felix-test:1.0.7",
+            "sokrates1989/python-api-felix-test:1.0.8",
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-felix-test-web:1.0.7",
+            "sokrates1989/flutter-felix-test-web:1.0.8",
         )
         identity = load_keycloak_identity(profile)
         self.assertIn(

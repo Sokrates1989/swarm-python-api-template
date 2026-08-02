@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 
-from executable_profile_keycloak_validation import EMAIL_PATTERN
+from executable_profile_keycloak_validation import is_backend_compatible_email
 from executable_profile_support import NAME_PATTERN
 from keycloak_profile_application_access import (
     KeycloakBootstrapTestUser,
@@ -242,10 +242,11 @@ def _manual_user_identity(
     )
     email = _prompt_validated_value(
         "Email",
-        f"{username}@example.invalid",
-        lambda value: bool(EMAIL_PATTERN.fullmatch(value))
+        f"{username}@example.com",
+        lambda value: is_backend_compatible_email(value)
         and value not in existing_emails,
-        "Enter a unique valid email address.",
+        "Enter a unique email accepted by the backend; .invalid, .test, "
+        ".local, and .localhost addresses are not supported.",
     )
     first_name = _prompt_validated_value(
         "First name",

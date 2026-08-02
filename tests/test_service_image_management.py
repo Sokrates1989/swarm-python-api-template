@@ -72,7 +72,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
 
         self.assertEqual(release["stackId"], "felix")
         self.assertEqual(release["versionPolicy"], "monotonic-floor")
-        self.assertEqual(release["versionFloor"], "1.0.7")
+        self.assertEqual(release["versionFloor"], "1.0.8")
         self.assertEqual(
             release["components"],
             ["api", "web", "android", "ios"],
@@ -93,7 +93,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
             )
         )
         invalid_floor = copy.deepcopy(source_profile)
-        invalid_floor["release"]["versionFloor"] = "v1.0.7"
+        invalid_floor["release"]["versionFloor"] = "v1.0.8"
         invalid_policy = copy.deepcopy(source_profile)
         invalid_policy["release"]["versionPolicy"] = "independent"
         duplicate_component = copy.deepcopy(source_profile)

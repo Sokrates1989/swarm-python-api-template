@@ -200,6 +200,14 @@ For `auth.provider=keycloak`, schema 5 also requires:
   names; and
 - `serviceAccountClientRoles`, grouped by the role-owning Keycloak client.
 
+Bootstrap-user email addresses must also satisfy the shared backend user
+contract. Special-use `.invalid`, `.test`, `.local`, and `.localhost`
+addresses are rejected because they can authenticate in Keycloak but fail
+backend profile creation. Disabled test identities may use the conventional
+non-deliverable `example.com` examples shown by `_template.json`; production
+identities must use operator-owned addresses and test identities must still be
+removed before production activation.
+
 The shared validator rejects Keycloak's `master` realm, built-in managed
 client IDs, and any profile that reuses one client ID for both the public
 frontend and confidential backend.

@@ -137,7 +137,7 @@
     "bootstrapTestUsers": [
       {
         "username": "test-user",
-        "email": "test-user@example.invalid",
+        "email": "test-user@example.com",
         "firstName": "Test",
         "lastName": "User",
         "enabled": true,

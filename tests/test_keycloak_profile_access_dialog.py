@@ -76,7 +76,7 @@ class KeycloakProfileAccessDialogTests(unittest.TestCase):
 
         return KeycloakBootstrapTestUser(
             username=username,
-            email=f"{username}@example.invalid",
+            email=f"{username}@example.com",
             first_name="Test",
             last_name="User",
             enabled=True,
