@@ -188,12 +188,13 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.stack_name, "felix")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-felix:0.1.2",
+            "sokrates1989/python-api-felix:1.0.7",
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-felix-web:1.0.6",
+            "sokrates1989/flutter-felix-web:1.0.7",
         )
+        self.assertEqual(profile.environment["IMAGE_TAG"], "1.0.7")
         self.assertIn("\n  web:\n", stack)
         self.assertIn("\n  api:\n", stack)
         self.assertIn("\n  redis:\n", stack)
@@ -276,11 +277,11 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.deployment["APP_ID"], "aurora")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-aurora:0.1.2",
+            "sokrates1989/python-api-aurora:1.0.7",
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-aurora-web:1.0.6",
+            "sokrates1989/flutter-aurora-web:1.0.7",
         )
         self.assertEqual(identity.realm, "aurora")
         self.assertEqual(identity.frontend_client_id, "aurora-frontend")
@@ -696,11 +697,11 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertEqual(profile.stack_name, "felix-test")
         self.assertEqual(
             profile.image_reference,
-            "sokrates1989/python-api-felix-test:0.1.2",
+            "sokrates1989/python-api-felix-test:1.0.7",
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-felix-test-web:1.0.6",
+            "sokrates1989/flutter-felix-test-web:1.0.7",
         )
         identity = load_keycloak_identity(profile)
         self.assertIn(

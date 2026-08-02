@@ -18,7 +18,7 @@
   "release": {
     "stackId": "felix",
     "versionPolicy": "monotonic-floor",
-    "versionFloor": "1.0.6",
+    "versionFloor": "1.0.7",
     "components": [
       "api",
       "web",
@@ -69,13 +69,13 @@
   },
   "image": {
     "name": "sokrates1989/python-api-felix",
-    "defaultVersion": "0.1.2",
+    "defaultVersion": "1.0.7",
     "mutableTagsAllowed": false
   },
   "web": {
     "image": {
       "name": "sokrates1989/flutter-felix-web",
-      "defaultVersion": "1.0.6",
+      "defaultVersion": "1.0.7",
       "mutableTagsAllowed": false
     },
     "resources": {
@@ -202,7 +202,7 @@
     "BACKEND_APP_ID": "felix",
     "APP_PROFILE": "felix",
     "PORT": "8080",
-    "IMAGE_TAG": "0.1.2",
+    "IMAGE_TAG": "1.0.7",
     "REDIS_URL": "redis://redis:6379/0",
     "DB_TYPE": "postgresql",
     "DB_MODE": "local",
