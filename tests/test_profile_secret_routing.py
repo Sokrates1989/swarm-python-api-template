@@ -106,7 +106,7 @@ class ProfileSecretRoutingStaticTests(unittest.TestCase):
         menu_source = MENU_HANDLERS.read_text(encoding="utf-8")
         requires = menu_source[
             menu_source.index("_profile_requires_secrets()")
-            : menu_source.index("_primary_service_suffix()")
+            : menu_source.index("# show_main_menu")
         ]
 
         self.assertIn("_profile_secrets_use_exact_names", secret_source)

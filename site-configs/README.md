@@ -71,6 +71,7 @@ Version 5.0 owns these main objects:
 | `exposure`, `routing` | Allowed public/direct exposure and safe routing defaults |
 | `database`, `services` | Database contract and exact service topology |
 | `image`, `web`, `resources`, `storage` | API/WebApp image, replica, opt-in memory, and storage defaults |
+| `release` | Optional release-stack identity, monotonic SemVer floor, and coordinated artifact IDs |
 | `pgadmin` | Optional PostgreSQL management-service defaults |
 | `cors`, `auth` | Browser-origin, authentication identity, realm policy, and verification contract |
 | `environment`, `envKeys` | Exact public runtime environment allowlist |
@@ -100,6 +101,12 @@ identity layer. `storage.dataRoot` may provide a safe absolute recommended
 host path. Missing or empty values fall back to the deployment checkout. The
 operator may choose another safe absolute path, which the ignored root `.env`
 preserves for later reconfiguration.
+
+The generated `.env` persists `DEPLOYMENT_PROFILE_ID`, so an installed clone
+reuses its exact site profile for subsequent setup and management actions.
+Only an unconfigured clone shows the full profile selector. If that persisted
+profile no longer exists, setup fails with an explicit identity error instead
+of silently switching to another app.
 
 For Keycloak profiles, `auth.serverUrl`, protected legacy identity, callbacks,
 mapper policy, application-role declarations, secret-free temporary test-user
@@ -147,9 +154,34 @@ editable Docker secret names to concise value guidance. The shared secret menu
 generates a protected temporary `secrets.env` directly from those declarations,
 while reconciliation-owned Keycloak client secrets are always excluded. A
 specialized static `secretsConfig.template` remains available for structured
-value shapes such as JSON maps. Successful profile imports delete their
-temporary values file automatically; failed or incomplete imports retain it for
+value shapes such as JSON maps. Every profile import deletes its temporary
+values file when the editor/import workflow ends, including after validation
+or Docker errors, so readable secret values are never left behind for
 correction.
+
+### Optional release coordination
+
+An executable profile can enroll independently built artifacts in one visible
+version line:
+
+```json
+"release": {
+  "stackId": "example-app",
+  "versionPolicy": "monotonic-floor",
+  "versionFloor": "1.0.0",
+  "components": ["api", "web", "android", "ios"]
+}
+```
+
+`stackId` and component IDs are safe identifiers. `versionFloor` is a stable
+`MAJOR.MINOR.PATCH` baseline, and `components` must include `api` plus `web`
+when `services.web` is enabled. The shared image-management menu computes the
+active baseline as the highest of this floor and every currently configured
+application-service version. Updating one service never forces an unchanged
+service to redeploy at a new version; the next update of any lagging service
+must select the current baseline or a higher patch/minor/major version. This
+metadata is application-neutral and `_template.json` demonstrates the contract
+for new stacks.
 
 Release image tags must be semantic versions. Infrastructure images must be
 registry-digest pinned. Secret values, passwords, tokens, and private keys are

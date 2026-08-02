@@ -13,7 +13,7 @@ Felix differs only through profile data:
 - WebApp host `felix-app.fe-wi.com`;
 - API host `api.felix-app.fe-wi.com`;
 - optional WebApp service enabled with image
-  `sokrates1989/flutter-felix-web`;
+  `sokrates1989/flutter-felix-web:1.0.6`;
 - backend image `sokrates1989/python-api-felix:0.1.2` (immutable release
   default; never `latest`);
 - Redis and local/external PostgreSQL;
@@ -22,6 +22,11 @@ Felix differs only through profile data:
   `felix-backend`, with protected legacy identity, selectable realm
   settings, application roles, and temporary test identities; and
 - exact Docker secret identifiers and file mounts.
+
+Felix is enrolled in release stack `felix` with the monotonic floor `1.0.6`
+and component catalog `api`, `web`, `android`, and `ios`. The catalog is
+coordination metadata; this Swarm profile directly manages only the declared
+API and WebApp services.
 
 Felix recommends `storage.dataRoot: /swarm/prod/felix`. Pressing Enter at the
 shared prompt therefore places `postgres_data`, `redis_data`, `backups`,
@@ -46,6 +51,17 @@ choice.
 Any other app can add a WebApp in exactly the same way. Disabling
 `services.web` and removing the associated WebApp fields produces an API-only
 stack without modifying production code.
+
+## Coordinated service versions
+
+The shared image menu compares the API and WebApp versions in the installed
+root `.env` with `release.versionFloor`. The greatest value is the release
+baseline. An API-only or WebApp-only fix changes only that selected service;
+when another component is updated later, the menu starts it at no less than
+the current baseline. Selecting both services applies one version to both.
+After the one displayed confirmation, the shared renderer rebuilds the stack,
+Docker Swarm updates it, and the normal health acceptance verifies the result.
+No Felix-specific menu or deployment branch implements this behavior.
 
 ## Keycloak and secrets
 

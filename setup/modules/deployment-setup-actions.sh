@@ -130,14 +130,22 @@ _prepare_deployment_data_directories() {
 # Repairs profile data-directory ownership, deploys the already-rendered stack,
 # and runs the common health check.
 #
+# Arguments:
+#   $1 - Optional "confirmed" mode when a parent workflow already confirmed
+#        the exact deployment plan.
+#
 # Returns:
-#   0 after deployment and health verification; otherwise nonzero.
+#   0 after deployment and health verification; otherwise nonzero. The global
+#   DEPLOY_CONFIGURED_STACK_MUTATED reports whether Docker accepted the deploy.
 #
 # Side effects:
 #   Mutates the selected Docker Swarm stack after the operator chooses deploy.
 # ------------------------------------------------------------------------------
 _deploy_configured_stack() {
     local stack_file="${PROJECT_ROOT}/swarm-stack.yml"
+    local confirmation_mode="${1:-prompt}"
+
+    DEPLOY_CONFIGURED_STACK_MUTATED=false
 
     if [ ! -f "$stack_file" ]; then
         echo "[ERROR] swarm-stack.yml is missing. Build it first."
@@ -146,7 +154,8 @@ _deploy_configured_stack() {
     _prepare_deployment_data_directories || return 1
     verify_required_docker_secrets "$stack_file" || return 1
     _prepare_profile_external_network || return 1
-    deploy_stack "$STACK_NAME" "$stack_file" || return 1
+    deploy_stack "$STACK_NAME" "$stack_file" "$confirmation_mode" || return 1
+    DEPLOY_CONFIGURED_STACK_MUTATED=true
     _check_configured_stack_health
 }
 

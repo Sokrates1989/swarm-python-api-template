@@ -192,7 +192,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-felix-web:1.0.5",
+            "sokrates1989/flutter-felix-web:1.0.6",
         )
         self.assertIn("\n  web:\n", stack)
         self.assertIn("\n  api:\n", stack)
@@ -280,7 +280,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-aurora-web:1.0.5",
+            "sokrates1989/flutter-aurora-web:1.0.6",
         )
         self.assertEqual(identity.realm, "aurora")
         self.assertEqual(identity.frontend_client_id, "aurora-frontend")
@@ -700,7 +700,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             profile.web_image_reference,
-            "sokrates1989/flutter-felix-test-web:1.0.5",
+            "sokrates1989/flutter-felix-test-web:1.0.6",
         )
         identity = load_keycloak_identity(profile)
         self.assertIn(
@@ -833,6 +833,10 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         )
         self.assertIn("your-username/flutter-example-app-web:0.1.0", stack)
         self.assertIn("example-app-frontend", json.dumps(profile.data))
+        self.assertEqual(
+            profile.data["release"]["components"],
+            ["api", "web", "android", "ios"],
+        )
 
 
 if __name__ == "__main__":

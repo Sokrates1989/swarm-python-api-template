@@ -38,7 +38,7 @@ For the WebApp:
 2. select app `felix`;
 3. open **Build & Deploy Selected App > Web**;
 4. build the selected-app Web image; and
-5. publish `sokrates1989/flutter-felix-web` with version `1.0.5` or the later
+5. publish `sokrates1989/flutter-felix-web` with version `1.0.6` or the later
    version deliberately selected for deployment.
 
 Both publication menus may update `latest` as a convenience tag. The Swarm

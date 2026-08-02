@@ -140,12 +140,7 @@ load_root_env "$PROJECT_ROOT"
 echo ""
 echo "📋 Deployment Overview"
 echo "========================"
-echo "Stack Name:     ${STACK_NAME:-not set}"
-echo "Profile:        ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-not set}}"
-echo "Domain:         ${DOMAIN:-not set}"
-echo "Database:       ${DB_TYPE:-not set} (${DB_MODE:-not set})"
-echo "Proxy:          ${PROXY_TYPE:-not set}"
-echo "Image:          ${IMAGE_NAME:-not set}:${IMAGE_VERSION:-latest}"
+show_plain_deployment_overview
 echo ""
 
 # Main menu

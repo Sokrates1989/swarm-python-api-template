@@ -28,6 +28,8 @@
 # Arguments:
 #   $1 - stack_name: the Docker stack name
 #   $2 - stack_file: path to swarm-stack.yml
+#   $3 - confirmation mode: "confirmed" skips the prompt when a parent action
+#        has already presented and confirmed the exact deployment plan.
 #
 # Returns:
 #   0 on success, 1 on failure or cancellation
@@ -35,6 +37,7 @@
 deploy_stack() {
     local stack_name="$1"
     local stack_file="$2"
+    local confirmation_mode="${3:-prompt}"
     
     # Resolve absolute paths for stack file and .env
     local stack_dir
@@ -52,10 +55,12 @@ deploy_stack() {
     echo "Stack file: $stack_file"
     echo ""
     
-    read -p "Deploy now? (Y/n): " CONFIRM_DEPLOY
-    if [[ "$CONFIRM_DEPLOY" =~ ^[Nn]$ ]]; then
-        echo "Deployment cancelled."
-        return 1
+    if [ "$confirmation_mode" != "confirmed" ]; then
+        read -p "Deploy now? (Y/n): " CONFIRM_DEPLOY
+        if [[ "$CONFIRM_DEPLOY" =~ ^[Nn]$ ]]; then
+            echo "Deployment cancelled."
+            return 1
+        fi
     fi
     
     echo ""

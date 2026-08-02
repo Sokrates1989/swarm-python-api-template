@@ -15,6 +15,17 @@
     "primaryService": "api",
     "name": "felix"
   },
+  "release": {
+    "stackId": "felix",
+    "versionPolicy": "monotonic-floor",
+    "versionFloor": "1.0.6",
+    "components": [
+      "api",
+      "web",
+      "android",
+      "ios"
+    ]
+  },
   "exposure": {
     "type": "public",
     "publicDomainRequired": true,
@@ -64,7 +75,7 @@
   "web": {
     "image": {
       "name": "sokrates1989/flutter-felix-web",
-      "defaultVersion": "1.0.5",
+      "defaultVersion": "1.0.6",
       "mutableTagsAllowed": false
     },
     "resources": {

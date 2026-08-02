@@ -21,6 +21,7 @@ from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from executable_profile_keycloak_validation import validate_keycloak_auth
+from executable_profile_release_validation import validate_release_coordination
 from executable_profile_support import (
     DIGEST_IMAGE_PATTERN,
     IMAGE_PATTERN,
@@ -621,6 +622,7 @@ def validate_config(data: Mapping[str, object]) -> None:
             "Executable API profiles require services.api=true."
         )
     _validate_routing(data, services)
+    validate_release_coordination(data, services)
     _validate_release_image(mapping(data["image"], "image"), "image")
     _validate_database(data, services)
     _validate_storage(data)

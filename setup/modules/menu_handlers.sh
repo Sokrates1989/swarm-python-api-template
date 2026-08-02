@@ -27,6 +27,12 @@ if [ -f "${MENU_HANDLERS_DIR}/menu_formatting.sh" ]; then
     source "${MENU_HANDLERS_DIR}/menu_formatting.sh"
 fi
 
+# Source the shared all-service overview.
+if [ -f "${MENU_HANDLERS_DIR}/menu-overview.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-overview.sh"
+fi
+
 # Source auth provider module
 if [ -f "${MENU_HANDLERS_DIR}/auth_provider.sh" ]; then
     # shellcheck source=/dev/null
@@ -51,42 +57,11 @@ if [ -f "${MENU_HANDLERS_DIR}/menu-configuration-actions.sh" ]; then
     source "${MENU_HANDLERS_DIR}/menu-configuration-actions.sh"
 fi
 
-# _stack_running
-# Checks if a Docker stack is running.
-#
-# Arguments:
-#   $1 - stack_name: name of the Docker stack
-#
-# Returns:
-#   0 if running, 1 otherwise
-_stack_running() {
-    local stack_name="$1"
-    docker stack ls --format '{{.Name}}' 2>/dev/null | grep -qx "${stack_name}"
-}
-
-# _service_replicas_healthy
-# Checks whether one Docker service has reached its desired replica count.
-#
-# Arguments:
-#   $1 - service_name: full Docker service name.
-#
-# Returns:
-#   0 when current replicas equal desired replicas and desired is greater than
-#   zero, 1 otherwise.
-_service_replicas_healthy() {
-    local service_name="$1"
-    local replicas
-    replicas=$(docker service ls --filter "name=${service_name}" --format '{{.Replicas}}' 2>/dev/null | head -n 1)
-
-    if [[ "$replicas" =~ ^([0-9]+)/([0-9]+)$ ]]; then
-        local current="${BASH_REMATCH[1]}"
-        local desired="${BASH_REMATCH[2]}"
-        [ "$desired" -gt 0 ] && [ "$current" = "$desired" ]
-        return $?
-    fi
-
-    return 1
-}
+# Source the targeted profile-driven image workflow.
+if [ -f "${MENU_HANDLERS_DIR}/menu-image-actions.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-image-actions.sh"
+fi
 
 # _profile_requires_secrets
 # Checks whether the active deployment profile declares Docker secrets.
@@ -112,134 +87,6 @@ _profile_requires_secrets() {
     fi
 
     return 0
-}
-
-# _primary_service_suffix
-# Resolves the active profile's primary service suffix.
-#
-# Arguments:
-#   None. Reads PRIMARY_SERVICE and STACK_FAMILY from the loaded environment.
-#
-# Outputs:
-#   Service suffix without the stack-name prefix.
-#
-# Returns:
-#   0 always.
-_primary_service_suffix() {
-    if [ -n "${PRIMARY_SERVICE:-}" ]; then
-        echo "$PRIMARY_SERVICE"
-        return 0
-    fi
-
-    if [ "${STACK_FAMILY:-api}" = "nginx" ]; then
-        echo "nginx"
-        return 0
-    fi
-
-    echo "api"
-}
-
-# _stack_service_names
-# Lists actual Docker services for the stack, or falls back to the primary
-# service before a deployment exists.
-#
-# Arguments:
-#   $1 - stack_name: Docker stack name.
-#
-# Outputs:
-#   One Docker service name per line.
-#
-# Returns:
-#   0 always.
-_stack_service_names() {
-    local stack_name="$1"
-    local services
-
-    services=$(docker service ls --filter "label=com.docker.stack.namespace=${stack_name}" --format '{{.Name}}' 2>/dev/null || true)
-    if [ -n "$services" ]; then
-        printf '%s\n' $services
-        return 0
-    fi
-
-    echo "${stack_name}_$(_primary_service_suffix)"
-}
-
-# _stack_services_healthy
-# Checks whether every deployed stack service has reached its desired replica
-# count. This avoids assuming an API service exists for nginx-only profiles.
-#
-# Arguments:
-#   $1 - stack_name: Docker stack name.
-#
-# Returns:
-#   0 when all deployed services are healthy, 1 otherwise.
-_stack_services_healthy() {
-    local stack_name="$1"
-    local services
-    local saw_service=false
-
-    services="$(_stack_service_names "$stack_name")"
-    while IFS= read -r service_name; do
-        [ -z "$service_name" ] && continue
-        saw_service=true
-        _service_replicas_healthy "$service_name" || return 1
-    done <<< "$services"
-
-    [ "$saw_service" = true ]
-}
-
-# show_deployment_overview
-# Displays a boxed deployment overview using globals from load_root_env.
-#
-# Arguments:
-#   (none — reads exported globals)
-show_deployment_overview() {
-    local stack_name="${STACK_NAME:-unknown}"
-    local proxy_type="${PROXY_TYPE:-none}"
-    local db_type="${DB_TYPE:-postgresql}"
-    local api_url="${DOMAIN:-}"
-    local image_name="${IMAGE_NAME:-}"
-    local image_version="${IMAGE_VERSION:-latest}"
-    local deployment_profile="${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-}}"
-
-    local ok_icon="✅"
-    local off_icon="⏹️"
-    local warn_icon="⚠️"
-    local stack_status="${off_icon} not running"
-    local image_icon="${off_icon}"
-
-    if _stack_running "$stack_name"; then
-        if _stack_services_healthy "$stack_name"; then
-            stack_status="${ok_icon} healthy"
-            image_icon="${ok_icon}"
-        else
-            stack_status="${warn_icon} degraded"
-            image_icon="${warn_icon}"
-        fi
-    else
-        stack_status="${off_icon} not running"
-        image_icon="${off_icon}"
-    fi
-
-    _box_rule
-    _box_line "Deployment Overview"
-    _box_rule
-    _box_line "Stack    : ${stack_name} (${stack_status})"
-    if [ -n "$deployment_profile" ]; then
-        _box_line "Profile  : ${deployment_profile}"
-    fi
-    _box_line "Proxy    : ${proxy_type}"
-    _box_line "DB Type  : ${db_type}"
-    if [ -n "$api_url" ]; then
-        _box_line "Domain   : ${api_url}"
-    fi
-    _box_line "Images   :"
-    _box_line_list "${image_icon} ${image_name}:${image_version}"
-    if declare -F show_git_status_line >/dev/null; then
-        _box_line "$(show_git_status_line)"
-    fi
-    _box_rule
-    echo ""
 }
 
 # ==============================================================================
@@ -481,9 +328,7 @@ show_main_menu() {
             fi
             ;;
         ${MENU_UPDATE_IMAGE})
-            _run_shared_reconfiguration \
-                "Change image repositories or versions through the shared wizard." ||
-                true
+            manage_service_images || true
             ;;
         ${MENU_SCALE})
             _run_shared_reconfiguration \

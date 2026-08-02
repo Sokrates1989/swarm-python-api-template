@@ -53,7 +53,9 @@
 #   APP_SECRETS_TEMPLATE, APP_SECRETS_PREFIXED,
 #   APP_SECRET_NAMES, APP_OPTIONAL_SECRET_NAMES, APP_ENV_KEYS,
 #   APP_RENDERER_TYPE, APP_RENDERER_STRICT, APP_RENDERER_API_TEMPLATE,
-#   APP_RENDERER_FOOTER_TEMPLATE, APP_REQUIRES_WEB
+#   APP_RENDERER_FOOTER_TEMPLATE, APP_REQUIRES_WEB,
+#   APP_RELEASE_STACK_ID, APP_RELEASE_VERSION_POLICY,
+#   APP_RELEASE_VERSION_FLOOR
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
@@ -349,6 +351,12 @@ load_app_config() {
     APP_IMAGE_DEFAULT_VERSION="$(_jq_or_default "$config_file" '.image.defaultVersion' "latest")"
     APP_WEB_IMAGE_NAME="$(_jq_or_default "$config_file" '.web.image.name' "")"
     APP_WEB_IMAGE_DEFAULT_VERSION="$(_jq_or_default "$config_file" '.web.image.defaultVersion' "")"
+
+    # Optional cross-component release coordination. Profiles without this
+    # block use the highest currently configured application-image version.
+    APP_RELEASE_STACK_ID="$(_jq_or_default "$config_file" '.release.stackId' "")"
+    APP_RELEASE_VERSION_POLICY="$(_jq_or_default "$config_file" '.release.versionPolicy' "")"
+    APP_RELEASE_VERSION_FLOOR="$(_jq_or_default "$config_file" '.release.versionFloor' "")"
 
     # Resource defaults
     APP_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.resources.defaultReplicas' "1")"

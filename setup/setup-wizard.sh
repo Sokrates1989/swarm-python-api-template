@@ -9,7 +9,7 @@
 # user experience.
 #
 # Flow:
-#   1. Select a site-config deployment profile.
+#   1. Reuse the root-environment profile, or select one on first setup.
 #   2. Collect stack, routing, database, service, and resource choices once.
 #   3. Persist through the legacy compatibility or executable adapter.
 #   4. Render the stack through the selected adapter.
@@ -57,6 +57,43 @@ if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
     # shellcheck disable=SC1091
     source "${SCRIPT_DIR}/modules/cognito_setup.sh"
 fi
+
+# ------------------------------------------------------------------------------
+# select_setup_profile
+# ------------------------------------------------------------------------------
+# Reuses the exact profile persisted in an existing root environment. A clone
+# receives the full selector only before its first profile has been recorded,
+# avoiding both accidental identity drift and repetitive installed-stack input.
+#
+# Returns:
+#   0 after setting SELECTED_SETUP_PROFILE; 1 when the persisted profile is
+#   missing from site-configs.
+# ------------------------------------------------------------------------------
+select_setup_profile() {
+    local configured_profile=""
+
+    SELECTED_SETUP_PROFILE=""
+    if [ -f "${PROJECT_ROOT}/.env" ]; then
+        configured_profile="$(_root_env_value \
+            "${PROJECT_ROOT}/.env" DEPLOYMENT_PROFILE_ID)"
+        configured_profile="${configured_profile:-$(_root_env_value \
+            "${PROJECT_ROOT}/.env" BACKEND_APP_ID)}"
+    fi
+    if [ -n "$configured_profile" ]; then
+        if [ ! -f "${PROJECT_ROOT}/site-configs/${configured_profile}.json" ]; then
+            echo "[ERROR] Persisted deployment profile is missing: ${configured_profile}"
+            return 1
+        fi
+        echo "Step 1: Reuse the deployment profile saved by this installation."
+        echo ""
+        echo "Deployment profile from .env: ${configured_profile}"
+        SELECTED_SETUP_PROFILE="$configured_profile"
+        return 0
+    fi
+    echo "Step 1: Select the deployment profile for this instance."
+    echo ""
+    SELECTED_SETUP_PROFILE="$(show_app_selector "$PROJECT_ROOT")"
+}
 
 # ------------------------------------------------------------------------------
 # select_setup_mode
@@ -213,9 +250,8 @@ run_setup_wizard() {
     echo "site-configs/ holds deployment profiles describing what this deployment needs."
     echo ""
 
-    echo "Step 1: Select the deployment profile for this instance."
-    echo ""
-    selected_config="$(show_app_selector "$PROJECT_ROOT")"
+    select_setup_profile || return 1
+    selected_config="$SELECTED_SETUP_PROFILE"
     if [ "$selected_config" = "EXIT" ] || [ -z "$selected_config" ]; then
         echo "No deployment profile selected. Exiting."
         return 0

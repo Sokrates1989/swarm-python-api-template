@@ -128,6 +128,9 @@ The same menu owns configuration, profile-declared Keycloak reconciliation,
 secrets, deployment, health, logs, and rollback for every selected profile.
 Build and push application images from the selected-app quick-start menus in
 their source repositories; never publish them from this Swarm checkout or CI.
+The startup and main-menu overviews enumerate every service owned by the
+configured stack. Live Docker services are authoritative after deployment;
+before first deployment, the generated stack provides the inventory.
 The Felix hand-off is documented in
 [`docs/release_contracts/felix_rls13_runbook.md`](docs/release_contracts/felix_rls13_runbook.md).
 
@@ -139,8 +142,11 @@ The Felix hand-off is documented in
 - **Deploy to Swarm** — deploy `swarm-stack.yml`.
 - **Rollback services** — restore Docker's retained previous service specs.
 - **Check status** — health check the running stack.
-- **View logs** — tail API, database, or Redis logs.
-- **Change service images** — reopen the same setup dialogue for image versions.
+- **View logs** — select and tail any discovered stack service.
+- **Change service images** — reuse the saved deployment profile, choose one
+  application service or all application services, select a stack-aware
+  semantic version, then render, deploy, and run health acceptance as one
+  confirmed action. Digest-pinned infrastructure images remain profile-owned.
 - **Change replicas** — reopen the same setup dialogue for replica counts.
 - **Remove deployment** — tear down the stack.
 - **Rebuild swarm stack** — regenerate `swarm-stack.yml` from compose modules.
@@ -165,6 +171,10 @@ setup/
     executable-profile-wizard.sh   ← prompt-free version-5 adapter
     deployment-setup-actions.sh    ← shared final-action menu
     menu_handlers.sh               ← operations menu
+    menu-overview.sh               ← live/configured all-service inventory
+    menu-image-actions.sh          ← targeted image/version dialogue
+    menu-image-transaction.sh      ← render/deploy/health transaction boundary
+    semantic-version.sh            ← shared SemVer compare/bump chooser
     menu-configuration-actions.sh  ← shared reconfiguration and reload
     menu-restore-actions.sh        ← validated restore and immediate render
     config-builder.sh              ← compose-module rendering utilities
@@ -232,6 +242,7 @@ Version 5.0 adds a strict full-stack contract:
 | `routing` / `exposure` | API/WebApp hosts, health paths, direct ports, and distinct Traefik network/provider-label/resolver defaults |
 | `services.web` | Adds the optional WebApp service when true |
 | `web` | WebApp image, version, replicas, and optional memory limit |
+| `release` | Optional stack ID, monotonic SemVer floor, and cross-artifact component catalog |
 | `auth` | Keycloak identity, selectable realm defaults, callbacks, application roles, secret-free temporary users, protected legacy values, and service-account roles |
 | `environment` / `envKeys` | Exact public runtime allowlist |
 | `secretMounts` | Exact file-backed Docker secret mappings |
@@ -259,6 +270,15 @@ written to the ignored root `.env`; changing `.env` never changes the tracked
 profile defaults. `DATA_ROOT` uses the optional `storage.dataRoot` recommendation
 or falls back to the repository checkout path. The shared setup prompt can
 change either default to another safe absolute host path.
+
+The root `.env` also persists `DEPLOYMENT_PROFILE_ID`. Subsequent setup and
+management actions reuse that exact profile instead of asking the operator to
+select the installation identity again. When a profile declares
+`release.versionPolicy: monotonic-floor`, the image menu uses the greatest of
+the declared floor and currently configured application-service versions as
+the next component's baseline. A component that does not need a new artifact
+remains untouched; whenever it is updated later, its selected version cannot
+fall below the stack baseline.
 
 There is no schema version 4 in this repository. Version 5.0 was introduced as
 the strict executable full-stack contract and deliberately uses a new major

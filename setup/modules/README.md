@@ -25,6 +25,8 @@ In particular:
 - `auth` contains Keycloak identity, selectable realm defaults, application
   roles, secret-free temporary test users, protected legacy values, and exact
   service-account client roles;
+- `release` optionally enrolls application artifacts in a shared monotonic
+  semantic-version floor;
 - `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
   secrets; and
 - `capabilities` contributes optional public environment and secret mounts.
@@ -93,6 +95,26 @@ Owns one dynamically numbered final-action menu. Docker secrets and Keycloak
 actions appear only when the profile declares those capabilities. Every direct
 or full deployment first invokes the common data-directory preparation step;
 the operation is cached only within that one menu process after it succeeds.
+The deployment boundary accepts an internal `confirmed` mode only for parent
+workflows that have already shown and confirmed the exact mutation plan; it
+still performs the same secret, network, deployment, and health checks.
+
+### Operations overview and image management
+
+`menu-overview.sh` discovers live services by Docker's stack-namespace label
+and lists every service with replica and image state. If the stack does not yet
+exist, it reads the generated stack instead. It does not keep a hard-coded API,
+WebApp, database, or infrastructure inventory.
+
+`menu-image-actions.sh` reads application-image capabilities from the active
+profile and saved root environment. It lets the operator choose one release
+service or all release services, while `semantic-version.sh` provides the one
+shared stable-SemVer comparison and bump dialogue. `menu-image-transaction.sh`
+stages the public `.env`, rebuilds through `scripts/build-site-stack.sh`, and
+calls the common deploy/health boundary after a single Enter-default
+confirmation. Pre-deployment failures restore the old `.env` and generated
+stack. Infrastructure images remain digest-pinned profile data and are shown
+in the overview rather than rewritten by this action.
 
 ### `data-dirs.sh`
 

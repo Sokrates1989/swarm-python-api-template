@@ -57,6 +57,9 @@ SITE_HELPERS = (
 MENU_HANDLERS = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
 )
+IMAGE_ACTIONS = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-image-actions.sh"
+)
 KEYCLOAK_BOOTSTRAP = (
     REPOSITORY_ROOT / "setup" / "modules" / "keycloak-bootstrap.sh"
 )
@@ -613,19 +616,23 @@ printf 'DOMAINS=%s|%s\n' "$WEB_DOMAIN" "$DOMAIN"
             "/swarm/prod/felix",
         )
 
-    def test_management_changes_reuse_the_shared_dialogue(self) -> None:
-        """Keep image, replica, and admin settings out of renderer branches.
+    def test_management_changes_remain_profile_driven(self) -> None:
+        """Keep targeted and full management paths out of renderer branches.
 
         Returns:
             Nothing.
         """
 
-        source = MENU_HANDLERS.read_text(encoding="utf-8")
+        menu_source = MENU_HANDLERS.read_text(encoding="utf-8")
+        image_source = IMAGE_ACTIONS.read_text(encoding="utf-8")
 
-        self.assertNotIn("profile_uses_executable_renderer", source)
-        self.assertNotIn("docker service update --image", source)
-        self.assertNotIn("docker service scale", source)
-        self.assertIn("_run_shared_reconfiguration", source)
+        self.assertNotIn("profile_uses_executable_renderer", menu_source)
+        self.assertNotIn("docker service update --image", menu_source)
+        self.assertNotIn("docker service scale", menu_source)
+        self.assertIn("manage_service_images", menu_source)
+        self.assertIn("_run_shared_reconfiguration", menu_source)
+        self.assertIn("_managed_release_image_records", image_source)
+        self.assertNotIn("felix", image_source.lower())
 
     def test_profile_data_expresses_real_service_differences(self) -> None:
         """Verify Felix and Secure Messaging differ through profile data.

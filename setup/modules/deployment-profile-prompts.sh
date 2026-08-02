@@ -61,8 +61,9 @@ _deployment_public_domain_prompt_label() {
 # Validates a normalized free-text deployment answer.
 #
 # Arguments:
-#   $1 - Validation kind: nonempty, name, domain, host, identifier, tag, url,
-#        integer, positive, port, image, memory, path, email, or any.
+#   $1 - Validation kind: nonempty, name, domain, host, identifier, tag,
+#        semver, url, integer, positive, port, image, memory, path, email,
+#        or any.
 #   $2 - Candidate value.
 #
 # Returns:
@@ -108,6 +109,9 @@ _deployment_value_is_valid() {
             ;;
         tag)
             [[ "$value" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]
+            ;;
+        semver)
+            [[ "$value" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
             ;;
         url)
             [[ "$value" =~ ^https?://[a-zA-Z0-9][a-zA-Z0-9._:/%+-]*$ ]]

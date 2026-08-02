@@ -100,6 +100,7 @@ class ExecutableProfile:
         """Return deterministic public evidence without secret values."""
 
         services = mapping(self.data["services"], "services")
+        release = mapping(self.data.get("release", {}), "release")
         return {
             "profileId": self.config_id,
             "appId": self.app_id,
@@ -111,6 +112,16 @@ class ExecutableProfile:
             ],
             "apiImage": self.image_reference,
             "webImage": self.web_image_reference or None,
+            "releaseStack": (
+                {
+                    "stackId": release["stackId"],
+                    "versionPolicy": release["versionPolicy"],
+                    "versionFloor": release["versionFloor"],
+                    "components": list(release["components"]),
+                }
+                if release
+                else None
+            ),
             "dockerSecrets": [
                 mount.name for mount in self.secret_mounts
             ],
