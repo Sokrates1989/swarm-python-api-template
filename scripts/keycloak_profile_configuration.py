@@ -40,6 +40,12 @@ from keycloak_profile_application_access import (
     KeycloakBootstrapTestUser,
     KeycloakRealmRole,
 )
+from keycloak_profile_realm_configuration import (
+    EMPTY_VALUE_SENTINEL,
+    KeycloakEmailSenderSettings,
+    KeycloakLocalizationSettings,
+    KeycloakThemeSettings,
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,9 @@ class KeycloakBootstrapValues:
         realm: Operator-selected realm name.
         realm_display_name: Operator-selected human-readable realm name.
         realm_settings: Operator-selected realm boolean settings.
+        theme_settings: Operator-selected realm themes.
+        localization_settings: Operator-selected locale configuration.
+        email_sender_settings: Operator-selected public SMTP sender settings.
         realm_roles: Application roles selected for this bootstrap run.
         bootstrap_test_users_enabled: Whether at least one temporary user is
             selected for this deployment.
@@ -67,6 +76,9 @@ class KeycloakBootstrapValues:
     realm: str
     realm_display_name: str
     realm_settings: tuple[tuple[str, bool], ...]
+    theme_settings: KeycloakThemeSettings
+    localization_settings: KeycloakLocalizationSettings
+    email_sender_settings: KeycloakEmailSenderSettings
     realm_roles: tuple[KeycloakRealmRole, ...]
     bootstrap_test_users_enabled: bool
     bootstrap_test_users: tuple[KeycloakBootstrapTestUser, ...]
@@ -95,6 +107,9 @@ class KeycloakBootstrapValues:
             realm=identity.realm,
             realm_display_name=identity.realm_display_name,
             realm_settings=identity.realm_settings,
+            theme_settings=identity.theme_settings,
+            localization_settings=identity.localization_settings,
+            email_sender_settings=identity.email_sender_settings,
             realm_roles=identity.realm_roles,
             bootstrap_test_users_enabled=(
                 identity.bootstrap_test_users_enabled
@@ -154,6 +169,19 @@ def _url_hostname(value: str, field: str) -> str:
     if not hostname:
         raise ExecutableProfileError(f"{field} must contain a hostname.")
     return hostname
+
+
+def _persistent_optional_value(value: str) -> str:
+    """Encode an explicit empty public value without confusing it with fallback.
+
+    Args:
+        value: Operator-selected optional public text.
+
+    Returns:
+        Original text, or the documented empty sentinel for an empty value.
+    """
+
+    return value or EMPTY_VALUE_SENTINEL
 
 
 def _updated_cors_origins(
@@ -231,10 +259,67 @@ def deployment_updates(
         "DOMAIN": _url_hostname(api_root, "Backend API client root URL"),
     }
     selected_settings = dict(values.realm_settings)
+    if not values.email_sender_settings.enabled and (
+        selected_settings["resetPasswordAllowed"]
+        or selected_settings["verifyEmail"]
+    ):
+        raise KeycloakProfileError(
+            "Password reset or verified-email enforcement requires a "
+            "configured Keycloak realm email sender. Enable SMTP or disable "
+            "both dependent realm settings."
+        )
     for setting_name, environment_key in KEYCLOAK_REALM_SETTING_ENV_KEYS:
         updates[environment_key] = str(
             selected_settings[setting_name]
         ).lower()
+    themes = values.theme_settings
+    updates.update(
+        {
+            "KEYCLOAK_LOGIN_THEME": themes.login,
+            "KEYCLOAK_ACCOUNT_THEME": themes.account,
+            "KEYCLOAK_ADMIN_THEME": themes.admin,
+            "KEYCLOAK_EMAIL_THEME": themes.email,
+        }
+    )
+    localization = values.localization_settings
+    updates.update(
+        {
+            "KEYCLOAK_INTERNATIONALIZATION_ENABLED": str(
+                localization.enabled
+            ).lower(),
+            "KEYCLOAK_SUPPORTED_LOCALES": ",".join(
+                localization.supported_locales
+            ),
+            "KEYCLOAK_DEFAULT_LOCALE": localization.default_locale,
+        }
+    )
+    sender = values.email_sender_settings
+    updates.update(
+        {
+            "KEYCLOAK_EMAIL_SENDER_ENABLED": str(sender.enabled).lower(),
+            "KEYCLOAK_SMTP_FROM": sender.from_address,
+            "KEYCLOAK_SMTP_FROM_DISPLAY_NAME": _persistent_optional_value(
+                sender.from_display_name
+            ),
+            "KEYCLOAK_SMTP_REPLY_TO": _persistent_optional_value(
+                sender.reply_to
+            ),
+            "KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME": (
+                _persistent_optional_value(sender.reply_to_display_name)
+            ),
+            "KEYCLOAK_SMTP_ENVELOPE_FROM": _persistent_optional_value(
+                sender.envelope_from
+            ),
+            "KEYCLOAK_SMTP_HOST": sender.host,
+            "KEYCLOAK_SMTP_PORT": str(sender.port),
+            "KEYCLOAK_SMTP_STARTTLS": str(sender.start_tls).lower(),
+            "KEYCLOAK_SMTP_SSL": str(sender.ssl).lower(),
+            "KEYCLOAK_SMTP_AUTH": str(sender.authentication).lower(),
+            "KEYCLOAK_SMTP_USERNAME": _persistent_optional_value(
+                sender.username
+            ),
+        }
+    )
     return updates
 
 

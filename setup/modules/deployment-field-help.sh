@@ -48,7 +48,8 @@ deployment_field_validation_kind() {
         REDIS_URL)
             echo "url"
             ;;
-        DB_HOST|POSTGRES_HOST|MONGODB_HOST|NEO4J_HOST|REDIS_HOST)
+        DB_HOST|POSTGRES_HOST|MONGODB_HOST|NEO4J_HOST|REDIS_HOST|\
+        KEYCLOAK_SMTP_HOST)
             echo "host"
             ;;
         DB_NAME|DB_USER|POSTGRES_DB|POSTGRES_USER|MONGODB_DB|MONGODB_USER|\
@@ -78,13 +79,14 @@ deployment_field_validation_kind() {
             ;;
         API_PUBLISHED_PORT|WEB_PUBLISHED_PORT|PGADMIN_PUBLISHED_PORT|\
         PUBLISHED_PORT|PORT|DB_PORT|POSTGRES_PORT|MONGODB_PORT|NEO4J_PORT|\
-        REDIS_PORT)
+        REDIS_PORT|KEYCLOAK_SMTP_PORT)
             echo "port"
             ;;
         DATA_ROOT)
             echo "path"
             ;;
-        PGADMIN_EMAIL)
+        PGADMIN_EMAIL|KEYCLOAK_SMTP_FROM|KEYCLOAK_SMTP_REPLY_TO|\
+        KEYCLOAK_SMTP_ENVELOPE_FROM)
             echo "email"
             ;;
         *)
@@ -124,6 +126,9 @@ _deployment_field_specific_help_id() {
         KEYCLOAK_REGISTRATION_ALLOWED|KEYCLOAK_RESET_PASSWORD_ALLOWED|\
         KEYCLOAK_REMEMBER_ME|KEYCLOAK_VERIFY_EMAIL|\
         KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED|\
+        KEYCLOAK_INTERNATIONALIZATION_ENABLED|\
+        KEYCLOAK_EMAIL_SENDER_ENABLED|KEYCLOAK_SMTP_STARTTLS|\
+        KEYCLOAK_SMTP_SSL|KEYCLOAK_SMTP_AUTH|\
         KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED)
             echo "boolean-toggle"
             ;;
@@ -143,6 +148,18 @@ _deployment_field_specific_help_id() {
             ;;
         KEYCLOAK_REALM_DISPLAY_NAME)
             echo "realm-display-name"
+            ;;
+        KEYCLOAK_LOGIN_THEME|KEYCLOAK_ACCOUNT_THEME|KEYCLOAK_ADMIN_THEME|\
+        KEYCLOAK_EMAIL_THEME)
+            echo "keycloak-theme"
+            ;;
+        KEYCLOAK_SUPPORTED_LOCALES|KEYCLOAK_DEFAULT_LOCALE)
+            echo "keycloak-locales"
+            ;;
+        KEYCLOAK_SMTP_FROM_DISPLAY_NAME|KEYCLOAK_SMTP_REPLY_TO|\
+        KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME|KEYCLOAK_SMTP_ENVELOPE_FROM|\
+        KEYCLOAK_SMTP_USERNAME)
+            echo "keycloak-smtp-public"
             ;;
         *)
             return 1
@@ -196,6 +213,15 @@ _deployment_field_specific_help() {
             ;;
         realm-display-name)
             echo "Human-readable realm name shown on Keycloak login and administration screens."
+            ;;
+        keycloak-theme)
+            echo "Installed Keycloak theme name, or default to inherit the server default; live bootstrap verifies custom names."
+            ;;
+        keycloak-locales)
+            echo "Supported locales are comma-separated language tags; the default locale must appear in that list."
+            ;;
+        keycloak-smtp-public)
+            echo "Public realm SMTP metadata only; <empty> explicitly clears an optional profile default. Never put the SMTP password here; bootstrap requests it without echo."
             ;;
     esac
 }

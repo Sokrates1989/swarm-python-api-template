@@ -190,6 +190,12 @@ forbidden in site configs and root `.env`.
 For `auth.provider=keycloak`, schema 5 also requires:
 
 - `realmDisplayName` and the exact boolean `realmSettings` allowlist;
+- `themes`, containing login, account, admin, and email theme defaults; use
+  `default` to inherit the corresponding installed server default;
+- `localization`, containing internationalization enablement, unique supported
+  locales, and a default locale that belongs to that list;
+- `emailSender`, containing only public sender and SMTP transport defaults;
+  password fields are forbidden;
 - `realmRoles`, containing the selectable application-role catalog with unique
   names and descriptions;
 - `bootstrapTestUsersEnabled`, which supplies the initial deployment default;
@@ -223,10 +229,24 @@ manual bootstrap users until declining the loop. These detailed choices are
 secret-free runtime intent; the site profile remains the allowed/default
 catalog and `.env` retains the aggregate lifecycle default.
 
-The bootstrap authenticates to the existing server, prints a read-only
-sanitized plan, applies only after confirmation, then verifies Admin API
-read-back, issuer, JWKS, audience mapper, application roles, temporary users,
-exact declared service-account role groups, and forbidden-user absence. With
+The guided review asks for all four realm themes, internationalization and
+locales, and the realm email sender. If verified-email or password-reset
+features are selected, SMTP is the recommended Enter default. Public SMTP
+values persist to the ignored root `.env`; an authentication password is
+requested without echo only after the authenticated live-state plan and is
+sent directly to Keycloak. A disabled `emailSender` profile default means the
+profile does not alter an existing realm SMTP map. Interactive setup still
+requires the operator to configure SMTP or disable email-dependent settings.
+Entering `none` for optional sender metadata stores the documented `<empty>`
+sentinel so a non-empty profile default can be cleared unambiguously.
+
+The bootstrap authenticates to the existing server, verifies custom themes
+against the live server inventory, prints a read-only sanitized plan, applies
+only after confirmation, then verifies Admin API read-back, issuer, JWKS,
+audience mapper, application roles, temporary users, exact declared
+service-account role groups, and forbidden-user absence. When a new or updated
+authenticated SMTP map is applied, Keycloak's SMTP connection test must also
+pass. With
 the frontend client's full-scope switch disabled, all declared application
 roles are added to its dedicated realm-role scope so assigned roles can reach
 tokens. Exact service-account verification covers both direct assignments and
@@ -256,6 +276,12 @@ Keycloak and reruns the plan. Application roles remain the production
 authorization contract after those temporary identities are gone. A disabled
 realm may be reconciled, but it must be enabled for a bootstrap run that needs
 to create or rotate and prove the confidential client secret.
+
+Every successful interactive run prints the exact realm-settings Admin UI URL
+and pauses for a manual review of themes, localization, and email sender state.
+The operator must use the UI's **Test connection** action and trigger one real
+verification or password-reset email to prove delivery beyond Keycloak's
+configuration read-back.
 
 `_template.json` is the canonical schema-5 new-app starting point. Copy it to
 `<profile-id>.json`, replace its example public identity and image values, add

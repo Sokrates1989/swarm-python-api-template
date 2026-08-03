@@ -123,6 +123,33 @@
       "verifyEmail": true,
       "loginWithEmailAllowed": true
     },
+    "themes": {
+      "login": "default",
+      "account": "default",
+      "admin": "default",
+      "email": "default"
+    },
+    "localization": {
+      "enabled": true,
+      "supportedLocales": [
+        "en"
+      ],
+      "defaultLocale": "en"
+    },
+    "emailSender": {
+      "enabled": false,
+      "from": "",
+      "fromDisplayName": "Example App",
+      "replyTo": "",
+      "replyToDisplayName": "Example App",
+      "envelopeFrom": "",
+      "host": "",
+      "port": 587,
+      "startTls": true,
+      "ssl": false,
+      "authentication": true,
+      "username": ""
+    },
     "realmRoles": [
       {
         "name": "user",

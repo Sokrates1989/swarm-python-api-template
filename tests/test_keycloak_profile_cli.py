@@ -29,16 +29,42 @@ if str(SCRIPTS_DIRECTORY) not in sys.path:
 
 import keycloak_profile_bootstrap_cli as bootstrap  # noqa: E402
 from keycloak_profile_cli import (  # noqa: E402
+    _prompt_required_value,
+    prompt_admin_ui_verification,
     prompt_admin_user,
     prompt_bootstrap_values,
     prompt_bootstrap_test_user_passwords,
     prompt_secret_safe_debug,
+    prompt_smtp_password,
 )
 from keycloak_profile_client import KeycloakProfileError  # noqa: E402
+from keycloak_profile_realm_configuration import (  # noqa: E402
+    KeycloakEmailSenderSettings,
+    KeycloakLocalizationSettings,
+    KeycloakThemeSettings,
+)
 
 
 class KeycloakProfileCliTests(unittest.TestCase):
     """Verify the interactive administrator credential prompt boundary."""
+
+    def test_required_smtp_value_reprompts_without_an_empty_default(
+        self,
+    ) -> None:
+        """Keep a guided SMTP field local until it has a usable value.
+
+        Returns:
+            Nothing.
+        """
+
+        with patch(
+            "builtins.input",
+            side_effect=["", "smtp.example.com"],
+        ), patch("builtins.print") as printed:
+            selected = _prompt_required_value("SMTP host", "")
+
+        self.assertEqual(selected, "smtp.example.com")
+        self.assertIn("is required", str(printed.call_args_list))
 
     def test_bootstrap_values_accept_defaults_and_operator_changes(
         self,
@@ -66,10 +92,30 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 ("verifyEmail", True),
                 ("loginWithEmailAllowed", True),
             ),
+            theme_settings=KeycloakThemeSettings(
+                "default", "default", "default", "default"
+            ),
+            localization_settings=KeycloakLocalizationSettings(
+                True, ("de", "en"), "de"
+            ),
+            email_sender_settings=KeycloakEmailSenderSettings(
+                True,
+                "noreply@example.com",
+                "Example",
+                "",
+                "",
+                "",
+                "smtp.example.com",
+                587,
+                True,
+                False,
+                True,
+                "noreply@example.com",
+            ),
             bootstrap_test_users_enabled=False,
             bootstrap_test_users=(),
         )
-        with patch("builtins.input", side_effect=[""] * 13), patch(
+        with patch("builtins.input", side_effect=[""] * 32), patch(
             "builtins.print"
         ):
             defaults = prompt_bootstrap_values(identity)
@@ -84,12 +130,7 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "https://selected.example.com",
                 "https://api-selected.example.com",
                 "selected-audience",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
+                *([""] * 25),
             ],
         ), patch("builtins.print"):
             selected = prompt_bootstrap_values(identity)
@@ -140,6 +181,62 @@ class KeycloakProfileCliTests(unittest.TestCase):
             side_effect=["one", "different"],
         ), self.assertRaisesRegex(KeycloakProfileError, "differs"):
             prompt_bootstrap_test_user_passwords(SimpleNamespace(), plan)
+
+    def test_smtp_password_is_hidden_and_confirmed_only_when_required(
+        self,
+    ) -> None:
+        """Collect SMTP credentials only for a plan that mutates the sender.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(
+            email_sender_settings=SimpleNamespace(
+                host="smtp.example.com",
+                port=587,
+                username="smtp-user",
+            )
+        )
+        with patch(
+            "keycloak_profile_cli.getpass.getpass",
+            side_effect=["smtp-secret", "smtp-secret"],
+        ):
+            password = prompt_smtp_password(
+                identity,
+                {"smtpPasswordRequired": True},
+            )
+        self.assertEqual(password, "smtp-secret")
+        self.assertIsNone(
+            prompt_smtp_password(identity, {"smtpPasswordRequired": False})
+        )
+
+    def test_admin_ui_checklist_includes_email_delivery_verification(
+        self,
+    ) -> None:
+        """Direct the operator to realm settings and a real email check.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(
+            server_url="https://keycloak.example.com",
+            realm="example",
+            email_sender_settings=SimpleNamespace(enabled=True),
+        )
+        with patch("builtins.print") as printed:
+            prompt_admin_ui_verification(
+                identity,
+                {"smtpConnectionTest": "passed"},
+                wait_for_operator=False,
+            )
+        rendered = "\n".join(
+            str(call.args[0]) for call in printed.call_args_list if call.args
+        )
+        self.assertIn("#/example/realm-settings", rendered)
+        self.assertIn("Test connection", rendered)
+        self.assertIn("real verification or password-reset email", rendered)
 
     def test_password_prompt_repeats_selected_roles_and_mode(self) -> None:
         """Show exact user intent before collecting a hidden credential.
@@ -199,12 +296,32 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 ("verifyEmail", True),
                 ("loginWithEmailAllowed", True),
             ),
+            theme_settings=KeycloakThemeSettings(
+                "default", "default", "default", "default"
+            ),
+            localization_settings=KeycloakLocalizationSettings(
+                True, ("de", "en"), "de"
+            ),
+            email_sender_settings=KeycloakEmailSenderSettings(
+                True,
+                "noreply@example.com",
+                "Example",
+                "",
+                "",
+                "",
+                "smtp.example.com",
+                587,
+                True,
+                False,
+                True,
+                "noreply@example.com",
+            ),
             bootstrap_test_users_enabled=False,
             bootstrap_test_users=(),
         )
         answers = ["", "", "", "selected-backend", "", "", ""] + [
             ""
-        ] * 6
+        ] * 25
         with patch("builtins.input", side_effect=answers), patch(
             "builtins.print"
         ):
@@ -326,6 +443,11 @@ class KeycloakProfileCliTests(unittest.TestCase):
             ),
             patch.object(
                 bootstrap,
+                "prompt_smtp_password",
+                side_effect=lambda *_args: events.append("smtp-password") or None,
+            ),
+            patch.object(
+                bootstrap,
                 "prompt_bootstrap_test_user_passwords",
                 side_effect=lambda *_args: events.append("user-passwords") or {},
             ),
@@ -346,6 +468,13 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "print_completion",
                 side_effect=lambda *_args: events.append("completion"),
             ),
+            patch.object(
+                bootstrap,
+                "prompt_admin_ui_verification",
+                side_effect=lambda *_args, **_kwargs: events.append(
+                    "admin-ui-verification"
+                ),
+            ),
             patch("builtins.print"),
         ):
             status = bootstrap.main(["--root", str(REPOSITORY_ROOT)])
@@ -362,10 +491,12 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "username",
                 "password",
                 "plan",
+                "smtp-password",
                 "user-passwords",
                 "confirm",
                 "apply",
                 "completion",
+                "admin-ui-verification",
             ],
         )
 

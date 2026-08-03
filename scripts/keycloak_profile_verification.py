@@ -50,6 +50,7 @@ from keycloak_profile_roles import (
     inspect_service_account_roles,
     verify_service_account_roles,
 )
+from keycloak_profile_realm_configuration import DEFAULT_THEME
 
 
 def _read_realm(
@@ -265,6 +266,7 @@ def _plan_blockers(
     client: KeycloakAdminClient,
     *,
     realm_exists: bool,
+    email_sender_present: bool,
     backend_action: str,
     unexpected_roles: tuple[str, ...],
     test_user_actions: dict[str, str],
@@ -276,6 +278,8 @@ def _plan_blockers(
     Args:
         client: Authenticated Keycloak Admin client.
         realm_exists: Whether the selected realm already exists.
+        email_sender_present: Whether the live realm already has the minimum
+            public SMTP sender fields needed for email delivery.
         backend_action: Planned backend client action.
         unexpected_roles: Undeclared qualified service-account roles.
         test_user_actions: Profile test-user live-state actions.
@@ -311,6 +315,125 @@ def _plan_blockers(
             "Backend client is missing while its Docker secret exists; "
             "use explicit secret rotation with the stack stopped."
         )
+    realm_settings = dict(client.identity.realm_settings)
+    email_delivery_required = bool(
+        realm_settings["verifyEmail"]
+        or realm_settings["resetPasswordAllowed"]
+    )
+    if (
+        email_delivery_required
+        and not client.identity.email_sender_settings.enabled
+        and not email_sender_present
+    ):
+        blockers.append(
+            "Configure a realm email sender before enabling verified email "
+            "or password reset; neither the selected profile nor the live "
+            "realm provides usable SMTP settings."
+        )
+    blockers.extend(_theme_availability_blockers(client))
+    return blockers
+
+
+def _realm_has_email_sender(
+    current_realm: dict[str, Any] | None,
+) -> bool:
+    """Check whether a live realm exposes minimum public SMTP configuration.
+
+    Password material is deliberately irrelevant to this read-only check:
+    Keycloak does not return the stored SMTP password through ordinary realm
+    reads. Authenticated senders are proved later through the SMTP connection
+    test or the mandatory Admin UI verification step.
+
+    Args:
+        current_realm: Existing realm representation, or ``None`` for a new
+            realm.
+
+    Returns:
+        ``True`` when both SMTP host and sender address are present.
+    """
+
+    if current_realm is None:
+        return False
+    smtp_server = current_realm.get("smtpServer")
+    if not isinstance(smtp_server, dict):
+        return False
+    return all(
+        isinstance(smtp_server.get(key), str)
+        and bool(smtp_server[key].strip())
+        for key in ("host", "from")
+    )
+
+
+def _theme_names(server_info: dict[str, Any], theme_type: str) -> set[str]:
+    """Extract installed names for one Keycloak theme category.
+
+    Args:
+        server_info: Keycloak server-info representation.
+        theme_type: Theme category such as ``login`` or ``email``.
+
+    Returns:
+        Installed theme names. An empty set means the response was malformed
+        or did not expose that category.
+    """
+
+    themes = server_info.get("themes")
+    if not isinstance(themes, dict):
+        return set()
+    raw_items = themes.get(theme_type)
+    if not isinstance(raw_items, list):
+        return set()
+    names: set[str] = set()
+    for item in raw_items:
+        if isinstance(item, str):
+            names.add(item)
+        elif isinstance(item, dict) and isinstance(item.get("name"), str):
+            names.add(item["name"])
+    return names
+
+
+def _theme_availability_blockers(
+    client: KeycloakAdminClient,
+) -> list[str]:
+    """Require every non-default selected theme to exist on the live server.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+
+    Returns:
+        Sanitized blockers naming unavailable theme selections.
+
+    Raises:
+        KeycloakProfileError: If server information cannot be read safely.
+    """
+
+    selected = client.identity.theme_settings
+    requested = {
+        "login": selected.login,
+        "account": selected.account,
+        "admin": selected.admin,
+        "email": selected.email,
+    }
+    custom = {
+        theme_type: name
+        for theme_type, name in requested.items()
+        if name != DEFAULT_THEME
+    }
+    if not custom:
+        return []
+    _, payload = client.request("GET", "/admin/serverinfo")
+    if not isinstance(payload, dict):
+        raise KeycloakProfileError(
+            "Keycloak server theme inventory returned invalid data."
+        )
+    blockers: list[str] = []
+    for theme_type, name in custom.items():
+        available = _theme_names(payload, theme_type)
+        if name not in available:
+            visible = ", ".join(sorted(available)) or "none reported"
+            blockers.append(
+                f"Install or select an available {theme_type} theme; "
+                f"{name!r} is unavailable (available: {visible})."
+            )
     return blockers
 
 
@@ -489,6 +612,7 @@ def build_reconciliation_plan(
     blockers = _plan_blockers(
         client,
         realm_exists=realm_exists,
+        email_sender_present=_realm_has_email_sender(current_realm),
         backend_action=backend_action,
         unexpected_roles=unexpected_roles,
         test_user_actions=test_user_actions,
@@ -497,6 +621,14 @@ def build_reconciliation_plan(
     )
     return {
         "realm": realm_action,
+        "realmThemes": realm_action,
+        "realmLocalization": realm_action,
+        "realmEmailSender": realm_action,
+        "smtpPasswordRequired": bool(
+            client.identity.email_sender_settings.enabled
+            and client.identity.email_sender_settings.authentication
+            and realm_action != "keep"
+        ),
         **client_plan,
         **application_plan,
         "dockerSecret": _secret_plan_action(
@@ -681,6 +813,9 @@ def verify_reconciled_state(
         _verify_public_metadata(client)
     return {
         "realmSettings": True,
+        "realmThemes": True,
+        "realmLocalization": True,
+        "realmEmailSender": True,
         "frontendPkceClient": True,
         "backendServiceClient": True,
         "audienceMapper": True,

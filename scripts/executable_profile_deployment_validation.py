@@ -28,7 +28,10 @@ from executable_profile_config_validation import (
     validate_port,
 )
 from executable_profile_keycloak_validation import (
+    EMAIL_PATTERN,
+    LOCALE_PATTERN,
     KEYCLOAK_RESERVED_MANAGED_CLIENT_IDS,
+    THEME_PATTERN,
 )
 from executable_profile_support import (
     IMAGE_PATTERN,
@@ -36,12 +39,22 @@ from executable_profile_support import (
     NAME_PATTERN,
     SEMVER_PATTERN,
     ExecutableProfileError,
+    KEYCLOAK_EMAIL_SENDER_ENV_KEYS,
+    KEYCLOAK_LOCALIZATION_ENV_KEYS,
     KEYCLOAK_REALM_SETTING_ENV_KEYS,
+    KEYCLOAK_THEME_ENV_KEYS,
     immutable_deployment_values,
     mapping,
     memory_limit_is_unlimited,
     sequence,
     text,
+)
+from keycloak_profile_realm_configuration import EMPTY_VALUE_SENTINEL
+
+
+SMTP_HOST_PATTERN = re.compile(
+    r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}"
+    r"[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 )
 
 
@@ -64,12 +77,112 @@ def _validate_keycloak_boolean_values(
 
     keys = [
         *(key for _, key in KEYCLOAK_REALM_SETTING_ENV_KEYS),
+        "KEYCLOAK_INTERNATIONALIZATION_ENABLED",
+        "KEYCLOAK_EMAIL_SENDER_ENABLED",
+        "KEYCLOAK_SMTP_STARTTLS",
+        "KEYCLOAK_SMTP_SSL",
+        "KEYCLOAK_SMTP_AUTH",
         "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
     ]
     for key in keys:
         if values[key] not in {"", "true", "false"}:
             raise ExecutableProfileError(
                 f".env {key} must be true or false."
+            )
+
+
+def _validate_keycloak_realm_experience_values(
+    values: Mapping[str, str],
+) -> None:
+    """Validate editable theme, locale, and public SMTP deployment values.
+
+    Args:
+        values: Complete generated deployment environment.
+
+    Returns:
+        Nothing when realm experience values are safe and coherent.
+
+    Raises:
+        ExecutableProfileError: If a public override is unsafe or inconsistent.
+    """
+
+    for _, key in KEYCLOAK_THEME_ENV_KEYS:
+        if values[key] and not THEME_PATTERN.fullmatch(values[key]):
+            raise ExecutableProfileError(f".env {key} is unsafe.")
+    raw_locales = values["KEYCLOAK_SUPPORTED_LOCALES"]
+    locales = [item.strip() for item in raw_locales.split(",") if item.strip()]
+    if len(locales) != len(set(locales)):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_SUPPORTED_LOCALES must be unique."
+        )
+    if any(not LOCALE_PATTERN.fullmatch(locale) for locale in locales):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_SUPPORTED_LOCALES contains an unsafe locale."
+        )
+    default_locale = values["KEYCLOAK_DEFAULT_LOCALE"]
+    if default_locale and not LOCALE_PATTERN.fullmatch(default_locale):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_DEFAULT_LOCALE is unsafe."
+        )
+    if (
+        values["KEYCLOAK_INTERNATIONALIZATION_ENABLED"] == "true"
+        and default_locale not in locales
+    ):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_DEFAULT_LOCALE must be supported."
+        )
+    email_enabled = values["KEYCLOAK_EMAIL_SENDER_ENABLED"] == "true"
+
+    def public_value(key: str) -> str:
+        """Decode an explicit empty sentinel for public validation.
+
+        Args:
+            key: Generated environment field name.
+
+        Returns:
+            Empty text for the sentinel, otherwise the stored public value.
+        """
+
+        value = values[key]
+        return "" if value == EMPTY_VALUE_SENTINEL else value
+
+    for key in (
+        "KEYCLOAK_SMTP_FROM",
+        "KEYCLOAK_SMTP_REPLY_TO",
+        "KEYCLOAK_SMTP_ENVELOPE_FROM",
+    ):
+        candidate = public_value(key)
+        if candidate and not EMAIL_PATTERN.fullmatch(candidate):
+            raise ExecutableProfileError(f".env {key} must be an email.")
+    port = values["KEYCLOAK_SMTP_PORT"]
+    if port:
+        validate_port(port, ".env KEYCLOAK_SMTP_PORT")
+    if (
+        values["KEYCLOAK_SMTP_STARTTLS"] == "true"
+        and values["KEYCLOAK_SMTP_SSL"] == "true"
+    ):
+        raise ExecutableProfileError(
+            ".env Keycloak SMTP STARTTLS and SSL cannot both be enabled."
+        )
+    if email_enabled:
+        if not values["KEYCLOAK_SMTP_HOST"] or not values["KEYCLOAK_SMTP_FROM"]:
+            raise ExecutableProfileError(
+                "Enabled Keycloak SMTP requires host and sender email."
+            )
+        if not SMTP_HOST_PATTERN.fullmatch(values["KEYCLOAK_SMTP_HOST"]):
+            raise ExecutableProfileError(
+                ".env KEYCLOAK_SMTP_HOST must be a public hostname."
+            )
+        if not port:
+            raise ExecutableProfileError(
+                "Enabled Keycloak SMTP requires a port."
+            )
+        if (
+            values["KEYCLOAK_SMTP_AUTH"] == "true"
+            and not public_value("KEYCLOAK_SMTP_USERNAME")
+        ):
+            raise ExecutableProfileError(
+                "Authenticated Keycloak SMTP requires a username."
             )
 
 
@@ -164,6 +277,9 @@ def _validate_keycloak_deployment(
         "KEYCLOAK_REALM",
         "KEYCLOAK_REALM_DISPLAY_NAME",
         *(key for _, key in KEYCLOAK_REALM_SETTING_ENV_KEYS),
+        *(key for _, key in KEYCLOAK_THEME_ENV_KEYS),
+        *(key for _, key in KEYCLOAK_LOCALIZATION_ENV_KEYS),
+        *(key for _, key in KEYCLOAK_EMAIL_SENDER_ENV_KEYS),
         "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
         "KEYCLOAK_AUDIENCE",
         "KEYCLOAK_FRONTEND_CLIENT_ID",
@@ -176,6 +292,7 @@ def _validate_keycloak_deployment(
             )
         return
     _validate_keycloak_boolean_values(values)
+    _validate_keycloak_realm_experience_values(values)
     base_url = values["KEYCLOAK_BASE_URL"].rstrip("/")
     realm = values["KEYCLOAK_REALM"]
     validate_origin(base_url, ".env KEYCLOAK_BASE_URL")

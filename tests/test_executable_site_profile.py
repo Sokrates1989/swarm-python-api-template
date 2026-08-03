@@ -567,6 +567,13 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             dict(identity.realm_settings),
             self.felix_config["auth"]["realmSettings"],
         )
+        self.assertEqual(identity.theme_settings.login, "default")
+        self.assertEqual(
+            identity.localization_settings.supported_locales,
+            ("de", "en"),
+        )
+        self.assertFalse(identity.email_sender_settings.enabled)
+        self.assertEqual(identity.email_sender_settings.port, 587)
         self.assertEqual(
             identity.audience_mapper_name,
             "backend-audience",
@@ -636,6 +643,16 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             "https://keycloak.fe-wi.com/realms/master/"
             "protocol/openid-connect/certs"
         )
+        unsafe_theme = copy.deepcopy(self.felix_config)
+        unsafe_theme["auth"]["themes"]["login"] = "not safe"
+        unsupported_default_locale = copy.deepcopy(self.felix_config)
+        unsupported_default_locale["auth"]["localization"][
+            "defaultLocale"
+        ] = "fr"
+        smtp_secret = copy.deepcopy(self.felix_config)
+        smtp_secret["auth"]["emailSender"]["password"] = "forbidden"
+        conflicting_smtp_tls = copy.deepcopy(self.felix_config)
+        conflicting_smtp_tls["auth"]["emailSender"]["ssl"] = True
         cases = (
             (invalid_settings, "realmSettings contains unsupported fields"),
             (invalid_mapper, "audienceMapperName is unsafe"),
@@ -652,6 +669,13 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             (shared_client, "frontendClientId and auth.adminClientId must differ"),
             (reserved_client, "must not use built-in clients"),
             (master_realm, "must not target Keycloak's master realm"),
+            (unsafe_theme, "auth.themes.login is unsafe"),
+            (
+                unsupported_default_locale,
+                "defaultLocale must be a supported locale",
+            ),
+            (smtp_secret, "contains unsupported fields: password"),
+            (conflicting_smtp_tls, "startTls and ssl cannot both be enabled"),
         )
 
         for invalid, message in cases:

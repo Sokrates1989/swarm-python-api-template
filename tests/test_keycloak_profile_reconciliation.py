@@ -18,6 +18,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -49,12 +50,19 @@ from keycloak_profile_reconciliation import (  # noqa: E402
     frontend_payload,
     owned_field_mismatches,
     realm_payload,
+    test_smtp_connection,
+)
+from keycloak_profile_realm_configuration import (  # noqa: E402
+    KeycloakEmailSenderSettings,
+    KeycloakThemeSettings,
 )
 from keycloak_profile_roles import (  # noqa: E402
     KeycloakRoleError,
     ensure_service_account_roles,
 )
 from keycloak_profile_verification import (  # noqa: E402
+    _plan_blockers,
+    _theme_availability_blockers,
     build_reconciliation_plan,
     verify_reconciled_state,
 )
@@ -89,6 +97,10 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         self.profile_data["auth"]["bootstrapTestUsersEnabled"] = False
         self.profile_data["auth"]["bootstrapTestUsers"] = []
         self.profile_data["auth"]["forbiddenDefaultUsernames"] = ["test"]
+        self.profile_data["auth"]["realmSettings"][
+            "resetPasswordAllowed"
+        ] = False
+        self.profile_data["auth"]["realmSettings"]["verifyEmail"] = False
         (config_directory / "felix.json").write_text(
             json.dumps(self.profile_data, indent=2) + "\n",
             encoding="utf-8",
@@ -179,6 +191,85 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             any(method == "PUT" for method, _, _, _ in client.requests)
         )
 
+    def test_custom_theme_is_checked_against_live_server_inventory(self) -> None:
+        """Block unavailable custom themes while accepting installed names.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = replace(
+            self.identity,
+            theme_settings=KeycloakThemeSettings(
+                "felix", "default", "default", "default"
+            ),
+        )
+
+        def handler(method, path, body, query, expected):
+            """Return a deterministic Keycloak theme inventory."""
+
+            self.assertEqual((method, path), ("GET", "/admin/serverinfo"))
+            return 200, {
+                "themes": {
+                    "login": [{"name": "keycloak"}, {"name": "felix"}],
+                }
+            }
+
+        client = RecordingAdminClient(identity, handler)
+        self.assertEqual(_theme_availability_blockers(client), [])
+        unavailable = replace(
+            identity,
+            theme_settings=KeycloakThemeSettings(
+                "missing", "default", "default", "default"
+            ),
+        )
+        blockers = _theme_availability_blockers(
+            RecordingAdminClient(unavailable, handler)
+        )
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("'missing' is unavailable", blockers[0])
+
+    def test_email_dependent_realm_requires_managed_or_existing_smtp(
+        self,
+    ) -> None:
+        """Block unsafe email settings unless a sender is configured.
+
+        Returns:
+            Nothing.
+        """
+
+        realm_settings = dict(self.identity.realm_settings)
+        realm_settings["verifyEmail"] = True
+        identity = replace(
+            self.identity,
+            realm_settings=tuple(realm_settings.items()),
+        )
+        client = Mock(identity=identity)
+        arguments = {
+            "realm_exists": False,
+            "backend_action": "create",
+            "unexpected_roles": (),
+            "test_user_actions": {},
+            "docker_secret_present": False,
+            "replace_secret": False,
+        }
+
+        blockers = _plan_blockers(
+            client,
+            email_sender_present=False,
+            **arguments,
+        )
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("Configure a realm email sender", blockers[0])
+        self.assertEqual(
+            _plan_blockers(
+                client,
+                email_sender_present=True,
+                **arguments,
+            ),
+            [],
+        )
+
     def test_existing_realm_drift_is_updated_with_owned_settings(self) -> None:
         """Update drifted realm fields while preserving unrelated state.
 
@@ -229,7 +320,7 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
 
         drifted = {
             **realm_payload(self.identity),
-            "verifyEmail": False,
+            "rememberMe": False,
         }
 
         def handler(method, path, body, query, expected):
@@ -250,6 +341,65 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             "realm verification found unresolved drift",
         ):
             verify_reconciled_state(client)
+
+    def test_smtp_password_is_runtime_only_and_connection_is_tested(
+        self,
+    ) -> None:
+        """Write and test SMTP with a password absent from desired evidence.
+
+        Returns:
+            Nothing.
+        """
+
+        sender = KeycloakEmailSenderSettings(
+            True,
+            "noreply@example.com",
+            "Example",
+            "",
+            "",
+            "",
+            "smtp.example.com",
+            587,
+            True,
+            False,
+            True,
+            "smtp-user",
+        )
+        identity = replace(self.identity, email_sender_settings=sender)
+        desired = realm_payload(identity)
+        self.assertNotIn("password", desired["smtpServer"])
+        current = {
+            **desired,
+            "smtpServer": {**desired["smtpServer"], "host": "old.example.com"},
+        }
+        bodies: list[tuple[str, dict[str, Any]]] = []
+
+        def handler(method, path, body, query, expected):
+            """Record realm mutation and SMTP test request bodies."""
+
+            self.assertIsNone(query)
+            if method == "GET":
+                return 200, current
+            self.assertIsInstance(body, dict)
+            bodies.append((path, dict(body)))
+            if method == "PUT":
+                current.update(body)
+                return 204, None
+            if method == "POST" and path.endswith("/testSMTPConnection"):
+                return 204, None
+            self.fail(f"Unexpected request: {method} {path}")
+
+        client = RecordingAdminClient(identity, handler)
+        self.assertEqual(
+            ensure_realm(client, smtp_password="smtp-secret"),
+            "updated",
+        )
+        self.assertEqual(
+            test_smtp_connection(client, smtp_password="smtp-secret"),
+            "passed",
+        )
+        self.assertEqual(bodies[0][1]["smtpServer"]["password"], "smtp-secret")
+        self.assertEqual(bodies[1][1]["password"], "smtp-secret")
 
     def test_declared_role_is_added_to_assignment_and_scope(self) -> None:
         """Add the declared assignment and dedicated client-scope mapping.

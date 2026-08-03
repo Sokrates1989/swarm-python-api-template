@@ -19,6 +19,7 @@ from __future__ import annotations
 import getpass
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 
 from executable_profile import ExecutableProfile
 from keycloak_profile_access_dialog import prompt_application_access
@@ -31,6 +32,12 @@ from keycloak_profile_client import (
 )
 from keycloak_profile_secret_bridge import docker_secret_exists
 from keycloak_profile_verification import build_reconciliation_plan
+from keycloak_profile_realm_configuration import (
+    DEFAULT_THEME,
+    KeycloakEmailSenderSettings,
+    KeycloakLocalizationSettings,
+    KeycloakThemeSettings,
+)
 
 
 def _print_application_access_target(identity: KeycloakIdentity) -> None:
@@ -113,6 +120,30 @@ def print_target(
     print("Realm settings:")
     for name, value in identity.realm_settings:
         print(f"  - {name}: {str(value).lower()}")
+    themes = identity.theme_settings
+    print("Realm themes:")
+    print(f"  - login: {themes.login}")
+    print(f"  - account: {themes.account}")
+    print(f"  - admin: {themes.admin}")
+    print(f"  - email: {themes.email}")
+    localization = identity.localization_settings
+    print("Realm localization:")
+    print(f"  - enabled: {str(localization.enabled).lower()}")
+    print(
+        "  - supported locales: "
+        + (", ".join(localization.supported_locales) or "none")
+    )
+    print(f"  - default locale: {localization.default_locale}")
+    sender = identity.email_sender_settings
+    print("Realm email sender:")
+    print(f"  - configured: {str(sender.enabled).lower()}")
+    if sender.enabled:
+        print(f"  - from: {sender.from_address}")
+        print(f"  - host: {sender.host}:{sender.port}")
+        print(f"  - STARTTLS: {str(sender.start_tls).lower()}")
+        print(f"  - SSL: {str(sender.ssl).lower()}")
+        print(f"  - authentication: {str(sender.authentication).lower()}")
+        print(f"  - username: {sender.username or 'none'}")
     print("Redirect URIs:")
     for value in identity.redirect_uris:
         print(f"  - {value}")
@@ -146,6 +177,26 @@ def _prompt_value(label: str, default: str) -> str:
     return answer or default
 
 
+def _prompt_required_value(label: str, default: str) -> str:
+    """Collect a non-empty public value with an optional Enter default.
+
+    Args:
+        label: Operator-facing field label.
+        default: Existing value selected by Enter when non-empty.
+
+    Returns:
+        A non-empty operator selection.
+    """
+
+    while True:
+        displayed = default or "required"
+        answer = input(f"{label} [{displayed}]: ").strip()
+        selected = answer or default
+        if selected:
+            return selected
+        print(f"{label} is required; enter a value before continuing.")
+
+
 def _prompt_boolean(label: str, default: bool) -> bool:
     """Return an explicit yes/no selection with an Enter default.
 
@@ -167,6 +218,193 @@ def _prompt_boolean(label: str, default: bool) -> bool:
         if answer in {"n", "no"}:
             return False
         print("Please enter y, n, or press Enter for the displayed default.")
+
+
+def _prompt_optional_value(label: str, default: str) -> str:
+    """Collect an optional public value with an explicit clearing sentinel.
+
+    Args:
+        label: Operator-facing field label.
+        default: Existing public value retained when Enter is pressed.
+
+    Returns:
+        Selected value, or an empty string when ``none`` is entered.
+    """
+
+    displayed = default or "none"
+    answer = input(f"{label} [{displayed}]: ").strip()
+    if not answer:
+        return default
+    if answer.lower() in {"none", "clear", "-"}:
+        return ""
+    return answer
+
+
+def _prompt_port(label: str, default: int) -> int:
+    """Collect a valid TCP port with an Enter default.
+
+    Args:
+        label: Operator-facing field label.
+        default: Existing port retained when Enter is pressed.
+
+    Returns:
+        Integer port from 1 through 65535.
+    """
+
+    while True:
+        answer = input(f"{label} [{default}]: ").strip()
+        if not answer:
+            return default
+        if answer.isdigit() and 1 <= int(answer) <= 65535:
+            return int(answer)
+        print("Please enter a TCP port from 1 to 65535.")
+
+
+def _prompt_theme_settings(identity: KeycloakIdentity) -> KeycloakThemeSettings:
+    """Collect login, account, admin, and email theme selections.
+
+    Args:
+        identity: Active identity providing theme defaults.
+
+    Returns:
+        Operator-selected theme settings.
+    """
+
+    current = identity.theme_settings
+    print("")
+    print("Realm themes")
+    print("------------")
+    print(
+        "Enter an installed Keycloak theme name, or 'default' to inherit "
+        "the server default."
+    )
+    print("Custom selections are checked against the live server after login.")
+    return KeycloakThemeSettings(
+        login=_prompt_value("Login theme", current.login or DEFAULT_THEME),
+        account=_prompt_value(
+            "Account theme", current.account or DEFAULT_THEME
+        ),
+        admin=_prompt_value("Admin theme", current.admin or DEFAULT_THEME),
+        email=_prompt_value("Email theme", current.email or DEFAULT_THEME),
+    )
+
+
+def _prompt_localization_settings(
+    identity: KeycloakIdentity,
+) -> KeycloakLocalizationSettings:
+    """Collect realm internationalization and locale choices.
+
+    Args:
+        identity: Active identity providing localization defaults.
+
+    Returns:
+        Operator-selected localization settings.
+    """
+
+    current = identity.localization_settings
+    print("")
+    print("Realm localization")
+    print("------------------")
+    enabled = _prompt_boolean(
+        "Enable realm internationalization", current.enabled
+    )
+    raw_default = ",".join(current.supported_locales)
+    raw_locales = _prompt_value("Supported locales (comma-separated)", raw_default)
+    locales = tuple(
+        dict.fromkeys(
+            item.strip() for item in raw_locales.split(",") if item.strip()
+        )
+    )
+    default_locale = _prompt_value(
+        "Default locale", current.default_locale
+    )
+    return KeycloakLocalizationSettings(
+        enabled=enabled,
+        supported_locales=locales,
+        default_locale=default_locale,
+    )
+
+
+def _prompt_email_sender_settings(
+    identity: KeycloakIdentity,
+    realm_settings: tuple[tuple[str, bool], ...],
+) -> KeycloakEmailSenderSettings:
+    """Collect public SMTP sender settings while excluding the password.
+
+    Args:
+        identity: Active identity providing public SMTP defaults.
+        realm_settings: Newly selected realm booleans used to recommend SMTP.
+
+    Returns:
+        Operator-selected public email-sender settings. The SMTP password is
+        collected only after authentication when the live plan requires it.
+    """
+
+    current = identity.email_sender_settings
+    selected_realm = dict(realm_settings)
+    email_required = (
+        selected_realm["verifyEmail"]
+        or selected_realm["resetPasswordAllowed"]
+    )
+    print("")
+    print("Realm email sender (SMTP)")
+    print("-------------------------")
+    print(
+        "SMTP is required for verified-email and password-reset messages. "
+        "Public sender/server values are saved to .env; the password is "
+        "requested later without echo and is never persisted."
+    )
+    enabled = _prompt_boolean(
+        "Configure realm email sender",
+        current.enabled or email_required,
+    )
+    if not enabled:
+        if email_required:
+            raise KeycloakProfileError(
+                "Verified-email or password-reset settings require SMTP. "
+                "Rerun and configure the email sender, or disable both "
+                "dependent realm settings."
+            )
+        return replace(current, enabled=False)
+    print("Type 'none' to clear an optional sender field.")
+    from_address = _prompt_required_value(
+        "From email address",
+        current.from_address,
+    )
+    from_display_name = _prompt_optional_value(
+        "From display name", current.from_display_name
+    )
+    reply_to = _prompt_optional_value("Reply-to email", current.reply_to)
+    reply_to_display_name = _prompt_optional_value(
+        "Reply-to display name", current.reply_to_display_name
+    )
+    envelope_from = _prompt_optional_value(
+        "Envelope-from email", current.envelope_from
+    )
+    host = _prompt_required_value("SMTP host", current.host)
+    port = _prompt_port("SMTP port", current.port)
+    start_tls = _prompt_boolean("Use STARTTLS", current.start_tls)
+    ssl = _prompt_boolean("Use implicit SSL/TLS", current.ssl)
+    authentication = _prompt_boolean(
+        "SMTP server requires authentication", current.authentication
+    )
+    username = ""
+    if authentication:
+        username = _prompt_required_value("SMTP username", current.username)
+    return KeycloakEmailSenderSettings(
+        enabled=True,
+        from_address=from_address,
+        from_display_name=from_display_name,
+        reply_to=reply_to,
+        reply_to_display_name=reply_to_display_name,
+        envelope_from=envelope_from,
+        host=host,
+        port=port,
+        start_tls=start_tls,
+        ssl=ssl,
+        authentication=authentication,
+        username=username,
+    )
 
 
 def _prompt_realm_settings(
@@ -274,6 +512,12 @@ def prompt_bootstrap_values(
     print(f"Keycloak server URL (fixed trust anchor): {identity.server_url}")
     selected = _prompt_public_identity_values(identity)
     realm_settings = _prompt_realm_settings(identity)
+    theme_settings = _prompt_theme_settings(identity)
+    localization_settings = _prompt_localization_settings(identity)
+    email_sender_settings = _prompt_email_sender_settings(
+        identity,
+        realm_settings,
+    )
     realm_roles, bootstrap_test_users = prompt_application_access(
         identity,
         _prompt_boolean,
@@ -286,6 +530,9 @@ def prompt_bootstrap_values(
         realm=selected["realm"],
         realm_display_name=selected["realm_display_name"],
         realm_settings=realm_settings,
+        theme_settings=theme_settings,
+        localization_settings=localization_settings,
+        email_sender_settings=email_sender_settings,
         realm_roles=realm_roles,
         bootstrap_test_users_enabled=bootstrap_test_users_enabled,
         bootstrap_test_users=bootstrap_test_users,
@@ -355,6 +602,42 @@ def prompt_bootstrap_test_user_passwords(
     return passwords
 
 
+def prompt_smtp_password(
+    identity: KeycloakIdentity,
+    plan: Mapping[str, object],
+) -> str | None:
+    """Collect a runtime SMTP password only when the live plan needs a write.
+
+    Args:
+        identity: Active profile-derived Keycloak identity.
+        plan: Sanitized live-state plan containing the password requirement.
+
+    Returns:
+        Confirmed runtime password, or ``None`` when no SMTP write needs it.
+
+    Raises:
+        KeycloakProfileError: If the password is empty or confirmation differs.
+    """
+
+    if plan.get("smtpPasswordRequired") is not True:
+        return None
+    sender = identity.email_sender_settings
+    print("")
+    print("Realm SMTP credential")
+    print("---------------------")
+    print(f"Server: {sender.host}:{sender.port}")
+    print(f"Username: {sender.username}")
+    print("The password is sent only to Keycloak for realm update and testing.")
+    print("It is never written to JSON, .env, logs, plans, or summaries.")
+    password = getpass.getpass("SMTP password: ")
+    confirmation = getpass.getpass("Confirm SMTP password: ")
+    if not password:
+        raise KeycloakProfileError("SMTP password is required for this plan.")
+    if password != confirmation:
+        raise KeycloakProfileError("SMTP password confirmation differs.")
+    return password
+
+
 def prompt_secret_safe_debug() -> bool:
     """Explain and ask whether safe Admin API tracing should be enabled.
 
@@ -403,6 +686,9 @@ def print_plan(plan: dict[str, object]) -> None:
 
     labels = (
         ("Realm", "realm"),
+        ("Realm themes", "realmThemes"),
+        ("Realm localization", "realmLocalization"),
+        ("Realm email sender", "realmEmailSender"),
         ("Application roles", "realmRoles"),
         ("Frontend client", "frontendClient"),
         ("Backend client", "backendClient"),
@@ -417,6 +703,8 @@ def print_plan(plan: dict[str, object]) -> None:
     print("-----------------------------")
     for label, key in labels:
         print(f"  {label:<23} {plan[key]}")
+    if plan.get("smtpPasswordRequired") is True:
+        print("  SMTP password           required after plan approval")
     blockers = plan["blockers"]
     if isinstance(blockers, list) and blockers:
         print("  Blockers:")
@@ -543,14 +831,72 @@ def print_completion(
         )
 
 
+def prompt_admin_ui_verification(
+    identity: KeycloakIdentity,
+    summary: Mapping[str, object],
+    *,
+    wait_for_operator: bool,
+) -> None:
+    """Print and optionally pause for the required Admin UI review.
+
+    Args:
+        identity: Reconciled profile-derived Keycloak identity.
+        summary: Secret-free reconciliation summary including SMTP test state.
+        wait_for_operator: Pause until Enter when running interactively.
+
+    Returns:
+        Nothing. This checklist supplements automated API verification and
+        external email-delivery testing remains an operator responsibility.
+    """
+
+    console = (
+        f"{identity.server_url}/admin/master/console/#/"
+        f"{identity.realm}/realm-settings"
+    )
+    print("")
+    print("⚠️  Please verify your realm settings in Keycloak Admin UI.")
+    print("----------------------------------------------------------")
+    print(f"Open: {console}")
+    print("1. Themes: verify login, account, admin, and email themes.")
+    print(
+        "2. Localization: verify internationalization, supported locales, "
+        "and the default locale."
+    )
+    sender = identity.email_sender_settings
+    if sender.enabled:
+        print(
+            "3. Email: verify sender, SMTP host/port, encryption, and "
+            "authentication; then click 'Test connection'."
+        )
+        if summary.get("smtpConnectionTest") == "manual-ui-required":
+            print(
+                "   Automated SMTP testing was skipped because the existing "
+                "write-only password was not re-entered."
+            )
+        print(
+            "4. Trigger one real verification or password-reset email and "
+            "confirm delivery."
+        )
+    else:
+        print(
+            "3. Email: this profile did not manage a sender. Verify any "
+            "existing realm SMTP state, or keep verification/reset email "
+            "features disabled."
+        )
+    if wait_for_operator:
+        input("Press Enter after completing the Admin UI verification: ")
+
+
 __all__ = [
     "authenticate_and_plan",
     "confirm_apply",
     "print_completion",
+    "prompt_admin_ui_verification",
     "print_plan",
     "print_target",
     "prompt_admin_user",
     "prompt_bootstrap_values",
     "prompt_bootstrap_test_user_passwords",
+    "prompt_smtp_password",
     "prompt_secret_safe_debug",
 ]

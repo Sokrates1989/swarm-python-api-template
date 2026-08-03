@@ -126,6 +126,34 @@
       "verifyEmail": true,
       "loginWithEmailAllowed": true
     },
+    "themes": {
+      "login": "default",
+      "account": "default",
+      "admin": "default",
+      "email": "default"
+    },
+    "localization": {
+      "enabled": true,
+      "supportedLocales": [
+        "de",
+        "en"
+      ],
+      "defaultLocale": "de"
+    },
+    "emailSender": {
+      "enabled": false,
+      "from": "",
+      "fromDisplayName": "Felix",
+      "replyTo": "",
+      "replyToDisplayName": "Felix",
+      "envelopeFrom": "",
+      "host": "",
+      "port": 587,
+      "startTls": true,
+      "ssl": false,
+      "authentication": true,
+      "username": ""
+    },
     "realmRoles": [
       {
         "name": "user",

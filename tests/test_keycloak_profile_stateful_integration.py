@@ -66,6 +66,12 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         config_directory.mkdir()
         source = REPOSITORY_ROOT / "site-configs" / "felix.json"
         profile_data = json.loads(source.read_text(encoding="utf-8"))
+        # This integration module isolates the client-secret handoff. SMTP
+        # reconciliation and delivery safety have focused coverage elsewhere.
+        profile_data["auth"]["realmSettings"][
+            "resetPasswordAllowed"
+        ] = False
+        profile_data["auth"]["realmSettings"]["verifyEmail"] = False
         target = config_directory / "felix.json"
         target.write_text(
             json.dumps(profile_data, indent=2) + "\n",

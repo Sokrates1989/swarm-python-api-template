@@ -243,15 +243,16 @@ Version 5.0 adds a strict full-stack contract:
 | `services.web` | Adds the optional WebApp service when true |
 | `web` | WebApp image, version, replicas, and optional memory limit |
 | `release` | Optional stack ID, monotonic SemVer floor, and cross-artifact component catalog |
-| `auth` | Keycloak identity, selectable realm defaults, callbacks, application roles, secret-free temporary users, protected legacy values, and service-account roles |
+| `auth` | Keycloak identity, selectable realm defaults, themes, locales, public SMTP sender settings, callbacks, application roles, secret-free temporary users, protected legacy values, and service-account roles |
 | `environment` / `envKeys` | Exact public runtime allowlist |
 | `secretMounts` | Exact file-backed Docker secret mappings |
 | `capabilities` | Optional environment and secret mounts |
 
 No app-specific module is permitted. A new app receives the same behavior by
 copying `_template.json` to a schema-5 profile and replacing only its data.
-Keycloak protected identity, application roles, secret-free temporary test
-users, and service-account roles are profile fields, as are the Traefik
+Keycloak protected identity, themes, localization, public SMTP sender defaults,
+application roles, secret-free temporary test users, and service-account roles
+are profile fields, as are the Traefik
 certificate resolver, direct service ports, and optional pgAdmin. Realm
 booleans and the aggregate test-user lifecycle are operator-selectable public
 `.env` values. Before authentication, an installer-style checkbox dialogue
@@ -262,6 +263,12 @@ confirms. Passwords are requested without echo only when authenticated live
 state shows that a selected account lacks one. The bootstrap reminds the
 operator to remove temporary identities before production and blocks a skipped
 declared user while that account still exists.
+
+The same generic bootstrap validates selected custom themes against the live
+Keycloak server and reconciles locale and public SMTP settings. SMTP passwords
+never enter JSON or `.env`; they are requested only when an authenticated SMTP
+create/update needs one. Keycloak connection testing is followed by a required
+Admin UI checklist and one real delivered verification/reset email.
 
 Site configs store safe defaults and allowed capabilities. Final
 deployment-instance selections such as domain, proxy, SSL ownership, image

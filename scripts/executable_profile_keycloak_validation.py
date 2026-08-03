@@ -39,6 +39,27 @@ KEYCLOAK_REALM_SETTING_FIELDS = {
     "loginWithEmailAllowed",
 }
 
+KEYCLOAK_THEME_FIELDS = {"login", "account", "admin", "email"}
+KEYCLOAK_LOCALIZATION_FIELDS = {
+    "enabled",
+    "supportedLocales",
+    "defaultLocale",
+}
+KEYCLOAK_EMAIL_SENDER_FIELDS = {
+    "enabled",
+    "from",
+    "fromDisplayName",
+    "replyTo",
+    "replyToDisplayName",
+    "envelopeFrom",
+    "host",
+    "port",
+    "startTls",
+    "ssl",
+    "authentication",
+    "username",
+}
+
 KEYCLOAK_RESERVED_MANAGED_CLIENT_IDS = {
     "account",
     "account-console",
@@ -58,6 +79,9 @@ KEYCLOAK_AUTH_REQUIRED_FIELDS = {
     "realm",
     "realmDisplayName",
     "realmSettings",
+    "themes",
+    "localization",
+    "emailSender",
     "frontendClientId",
     "audience",
     "audienceMapperName",
@@ -74,6 +98,10 @@ KEYCLOAK_AUTH_REQUIRED_FIELDS = {
 EMAIL_PATTERN = re.compile(
     r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
     r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?"
+)
+THEME_PATTERN = re.compile(r"(?:default|[A-Za-z0-9][A-Za-z0-9._-]{0,127})")
+LOCALE_PATTERN = re.compile(
+    r"[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*"
 )
 
 # These special-use suffixes are rejected by the backend's Pydantic EmailStr
@@ -521,6 +549,190 @@ def _validate_bootstrap_policy(auth: Mapping[str, object]) -> None:
     _validate_bootstrap_test_users(auth, realm_roles, set(forbidden))
 
 
+def _require_exact_fields(
+    value: Mapping[str, object],
+    expected: set[str],
+    field: str,
+) -> None:
+    """Require one profile object to contain exactly its schema allowlist.
+
+    Args:
+        value: Profile mapping being validated.
+        expected: Complete allowed and required field names.
+        field: Operator-facing JSON path used in errors.
+
+    Returns:
+        Nothing when the mapping is exact.
+
+    Raises:
+        ExecutableProfileError: If fields are absent or unsupported.
+    """
+
+    require_keys(value, expected, field)
+    unexpected = sorted(set(value) - expected)
+    if unexpected:
+        raise ExecutableProfileError(
+            f"{field} contains unsupported fields: " + ", ".join(unexpected)
+        )
+
+
+def _optional_public_text(value: object, field: str) -> str:
+    """Validate an optional bounded public profile string.
+
+    Args:
+        value: Candidate JSON value.
+        field: Operator-facing JSON path used in errors.
+
+    Returns:
+        Original string, including an allowed empty string.
+
+    Raises:
+        ExecutableProfileError: If the value is not safe bounded text.
+    """
+
+    if not isinstance(value, str):
+        raise ExecutableProfileError(f"{field} must be a string.")
+    if len(value) > 254 or any(character in value for character in "\r\n\0"):
+        raise ExecutableProfileError(f"{field} contains unsafe text.")
+    return value
+
+
+def _validate_realm_themes(auth: Mapping[str, object]) -> None:
+    """Validate exact profile-owned theme defaults.
+
+    Args:
+        auth: Profile authentication mapping.
+
+    Returns:
+        Nothing when all selections are safe names or ``default``.
+
+    Raises:
+        ExecutableProfileError: If theme fields are incomplete or unsafe.
+    """
+
+    themes = mapping(auth["themes"], "auth.themes")
+    _require_exact_fields(themes, KEYCLOAK_THEME_FIELDS, "auth.themes")
+    for name, value in themes.items():
+        if not THEME_PATTERN.fullmatch(text(value, f"auth.themes.{name}")):
+            raise ExecutableProfileError(f"auth.themes.{name} is unsafe.")
+
+
+def _validate_localization(auth: Mapping[str, object]) -> None:
+    """Validate internationalization enablement and locale relationships.
+
+    Args:
+        auth: Profile authentication mapping.
+
+    Returns:
+        Nothing when locales are unique and the default is supported.
+
+    Raises:
+        ExecutableProfileError: If locale state is malformed or inconsistent.
+    """
+
+    localization = mapping(auth["localization"], "auth.localization")
+    _require_exact_fields(
+        localization,
+        KEYCLOAK_LOCALIZATION_FIELDS,
+        "auth.localization",
+    )
+    if not isinstance(localization["enabled"], bool):
+        raise ExecutableProfileError(
+            "auth.localization.enabled must be boolean."
+        )
+    locales = [
+        text(value, f"auth.localization.supportedLocales[{index}]")
+        for index, value in enumerate(
+            sequence(
+                localization["supportedLocales"],
+                "auth.localization.supportedLocales",
+            )
+        )
+    ]
+    if len(locales) != len(set(locales)):
+        raise ExecutableProfileError(
+            "auth.localization.supportedLocales must be unique."
+        )
+    if any(not LOCALE_PATTERN.fullmatch(value) for value in locales):
+        raise ExecutableProfileError(
+            "auth.localization.supportedLocales contains an unsafe locale."
+        )
+    default_locale = text(
+        localization["defaultLocale"],
+        "auth.localization.defaultLocale",
+    )
+    if not LOCALE_PATTERN.fullmatch(default_locale):
+        raise ExecutableProfileError(
+            "auth.localization.defaultLocale is unsafe."
+        )
+    if bool(localization["enabled"]) and default_locale not in locales:
+        raise ExecutableProfileError(
+            "auth.localization.defaultLocale must be a supported locale."
+        )
+
+
+def _validate_email_sender(auth: Mapping[str, object]) -> None:
+    """Validate public SMTP defaults while forbidding credential fields.
+
+    Args:
+        auth: Profile authentication mapping.
+
+    Returns:
+        Nothing when sender and transport defaults are safe and coherent.
+
+    Raises:
+        ExecutableProfileError: If SMTP fields are malformed or incomplete.
+    """
+
+    sender = mapping(auth["emailSender"], "auth.emailSender")
+    _require_exact_fields(
+        sender,
+        KEYCLOAK_EMAIL_SENDER_FIELDS,
+        "auth.emailSender",
+    )
+    boolean_fields = ("enabled", "startTls", "ssl", "authentication")
+    for name in boolean_fields:
+        if not isinstance(sender[name], bool):
+            raise ExecutableProfileError(
+                f"auth.emailSender.{name} must be boolean."
+            )
+    port = sender["port"]
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ExecutableProfileError(
+            "auth.emailSender.port must be an integer from 1 to 65535."
+        )
+    optional_fields = KEYCLOAK_EMAIL_SENDER_FIELDS - set(boolean_fields) - {
+        "port"
+    }
+    public = {
+        name: _optional_public_text(
+            sender[name], f"auth.emailSender.{name}"
+        )
+        for name in optional_fields
+    }
+    for name in ("from", "replyTo", "envelopeFrom"):
+        if public[name] and not EMAIL_PATTERN.fullmatch(public[name]):
+            raise ExecutableProfileError(
+                f"auth.emailSender.{name} must be a valid email address."
+            )
+    if bool(sender["startTls"]) and bool(sender["ssl"]):
+        raise ExecutableProfileError(
+            "auth.emailSender.startTls and ssl cannot both be enabled."
+        )
+    if bool(sender["enabled"]) and (not public["host"] or not public["from"]):
+        raise ExecutableProfileError(
+            "Enabled auth.emailSender requires host and from values."
+        )
+    if (
+        bool(sender["enabled"])
+        and bool(sender["authentication"])
+        and not public["username"]
+    ):
+        raise ExecutableProfileError(
+            "Authenticated auth.emailSender requires a username."
+        )
+
+
 def _validate_urls(
     auth: Mapping[str, object],
     realm: str,
@@ -634,10 +846,14 @@ def validate_keycloak_auth(
     _validate_callbacks(auth, validate_redirect_uri, validate_origin)
     _validate_protected_identity(auth, realm, validate_origin)
     _validate_bootstrap_policy(auth)
+    _validate_realm_themes(auth)
+    _validate_localization(auth)
+    _validate_email_sender(auth)
     _validate_service_account_roles(auth)
 
 
 __all__ = [
     "KEYCLOAK_REALM_SETTING_FIELDS",
+    "KEYCLOAK_THEME_FIELDS",
     "validate_keycloak_auth",
 ]

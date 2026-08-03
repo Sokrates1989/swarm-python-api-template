@@ -110,8 +110,11 @@ Let's Encrypt mode.
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
 Review the server, realm, display name, frontend/backend client IDs, frontend
-and backend roots, audience, and all six managed realm settings through their
-Enter-default prompts. Then use the installer-style role chooser: Up/Down moves,
+and backend roots, audience, all six managed realm settings, login/account/
+admin/email themes, supported locales and default locale, and the realm email
+sender through their Enter-default prompts. Public SMTP fields are stored in
+the ignored `.env`; any SMTP password is requested after the live plan without
+echo and is never persisted. Then use the installer-style role chooser: Up/Down moves,
 Space selects or clears, and Enter confirms the exact profile roles this run
 may create and assign. Entered deployment values replace
 the defaults, are validated against protected legacy identity, persist to root
@@ -147,6 +150,14 @@ Tracing contains only HTTP methods, Admin API paths, query-key names, and
 status codes. Bodies, headers, query values, tokens, passwords, and client
 secrets are never logged. Any strict read-back failure names its remaining
 profile-owned fields.
+
+For a new or changed authenticated SMTP sender, the apply phase runs
+Keycloak's SMTP connection test with the runtime-only password. After every
+successful interactive bootstrap, open the exact realm-settings Admin UI URL
+printed by the script. Verify themes and localization, inspect the **Email**
+tab, click **Test connection**, and trigger one real verification or
+password-reset email. Do not treat Admin API read-back alone as proof that the
+mailbox received a message.
 
 With the profile defaults, the shared action ensures (entered deployment
 values replace the corresponding realm/client/root names below):

@@ -187,6 +187,25 @@ class SetupWizardUxTests(unittest.TestCase):
             "KEYCLOAK_REMEMBER_ME",
             "KEYCLOAK_VERIFY_EMAIL",
             "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED",
+            "KEYCLOAK_LOGIN_THEME",
+            "KEYCLOAK_ACCOUNT_THEME",
+            "KEYCLOAK_ADMIN_THEME",
+            "KEYCLOAK_EMAIL_THEME",
+            "KEYCLOAK_INTERNATIONALIZATION_ENABLED",
+            "KEYCLOAK_SUPPORTED_LOCALES",
+            "KEYCLOAK_DEFAULT_LOCALE",
+            "KEYCLOAK_EMAIL_SENDER_ENABLED",
+            "KEYCLOAK_SMTP_FROM",
+            "KEYCLOAK_SMTP_FROM_DISPLAY_NAME",
+            "KEYCLOAK_SMTP_REPLY_TO",
+            "KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME",
+            "KEYCLOAK_SMTP_ENVELOPE_FROM",
+            "KEYCLOAK_SMTP_HOST",
+            "KEYCLOAK_SMTP_PORT",
+            "KEYCLOAK_SMTP_STARTTLS",
+            "KEYCLOAK_SMTP_SSL",
+            "KEYCLOAK_SMTP_AUTH",
+            "KEYCLOAK_SMTP_USERNAME",
             "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
             "KEYCLOAK_AUDIENCE",
             "KEYCLOAK_FRONTEND_CLIENT_ID",
@@ -195,7 +214,8 @@ class SetupWizardUxTests(unittest.TestCase):
 
         for key in keys:
             self.assertIn(f"_deployment_existing_value {key}", inputs)
-            self.assertIn(f'--set "{key}=${{{key}}}"', adapter)
+            self.assertIn(key, adapter)
+        self.assertIn('target+=(--set "${key}=${!key:-}")', adapter)
         self.assertIn("saved to root .env", bootstrap)
         self.assertIn("rebuild swarm-stack.yml", bootstrap)
         self.assertIn("credential trust anchor", bootstrap)

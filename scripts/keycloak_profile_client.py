@@ -31,6 +31,15 @@ from keycloak_profile_application_access import (
     KeycloakBootstrapTestUser,
     KeycloakRealmRole,
 )
+from keycloak_profile_realm_configuration import (
+    DEFAULT_THEME,
+    KeycloakEmailSenderSettings,
+    KeycloakLocalizationSettings,
+    KeycloakThemeSettings,
+    load_email_sender_settings,
+    load_localization_settings,
+    load_theme_settings,
+)
 
 
 class KeycloakProfileError(RuntimeError):
@@ -102,6 +111,9 @@ class KeycloakIdentity:
         realm: Realm name.
         realm_display_name: Human-readable realm name.
         realm_settings: Exact profile-owned realm boolean settings.
+        theme_settings: Realm-owned login, account, admin, and email themes.
+        localization_settings: Supported locales and realm default locale.
+        email_sender_settings: Public SMTP sender settings without a password.
         realm_roles: Application realm roles selected for this reconciliation.
         realm_role_catalog: Full profile-owned role catalog used to remove
             obsolete assignments without deleting live realm roles.
@@ -143,6 +155,31 @@ class KeycloakIdentity:
     realm_role_catalog: tuple[KeycloakRealmRole, ...] = ()
     bootstrap_test_users_enabled: bool = False
     bootstrap_test_users: tuple[KeycloakBootstrapTestUser, ...] = ()
+    theme_settings: KeycloakThemeSettings = KeycloakThemeSettings(
+        DEFAULT_THEME,
+        DEFAULT_THEME,
+        DEFAULT_THEME,
+        DEFAULT_THEME,
+    )
+    localization_settings: KeycloakLocalizationSettings = (
+        KeycloakLocalizationSettings(False, (), "en")
+    )
+    email_sender_settings: KeycloakEmailSenderSettings = (
+        KeycloakEmailSenderSettings(
+            False,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            587,
+            True,
+            False,
+            True,
+            "",
+        )
+    )
 
 
 class KeycloakAdminClient:
@@ -754,6 +791,9 @@ def _identity_policy_values(
             or str(raw["realmDisplayName"])
         ),
         "realm_settings": _realm_settings(raw, deployment),
+        "theme_settings": load_theme_settings(raw, deployment),
+        "localization_settings": load_localization_settings(raw, deployment),
+        "email_sender_settings": load_email_sender_settings(raw, deployment),
         "realm_roles": realm_role_catalog,
         "realm_role_catalog": realm_role_catalog,
         "bootstrap_test_users_enabled": bootstrap_users_enabled,

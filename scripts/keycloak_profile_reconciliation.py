@@ -24,6 +24,11 @@ from keycloak_profile_client import (
     realm_path,
     resolve_client_uuid,
 )
+from keycloak_profile_realm_configuration import (
+    localization_realm_payload,
+    smtp_public_payload,
+    theme_realm_payload,
+)
 
 
 def realm_payload(identity: KeycloakIdentity) -> dict[str, Any]:
@@ -36,18 +41,66 @@ def realm_payload(identity: KeycloakIdentity) -> dict[str, Any]:
         Realm representation containing only explicitly owned fields.
     """
 
-    return {
+    payload = {
         "realm": identity.realm,
         "displayName": identity.realm_display_name,
         **dict(identity.realm_settings),
+        **theme_realm_payload(identity.theme_settings),
+        **localization_realm_payload(identity.localization_settings),
     }
+    if identity.email_sender_settings.enabled:
+        payload["smtpServer"] = smtp_public_payload(
+            identity.email_sender_settings
+        )
+    return payload
 
 
-def ensure_realm(client: KeycloakAdminClient) -> str:
+def _realm_mutation_payload(
+    identity: KeycloakIdentity,
+    desired: dict[str, Any],
+    smtp_password: str | None,
+) -> dict[str, Any]:
+    """Attach a runtime SMTP password only to a realm mutation body.
+
+    Args:
+        identity: Active profile-derived Keycloak identity.
+        desired: Secret-free profile-owned realm representation.
+        smtp_password: Runtime credential, or ``None`` when no write needs it.
+
+    Returns:
+        Realm mutation representation containing a password only when SMTP
+        authentication is enabled and the operator supplied it.
+
+    Raises:
+        KeycloakProfileError: If an authenticated SMTP write lacks a password.
+    """
+
+    mutation = dict(desired)
+    sender = identity.email_sender_settings
+    if not sender.enabled or not sender.authentication:
+        return mutation
+    if not smtp_password:
+        raise KeycloakProfileError(
+            "Updating authenticated realm SMTP settings requires the SMTP "
+            "password for this run."
+        )
+    smtp = dict(mutation["smtpServer"])
+    smtp["password"] = smtp_password
+    mutation["smtpServer"] = smtp
+    return mutation
+
+
+def ensure_realm(
+    client: KeycloakAdminClient,
+    *,
+    smtp_password: str | None = None,
+) -> str:
     """Create or update the profile-owned realm settings.
 
     Args:
         client: Authenticated Keycloak client.
+        smtp_password: Runtime-only SMTP password required for an authenticated
+            SMTP create/update. It is never part of desired-state evidence.
 
     Returns:
         ``created``, ``updated``, or ``kept``.
@@ -69,9 +122,10 @@ def ensure_realm(client: KeycloakAdminClient) -> str:
         )
     if status == 200 and _owned_fields_match(current, desired):
         return "kept"
+    mutation = _realm_mutation_payload(identity, desired, smtp_password)
     if status == 200:
         merged = dict(current)
-        merged.update(desired)
+        merged.update(mutation)
         client.request(
             "PUT",
             realm_path(identity),
@@ -82,10 +136,47 @@ def ensure_realm(client: KeycloakAdminClient) -> str:
     client.request(
         "POST",
         "/admin/realms",
-        body=desired,
+        body=mutation,
         expected=(201, 204),
     )
     return "created"
+
+
+def test_smtp_connection(
+    client: KeycloakAdminClient,
+    *,
+    smtp_password: str | None = None,
+) -> str:
+    """Ask Keycloak to verify the selected realm SMTP transport.
+
+    Args:
+        client: Authenticated Keycloak client.
+        smtp_password: Runtime-only SMTP password supplied for this run.
+
+    Returns:
+        ``passed``, ``not-configured``, or ``manual-ui-required``. The manual
+        state is used when an existing authenticated sender is kept and its
+        write-only password is intentionally unavailable.
+
+    Raises:
+        KeycloakProfileError: If Keycloak rejects the SMTP connection test.
+    """
+
+    sender = client.identity.email_sender_settings
+    if not sender.enabled:
+        return "not-configured"
+    if sender.authentication and not smtp_password:
+        return "manual-ui-required"
+    body = smtp_public_payload(sender)
+    if smtp_password:
+        body["password"] = smtp_password
+    client.request(
+        "POST",
+        realm_path(client.identity, "/testSMTPConnection"),
+        body=body,
+        expected=(200, 204),
+    )
+    return "passed"
 
 
 def _post_logout_redirect_uris(identity: KeycloakIdentity) -> str:
@@ -196,6 +287,17 @@ def _owned_field_matches(
         current_attributes = current.get("attributes")
         return isinstance(current_attributes, dict) and all(
             current_attributes.get(name) == item
+            for name, item in value.items()
+        )
+    if key == "smtpServer" and isinstance(value, dict):
+        current_smtp = current.get("smtpServer")
+        if not value:
+            return current_smtp in (None, {})
+        if not isinstance(current_smtp, dict):
+            return False
+        return all(
+            current_smtp.get(name) == item
+            or (item in {"", "false"} and current_smtp.get(name) is None)
             for name, item in value.items()
         )
     if value is False and current.get(key) is None:
@@ -498,4 +600,5 @@ __all__ = [
     "owned_fields_match",
     "realm_payload",
     "regenerate_client_secret",
+    "test_smtp_connection",
 ]

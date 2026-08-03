@@ -36,6 +36,8 @@ from keycloak_profile_cli import (
     prompt_bootstrap_test_user_passwords,
     prompt_bootstrap_values,
     prompt_secret_safe_debug,
+    prompt_admin_ui_verification,
+    prompt_smtp_password,
 )
 from keycloak_profile_client import (
     KeycloakAdminClient,
@@ -200,9 +202,11 @@ def _apply_interactive_plan(
             created or cleaned up safely.
     """
 
+    smtp_password = prompt_smtp_password(identity, plan)
     passwords = prompt_bootstrap_test_user_passwords(identity, plan)
     if not confirm_apply(args.yes):
         passwords.clear()
+        smtp_password = None
         print("Keycloak bootstrap cancelled; no changes were applied.")
         return None
     print("")
@@ -217,10 +221,12 @@ def _apply_interactive_plan(
             docker_secret_present=docker_present,
             progress=print,
             bootstrap_test_user_passwords=passwords,
+            smtp_password=smtp_password,
             secret_observer=secret_observer,
         )
     finally:
         passwords.clear()
+        smtp_password = None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -269,6 +275,11 @@ def main(argv: list[str] | None = None) -> int:
         if summary is None:
             return 0
         print_completion(identity, summary)
+        prompt_admin_ui_verification(
+            identity,
+            summary,
+            wait_for_operator=not args.yes,
+        )
         return 0
     except KeyboardInterrupt:
         print("\nKeycloak bootstrap cancelled; no further changes were applied.")

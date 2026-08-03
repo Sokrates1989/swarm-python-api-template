@@ -45,6 +45,7 @@ from keycloak_profile_reconciliation import (
     frontend_payload as _frontend_payload,
     get_client_secret,
     regenerate_client_secret,
+    test_smtp_connection,
 )
 from keycloak_profile_roles import (
     KeycloakRoleError,
@@ -396,6 +397,7 @@ def _build_summary(
     docker_action: str,
     binding_verified: bool,
     secret_value_evidence: dict[str, object],
+    smtp_connection_test: str,
 ) -> dict[str, object]:
     """Build the final secret-free reconciliation result.
 
@@ -407,6 +409,7 @@ def _build_summary(
         docker_action: Docker secret bridge action.
         binding_verified: Whether the secret was proven and written this run.
         secret_value_evidence: One-way credential observation evidence.
+        smtp_connection_test: Secret-free SMTP verification outcome.
 
     Returns:
         JSON-compatible summary without credentials.
@@ -427,6 +430,7 @@ def _build_summary(
         "profile": profile.config_id,
         "realm": identity.realm,
         "realmAction": realm,
+        "smtpConnectionTest": smtp_connection_test,
         "realmRolesAction": realm_roles,
         "frontendClient": identity.frontend_client_id,
         "frontendAction": frontend,
@@ -527,8 +531,9 @@ def _prepare_keycloak_apply(
     *,
     planned_docker_state: bool | None,
     replace_secret: bool,
+    smtp_password: str | None,
     progress: Callable[[str], None] | None,
-) -> tuple[KeycloakIdentity, bool, str]:
+) -> tuple[KeycloakIdentity, bool, str, str]:
     """Revalidate the plan boundary and reconcile realm state first.
 
     Args:
@@ -536,10 +541,12 @@ def _prepare_keycloak_apply(
         client: Authenticated Keycloak Admin client.
         planned_docker_state: Optional state captured for the displayed plan.
         replace_secret: Whether explicit rotation was requested.
+        smtp_password: Runtime-only SMTP password required by a realm write.
         progress: Optional secret-free progress callback.
 
     Returns:
-        Active identity, current Docker-secret presence, and realm action.
+        Active identity, current Docker-secret presence, realm action, and
+        SMTP connection-test outcome.
 
     Raises:
         KeycloakProfileError: If the plan is blocked or state changed.
@@ -561,9 +568,11 @@ def _prepare_keycloak_apply(
     )
     _require_rotation_stack_stopped(profile, replace_secret=replace_secret)
     _report(progress, "[1/10] Reconciling realm settings...")
-    realm_action = ensure_realm(client)
+    realm_action = ensure_realm(client, smtp_password=smtp_password)
     _report(progress, f"      Realm: {realm_action}")
-    return identity, docker_present, realm_action
+    smtp_test = test_smtp_connection(client, smtp_password=smtp_password)
+    _report(progress, f"      Realm SMTP connection test: {smtp_test}")
+    return identity, docker_present, realm_action, smtp_test
 
 
 def reconcile_authenticated(
@@ -574,6 +583,7 @@ def reconcile_authenticated(
     docker_secret_present: bool | None = None,
     progress: Callable[[str], None] | None = None,
     bootstrap_test_user_passwords: Mapping[str, str] | None = None,
+    smtp_password: str | None = None,
     secret_observer: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     """Reconcile and verify state through one authenticated Admin client.
@@ -586,6 +596,8 @@ def reconcile_authenticated(
         progress: Optional secret-free progress callback.
         bootstrap_test_user_passwords: Runtime-only passwords keyed by test
             usernames requiring creation or credential recovery.
+        smtp_password: Runtime-only SMTP password required for an authenticated
+            realm email-sender create or update.
         secret_observer: Optional runtime-only consumer invoked only when this
             run creates or replaces the proven Docker client secret.
 
@@ -600,11 +612,17 @@ def reconcile_authenticated(
         KeycloakSecretBridgeError: If Docker state is unsafe or unavailable.
     """
 
-    identity, docker_secret_present, realm_action = _prepare_keycloak_apply(
+    (
+        identity,
+        docker_secret_present,
+        realm_action,
+        smtp_connection_test,
+    ) = _prepare_keycloak_apply(
         profile,
         client,
         planned_docker_state=docker_secret_present,
         replace_secret=replace_secret,
+        smtp_password=smtp_password,
         progress=progress,
     )
     _, docker_present = _preflight_secret_state(
@@ -642,6 +660,7 @@ def reconcile_authenticated(
         docker_action,
         binding_verified,
         secret_value_evidence,
+        smtp_connection_test,
     )
 
 
@@ -653,6 +672,7 @@ def reconcile(
     replace_secret: bool,
     progress: Callable[[str], None] | None = None,
     bootstrap_test_user_passwords: Mapping[str, str] | None = None,
+    smtp_password: str | None = None,
     secret_observer: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     """Authenticate, reconcile, and strictly verify the selected profile.
@@ -666,6 +686,7 @@ def reconcile(
         bootstrap_test_user_passwords: Runtime-only passwords for test-user
             creation or credential recovery. Interactive callers collect these
             after the live plan.
+        smtp_password: Runtime-only SMTP password required by the realm plan.
         secret_observer: Optional runtime-only consumer invoked only for a
             newly created or rotated and stored client secret.
 
@@ -688,6 +709,7 @@ def reconcile(
         replace_secret=replace_secret,
         progress=progress,
         bootstrap_test_user_passwords=bootstrap_test_user_passwords,
+        smtp_password=smtp_password,
         secret_observer=secret_observer,
     )
 

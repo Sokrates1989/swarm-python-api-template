@@ -97,6 +97,25 @@ DEPLOYMENT_KEYS = (
     "KEYCLOAK_REMEMBER_ME",
     "KEYCLOAK_VERIFY_EMAIL",
     "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED",
+    "KEYCLOAK_LOGIN_THEME",
+    "KEYCLOAK_ACCOUNT_THEME",
+    "KEYCLOAK_ADMIN_THEME",
+    "KEYCLOAK_EMAIL_THEME",
+    "KEYCLOAK_INTERNATIONALIZATION_ENABLED",
+    "KEYCLOAK_SUPPORTED_LOCALES",
+    "KEYCLOAK_DEFAULT_LOCALE",
+    "KEYCLOAK_EMAIL_SENDER_ENABLED",
+    "KEYCLOAK_SMTP_FROM",
+    "KEYCLOAK_SMTP_FROM_DISPLAY_NAME",
+    "KEYCLOAK_SMTP_REPLY_TO",
+    "KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME",
+    "KEYCLOAK_SMTP_ENVELOPE_FROM",
+    "KEYCLOAK_SMTP_HOST",
+    "KEYCLOAK_SMTP_PORT",
+    "KEYCLOAK_SMTP_STARTTLS",
+    "KEYCLOAK_SMTP_SSL",
+    "KEYCLOAK_SMTP_AUTH",
+    "KEYCLOAK_SMTP_USERNAME",
     "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
     "KEYCLOAK_AUDIENCE",
     "KEYCLOAK_FRONTEND_CLIENT_ID",
@@ -149,6 +168,25 @@ KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
         "KEYCLOAK_REMEMBER_ME",
         "KEYCLOAK_VERIFY_EMAIL",
         "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED",
+        "KEYCLOAK_LOGIN_THEME",
+        "KEYCLOAK_ACCOUNT_THEME",
+        "KEYCLOAK_ADMIN_THEME",
+        "KEYCLOAK_EMAIL_THEME",
+        "KEYCLOAK_INTERNATIONALIZATION_ENABLED",
+        "KEYCLOAK_SUPPORTED_LOCALES",
+        "KEYCLOAK_DEFAULT_LOCALE",
+        "KEYCLOAK_EMAIL_SENDER_ENABLED",
+        "KEYCLOAK_SMTP_FROM",
+        "KEYCLOAK_SMTP_FROM_DISPLAY_NAME",
+        "KEYCLOAK_SMTP_REPLY_TO",
+        "KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME",
+        "KEYCLOAK_SMTP_ENVELOPE_FROM",
+        "KEYCLOAK_SMTP_HOST",
+        "KEYCLOAK_SMTP_PORT",
+        "KEYCLOAK_SMTP_STARTTLS",
+        "KEYCLOAK_SMTP_SSL",
+        "KEYCLOAK_SMTP_AUTH",
+        "KEYCLOAK_SMTP_USERNAME",
         "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
         "KEYCLOAK_AUDIENCE",
         "KEYCLOAK_FRONTEND_CLIENT_ID",
@@ -165,6 +203,25 @@ OPTIONAL_DEPLOYMENT_DEFAULTS = {
     "KEYCLOAK_REMEMBER_ME": "",
     "KEYCLOAK_VERIFY_EMAIL": "",
     "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED": "",
+    "KEYCLOAK_LOGIN_THEME": "",
+    "KEYCLOAK_ACCOUNT_THEME": "",
+    "KEYCLOAK_ADMIN_THEME": "",
+    "KEYCLOAK_EMAIL_THEME": "",
+    "KEYCLOAK_INTERNATIONALIZATION_ENABLED": "",
+    "KEYCLOAK_SUPPORTED_LOCALES": "",
+    "KEYCLOAK_DEFAULT_LOCALE": "",
+    "KEYCLOAK_EMAIL_SENDER_ENABLED": "",
+    "KEYCLOAK_SMTP_FROM": "",
+    "KEYCLOAK_SMTP_FROM_DISPLAY_NAME": "",
+    "KEYCLOAK_SMTP_REPLY_TO": "",
+    "KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME": "",
+    "KEYCLOAK_SMTP_ENVELOPE_FROM": "",
+    "KEYCLOAK_SMTP_HOST": "",
+    "KEYCLOAK_SMTP_PORT": "",
+    "KEYCLOAK_SMTP_STARTTLS": "",
+    "KEYCLOAK_SMTP_SSL": "",
+    "KEYCLOAK_SMTP_AUTH": "",
+    "KEYCLOAK_SMTP_USERNAME": "",
     "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED": "",
 }
 
@@ -176,6 +233,37 @@ KEYCLOAK_REALM_SETTING_ENV_KEYS = (
     ("rememberMe", "KEYCLOAK_REMEMBER_ME"),
     ("verifyEmail", "KEYCLOAK_VERIFY_EMAIL"),
     ("loginWithEmailAllowed", "KEYCLOAK_LOGIN_WITH_EMAIL_ALLOWED"),
+)
+
+# Public deployment keys corresponding to profile-owned realm theme settings.
+KEYCLOAK_THEME_ENV_KEYS = (
+    ("login", "KEYCLOAK_LOGIN_THEME"),
+    ("account", "KEYCLOAK_ACCOUNT_THEME"),
+    ("admin", "KEYCLOAK_ADMIN_THEME"),
+    ("email", "KEYCLOAK_EMAIL_THEME"),
+)
+
+# Public deployment keys corresponding to profile-owned localization settings.
+KEYCLOAK_LOCALIZATION_ENV_KEYS = (
+    ("enabled", "KEYCLOAK_INTERNATIONALIZATION_ENABLED"),
+    ("supportedLocales", "KEYCLOAK_SUPPORTED_LOCALES"),
+    ("defaultLocale", "KEYCLOAK_DEFAULT_LOCALE"),
+)
+
+# Public deployment keys corresponding to profile-owned SMTP sender settings.
+KEYCLOAK_EMAIL_SENDER_ENV_KEYS = (
+    ("enabled", "KEYCLOAK_EMAIL_SENDER_ENABLED"),
+    ("from", "KEYCLOAK_SMTP_FROM"),
+    ("fromDisplayName", "KEYCLOAK_SMTP_FROM_DISPLAY_NAME"),
+    ("replyTo", "KEYCLOAK_SMTP_REPLY_TO"),
+    ("replyToDisplayName", "KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME"),
+    ("envelopeFrom", "KEYCLOAK_SMTP_ENVELOPE_FROM"),
+    ("host", "KEYCLOAK_SMTP_HOST"),
+    ("port", "KEYCLOAK_SMTP_PORT"),
+    ("startTls", "KEYCLOAK_SMTP_STARTTLS"),
+    ("ssl", "KEYCLOAK_SMTP_SSL"),
+    ("authentication", "KEYCLOAK_SMTP_AUTH"),
+    ("username", "KEYCLOAK_SMTP_USERNAME"),
 )
 
 
@@ -397,6 +485,16 @@ def _keycloak_deployment_defaults(
     enabled = provider == "keycloak"
     realm_settings = auth.get("realmSettings", {})
     normalized = realm_settings if isinstance(realm_settings, Mapping) else {}
+    themes = auth.get("themes", {})
+    normalized_themes = themes if isinstance(themes, Mapping) else {}
+    localization = auth.get("localization", {})
+    normalized_localization = (
+        localization if isinstance(localization, Mapping) else {}
+    )
+    email_sender = auth.get("emailSender", {})
+    normalized_email_sender = (
+        email_sender if isinstance(email_sender, Mapping) else {}
+    )
     values = {
         "KEYCLOAK_BASE_URL": str(auth.get("serverUrl", "")),
         "KEYCLOAK_ISSUER_URL": str(auth.get("issuerUrl", "")),
@@ -419,6 +517,37 @@ def _keycloak_deployment_defaults(
             if enabled
             else ""
         )
+    for setting_name, environment_key in KEYCLOAK_THEME_ENV_KEYS:
+        values[environment_key] = (
+            str(normalized_themes.get(setting_name, "default"))
+            if enabled
+            else ""
+        )
+    configured_locales = normalized_localization.get("supportedLocales", [])
+    localization_values = {
+        "enabled": str(
+            bool(normalized_localization.get("enabled", False))
+        ).lower(),
+        "supportedLocales": ",".join(
+            str(locale) for locale in configured_locales
+        ),
+        "defaultLocale": str(
+            normalized_localization.get("defaultLocale", "")
+        ),
+    }
+    for setting_name, environment_key in KEYCLOAK_LOCALIZATION_ENV_KEYS:
+        values[environment_key] = (
+            localization_values[setting_name] if enabled else ""
+        )
+    email_boolean_fields = {"enabled", "startTls", "ssl", "authentication"}
+    for setting_name, environment_key in KEYCLOAK_EMAIL_SENDER_ENV_KEYS:
+        raw_value = normalized_email_sender.get(setting_name, "")
+        serialized = (
+            str(bool(raw_value)).lower()
+            if setting_name in email_boolean_fields
+            else str(raw_value)
+        )
+        values[environment_key] = serialized if enabled else ""
     return values
 
 
@@ -498,7 +627,10 @@ __all__ = [
     "FALSE_DEBUG_KEYS",
     "IMAGE_PATTERN",
     "KEYCLOAK_DEPLOYMENT_KEYS",
+    "KEYCLOAK_EMAIL_SENDER_ENV_KEYS",
+    "KEYCLOAK_LOCALIZATION_ENV_KEYS",
     "KEYCLOAK_REALM_SETTING_ENV_KEYS",
+    "KEYCLOAK_THEME_ENV_KEYS",
     "MEMORY_PATTERN",
     "NAME_PATTERN",
     "SECRET_PATTERN",

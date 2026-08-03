@@ -38,6 +38,11 @@ from keycloak_profile_configuration import (  # noqa: E402
     KeycloakBootstrapValues,
     persist_keycloak_values,
 )
+from keycloak_profile_realm_configuration import (  # noqa: E402
+    KeycloakEmailSenderSettings,
+    KeycloakLocalizationSettings,
+    KeycloakThemeSettings,
+)
 
 
 class KeycloakProfileConfigurationTests(unittest.TestCase):
@@ -90,6 +95,31 @@ class KeycloakProfileConfigurationTests(unittest.TestCase):
                 ("verifyEmail", False),
                 ("loginWithEmailAllowed", True),
             ),
+            theme_settings=KeycloakThemeSettings(
+                "felix-login",
+                "felix-account",
+                "default",
+                "felix-email",
+            ),
+            localization_settings=KeycloakLocalizationSettings(
+                True,
+                ("de", "en", "fr"),
+                "de",
+            ),
+            email_sender_settings=KeycloakEmailSenderSettings(
+                True,
+                "noreply@selected-felix.fe-wi.com",
+                "Felix Selected",
+                "support@selected-felix.fe-wi.com",
+                "Felix Support",
+                "bounces@selected-felix.fe-wi.com",
+                "smtp.fe-wi.com",
+                587,
+                True,
+                False,
+                True,
+                "felix-smtp",
+            ),
             bootstrap_test_users_enabled=False,
         )
 
@@ -125,6 +155,16 @@ class KeycloakProfileConfigurationTests(unittest.TestCase):
             },
         )
         self.assertFalse(identity.bootstrap_test_users_enabled)
+        self.assertEqual(identity.theme_settings.login, "felix-login")
+        self.assertEqual(
+            identity.localization_settings.supported_locales,
+            ("de", "en", "fr"),
+        )
+        self.assertEqual(
+            identity.email_sender_settings.host,
+            "smtp.fe-wi.com",
+        )
+        self.assertEqual(identity.email_sender_settings.port, 587)
         self.assertEqual(
             identity.issuer_url,
             "https://keycloak.fe-wi.com/realms/felix-selected",
@@ -190,6 +230,43 @@ class KeycloakProfileConfigurationTests(unittest.TestCase):
         self.assertEqual(
             (self.root / ".env").read_text(encoding="utf-8"),
             before,
+        )
+
+    def test_optional_smtp_values_can_override_profile_defaults_to_empty(
+        self,
+    ) -> None:
+        """Persist explicit empty sender metadata without restoring defaults.
+
+        Returns:
+            Nothing.
+        """
+
+        defaults = KeycloakBootstrapValues.from_identity(
+            load_keycloak_identity(self.profile)
+        )
+        sender = replace(
+            defaults.email_sender_settings,
+            enabled=True,
+            from_address="noreply@felix-app.fe-wi.com",
+            from_display_name="",
+            reply_to="",
+            reply_to_display_name="",
+            envelope_from="",
+            host="smtp.fe-wi.com",
+            username="felix-smtp",
+        )
+        updated, _ = persist_keycloak_values(
+            self.profile,
+            replace(defaults, email_sender_settings=sender),
+            check_compose=False,
+        )
+        identity = load_keycloak_identity(updated)
+
+        self.assertEqual(identity.email_sender_settings.from_display_name, "")
+        self.assertEqual(identity.email_sender_settings.reply_to, "")
+        self.assertEqual(
+            updated.deployment["KEYCLOAK_SMTP_FROM_DISPLAY_NAME"],
+            "<empty>",
         )
 
     def test_prior_environment_without_display_name_uses_profile_default(

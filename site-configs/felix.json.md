@@ -74,12 +74,14 @@ The shared bootstrap reads callback templates, audience-mapper policy,
 application-role and temporary test-user declarations, forbidden default
 usernames, protected legacy identity, backend service-account roles, the fixed
 Keycloak server trust anchor, and the confidential-client Docker secret target
-from this JSON. Realm/display name, all six allowlisted realm booleans, managed
-client IDs, test-user lifecycle, audience, and active service roots use these
-profile values as defaults but may be changed in the guided bootstrap. Valid
+from this JSON. Realm/display name, all six allowlisted realm booleans, four
+theme selections, localization, public SMTP sender fields, managed client IDs,
+test-user lifecycle, audience, and active service roots use these profile
+values as defaults but may be changed in the guided bootstrap. Valid public
 selections are persisted to the ignored root `.env` and rebuild the generated
-stack. It preserves all other realm settings, unrelated clients, and social
-identity providers.
+stack. The SMTP password is requested later without echo and never persists.
+The shared flow preserves unrelated clients, social identity providers, and an
+existing SMTP map when profile management remains disabled.
 
 `secretsConfig.valueHelp` supplies the operator guidance used to generate a
 temporary `secrets.env` for every manually importable exact-name Docker secret.
@@ -126,10 +128,15 @@ new or rotated backend secret is proven and stored, the operator may opt into
 a private read-only `temp_keycloak_secret.txt` editor view for recovery; the
 file and its private directory are deleted immediately when the editor closes.
 The bootstrap first shows a sanitized live-state plan. After apply, it reads all
-owned state back and verifies the public issuer and JWKS. When the Docker
-secret is missing, the real current Keycloak credential is fetched, proven
-through the client-credentials token endpoint and a read-only realm-user
-Admin API request, and streamed unchanged from memory to
+owned state back and verifies themes, localization, public SMTP fields, the
+public issuer, and JWKS. A new or changed authenticated SMTP configuration must
+also pass Keycloak's connection-test endpoint with the runtime-only password.
+Completion directs the operator to the exact Felix realm-settings Admin UI,
+where themes, locales, and email settings must be reviewed, **Test connection**
+must be run, and a real verification or reset email must be delivered. When
+the Docker secret is missing, the real current Keycloak credential is fetched,
+proven through the client-credentials token endpoint and a read-only
+realm-user Admin API request. It is then streamed unchanged from memory to
 `docker secret create`.
 
 An existing Docker secret cannot be read back by Docker Swarm, so it is
