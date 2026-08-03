@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -31,6 +32,7 @@ from keycloak_profile_access_dialog import (  # noqa: E402
 from keycloak_profile_application_access import (  # noqa: E402
     KeycloakBootstrapTestUser,
     KeycloakRealmRole,
+    inspect_bootstrap_test_users,
 )
 
 
@@ -156,6 +158,33 @@ class KeycloakProfileAccessDialogTests(unittest.TestCase):
         self.assertTrue(users)
         self.assertTrue(
             all(not user.selected_for_bootstrap for user in users)
+        )
+
+    def test_skipped_existing_user_is_an_uninspected_non_blocking_noop(
+        self,
+    ) -> None:
+        """Leave skipped users unchanged without requiring their deletion.
+
+        Returns:
+            Nothing.
+        """
+
+        skipped = tuple(
+            replace(user, selected_for_bootstrap=False)
+            for user in self.users
+        )
+        client = SimpleNamespace(
+            identity=SimpleNamespace(
+                bootstrap_test_users_enabled=False,
+                bootstrap_test_users=skipped,
+            )
+        )
+
+        actions = inspect_bootstrap_test_users(client, realm_exists=True)
+
+        self.assertEqual(
+            actions,
+            {"test-user": "skip", "test-manager": "skip"},
         )
 
     def test_forbidden_or_duplicate_manual_username_is_reprompted(self) -> None:

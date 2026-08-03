@@ -17,6 +17,7 @@ Dependencies:
 from __future__ import annotations
 
 import urllib.parse
+from collections.abc import Mapping
 from typing import Any
 
 from keycloak_profile_client import (
@@ -27,7 +28,6 @@ from keycloak_profile_client import (
     resolve_client_uuid,
 )
 from keycloak_profile_application_access import (
-    bootstrap_test_user_blockers,
     inspect_bootstrap_test_users,
     inspect_realm_roles,
     summarize_actions,
@@ -267,7 +267,6 @@ def _plan_blockers(
     client: KeycloakAdminClient,
     *,
     realm_exists: bool,
-    email_sender_present: bool,
     backend_action: str,
     unexpected_roles: tuple[str, ...],
     test_user_actions: dict[str, str],
@@ -279,8 +278,6 @@ def _plan_blockers(
     Args:
         client: Authenticated Keycloak Admin client.
         realm_exists: Whether the selected realm already exists.
-        email_sender_present: Whether the live realm already has the minimum
-            public SMTP sender fields needed for email delivery.
         backend_action: Planned backend client action.
         unexpected_roles: Undeclared qualified service-account roles.
         test_user_actions: Profile test-user live-state actions.
@@ -300,7 +297,6 @@ def _plan_blockers(
         f"Remove undeclared service-account role explicitly: {role}"
         for role in unexpected_roles
     )
-    blockers.extend(bootstrap_test_user_blockers(test_user_actions))
     realm_enabled = dict(client.identity.realm_settings)["enabled"]
     if not realm_enabled and (replace_secret or not docker_secret_present):
         blockers.append(
@@ -316,6 +312,29 @@ def _plan_blockers(
             "Backend client is missing while its Docker secret exists; "
             "use explicit secret rotation with the stack stopped."
         )
+    blockers.extend(_theme_availability_blockers(client))
+    return blockers
+
+
+def _plan_warnings(
+    client: KeycloakAdminClient,
+    *,
+    email_sender_present: bool,
+    test_user_actions: Mapping[str, str],
+) -> list[str]:
+    """Build non-blocking operator follow-up warnings.
+
+    Args:
+        client: Authenticated Keycloak Admin client.
+        email_sender_present: Whether live realm state contains a usable public
+            SMTP sender map.
+        test_user_actions: Per-run bootstrap-user action mapping.
+
+    Returns:
+        Sanitized warnings that do not prevent unrelated reconciliation.
+    """
+
+    warnings: list[str] = []
     realm_settings = dict(client.identity.realm_settings)
     email_delivery_required = bool(
         realm_settings["verifyEmail"]
@@ -326,13 +345,23 @@ def _plan_blockers(
         and not client.identity.email_sender_settings.enabled
         and not email_sender_present
     ):
-        blockers.append(
-            "Configure a realm email sender before enabling verified email "
-            "or password reset; neither the selected profile nor the live "
-            "realm provides usable SMTP settings."
+        warnings.append(
+            "Email verification or password reset is enabled without a "
+            "managed or existing SMTP sender; configure and test email "
+            "delivery before relying on those features."
         )
-    blockers.extend(_theme_availability_blockers(client))
-    return blockers
+    skipped = sorted(
+        username
+        for username, action in test_user_actions.items()
+        if action == "skip"
+    )
+    if skipped:
+        warnings.append(
+            "Skipped bootstrap users are left unchanged this run; remove any "
+            "temporary live accounts separately before production: "
+            + ", ".join(skipped)
+        )
+    return warnings
 
 
 def _realm_has_email_sender(
@@ -582,12 +611,16 @@ def build_reconciliation_plan(
     blockers = _plan_blockers(
         client,
         realm_exists=realm_exists,
-        email_sender_present=_realm_has_email_sender(current_realm),
         backend_action=backend_action,
         unexpected_roles=unexpected_roles,
         test_user_actions=test_user_actions,
         docker_secret_present=docker_secret_present,
         replace_secret=replace_secret,
+    )
+    warnings = _plan_warnings(
+        client,
+        email_sender_present=_realm_has_email_sender(current_realm),
+        test_user_actions=test_user_actions,
     )
     return {
         "realm": realm_action,
@@ -605,6 +638,7 @@ def build_reconciliation_plan(
             docker_secret_present,
             replace_secret,
         ),
+        "warnings": warnings,
         "blockers": blockers,
     }
 

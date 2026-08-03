@@ -379,7 +379,7 @@ def prompt_application_access(
     print("Application roles and bootstrap users")
     print("-------------------------------------")
     print("Role options and predefined users come from the selected site profile.")
-    print("Deselection never silently deletes a live Keycloak role or user.")
+    print("Deselected roles are not deleted; skipped users are left unchanged.")
     roles = _prompt_realm_roles(identity)
     if not roles:
         skipped = tuple(

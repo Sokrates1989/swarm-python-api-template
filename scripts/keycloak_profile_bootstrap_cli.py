@@ -3,9 +3,9 @@ Module: keycloak_profile_bootstrap_cli.py
 
 Description:
     Owns the executable entry point for site-profile Keycloak bootstrap. It
-    keeps interactive review, authentication, confirmation, optional secret
-    recovery viewing, and completion reporting outside the reconciliation
-    coordinator.
+    keeps credential-first authentication, interactive review, confirmation,
+    optional secret recovery viewing, and completion reporting outside the
+    reconciliation coordinator.
 
 Dependencies:
     - Python standard library.
@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 
 from executable_profile import (
@@ -27,14 +26,13 @@ from executable_profile import (
 )
 from keycloak_profile_application_access import KeycloakApplicationAccessError
 from keycloak_profile_bootstrap import reconcile_authenticated
+from keycloak_profile_auth_dialog import authenticate_admin_until_valid
 from keycloak_profile_cli import (
-    authenticate_admin,
     confirm_apply,
     inspect_reconciliation_plan,
     print_completion,
     print_plan,
     print_target,
-    prompt_admin_user,
     prompt_bootstrap_test_user_passwords,
     prompt_bootstrap_values,
     prompt_secret_safe_debug,
@@ -47,17 +45,13 @@ from keycloak_profile_client import (
     KeycloakProfileError,
     load_keycloak_identity,
 )
-from keycloak_profile_configuration import (
-    KeycloakBootstrapValues,
-    persist_keycloak_values,
-)
+from keycloak_profile_configuration import persist_keycloak_values
 from keycloak_profile_roles import KeycloakRoleError
 from keycloak_profile_secret_bridge import KeycloakSecretBridgeError
 from keycloak_profile_secret_viewer import (
     KeycloakSecretViewerError,
     offer_temporary_secret_view,
 )
-from keycloak_profile_theme_inventory import prompt_live_theme_settings
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Existing Keycloak administrator username. When omitted, the "
-            "interactive prompt follows the complete target summary."
+            "credential-first dialogue uses admin as its Enter default."
         ),
     )
     parser.add_argument(
@@ -124,6 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _review_bootstrap_configuration(
     profile: ExecutableProfile,
     identity: KeycloakIdentity,
+    client: KeycloakAdminClient,
     *,
     skip_review: bool,
 ) -> tuple[ExecutableProfile, KeycloakIdentity]:
@@ -132,6 +127,7 @@ def _review_bootstrap_configuration(
     Args:
         profile: Current validated deployment profile.
         identity: Current normalized Keycloak identity.
+        client: Already authenticated and Admin-API-verified client.
         skip_review: Keep existing values without interactive questions.
 
     Returns:
@@ -144,8 +140,9 @@ def _review_bootstrap_configuration(
     """
 
     if skip_review:
+        client.identity = identity
         return profile, identity
-    selected_values = prompt_bootstrap_values(identity)
+    selected_values = prompt_bootstrap_values(identity, client)
     prior_identity = identity
     profile, changed = persist_keycloak_values(profile, selected_values)
     persisted_identity = load_keycloak_identity(profile) if changed else identity
@@ -173,69 +170,10 @@ def _review_bootstrap_configuration(
                 "stack stopped."
             )
     identity = selected_values.apply_access_selection(persisted_identity)
+    client.identity = identity
     print("")
     print_target(profile, identity)
     return profile, identity
-
-
-def _review_authenticated_theme_configuration(
-    profile: ExecutableProfile,
-    identity: KeycloakIdentity,
-    client: KeycloakAdminClient,
-    *,
-    skip_review: bool,
-) -> tuple[ExecutableProfile, KeycloakIdentity]:
-    """Select live themes after login and persist the final public choices.
-
-    Args:
-        profile: Current validated deployment profile.
-        identity: Identity containing prior public selections and runtime user
-            intent.
-        client: Authenticated client used to load installed themes.
-        skip_review: Preserve configured themes for non-interactive callers.
-
-    Returns:
-        Active profile and identity after optional theme persistence. The
-        supplied client is rebound to the returned identity.
-
-    Raises:
-        ExecutableProfileError: If persistence or stack rendering fails.
-        KeycloakProfileError: If live inventory or selected themes are invalid.
-        OSError: If generated deployment artifacts cannot be replaced.
-    """
-
-    if skip_review:
-        return profile, identity
-    theme_settings = prompt_live_theme_settings(
-        client,
-        identity.theme_settings,
-    )
-    values = replace(
-        KeycloakBootstrapValues.from_identity(identity),
-        theme_settings=theme_settings,
-    )
-    profile, changed = persist_keycloak_values(profile, values)
-    persisted = load_keycloak_identity(profile) if changed else identity
-    selected_identity = values.apply_access_selection(persisted)
-    client.identity = selected_identity
-    if changed:
-        print(
-            "\n[OK] Saved authenticated theme selections to "
-            f"{profile.root / '.env'}"
-        )
-        print(
-            "[OK] Rebuilt generated stack at "
-            f"{profile.root / 'swarm-stack.yml'}"
-        )
-    selected = selected_identity.theme_settings
-    print("")
-    print("Selected realm themes")
-    print("---------------------")
-    print(f"  Login:   {selected.login}")
-    print(f"  Account: {selected.account}")
-    print(f"  Admin:   {selected.admin}")
-    print(f"  Email:   {selected.email}")
-    return profile, selected_identity
 
 
 def _apply_interactive_plan(
@@ -309,22 +247,25 @@ def main(argv: list[str] | None = None) -> int:
     try:
         profile = load_executable_profile(args.root)
         identity = load_keycloak_identity(profile)
-        print_target(profile, identity)
-        profile, identity = _review_bootstrap_configuration(
-            profile,
+        client = authenticate_admin_until_valid(
             identity,
-            skip_review=args.accept_profile_values,
+            args.admin_user or "admin",
         )
+        if client is None:
+            print("")
+            print("[INFO] Keycloak bootstrap was skipped before configuration.")
+            print(
+                "[INFO] Run 'Bootstrap / update Keycloak realm' later to "
+                "complete it."
+            )
+            return 0
         debug = args.debug
         if not args.accept_profile_values and not debug:
             debug = prompt_secret_safe_debug()
-        admin_user = args.admin_user or prompt_admin_user()
-        client = authenticate_admin(
-            identity,
-            admin_user,
-            debug=debug,
-        )
-        profile, identity = _review_authenticated_theme_configuration(
+        client.debug = debug
+        print("")
+        print_target(profile, identity)
+        profile, identity = _review_bootstrap_configuration(
             profile,
             identity,
             client,

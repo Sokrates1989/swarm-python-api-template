@@ -80,8 +80,18 @@ test-user lifecycle, audience, and active service roots use these profile
 values as defaults but may be changed in the guided bootstrap. Valid public
 selections are persisted to the ignored root `.env` and rebuild the generated
 stack. The SMTP password is requested later without echo and never persists.
-Realm themes are selected only after administrator authentication from
-numbered menus populated by Keycloak's live installed-theme inventory.
+The administrator username/password pair is the first interactive boundary and
+must also prove Admin API access before any realm question appears. Realm themes
+are then selected from numbered menus populated by Keycloak's live installed
+inventory. The selected login theme's server-reported locale metadata drives
+the shared installer-style localization picker.
+
+Felix's disabled-by-default sender proposal uses
+`webmaster@felicitas-wisdom.com`, `smtp.strato.de:465`, implicit TLS, and the
+tracked Felix display/reply-to metadata. Accepting email setup activates those
+defaults; declining it keeps them available for later and leaves a live realm
+sender unchanged. Email-dependent realm settings without a sender produce a
+non-blocking delivery warning.
 The shared flow preserves unrelated clients, social identity providers, and an
 existing SMTP map when profile management remains disabled.
 
@@ -120,9 +130,10 @@ selected missing user or password credential, the bootstrap prompts twice for
 a hidden password after showing the authenticated plan and sends it only to
 Keycloak. Every bootstrap
 summary repeats: **Once you enter production mode, remember to delete those
-users.** Turning the lifecycle switch off does not auto-delete identities; the
-plan blocks until both are explicitly removed from Keycloak. The managed
-application roles remain after that cleanup.
+users.** Skipping either user or disabling this run's user management does not
+inspect, change, or auto-delete that identity and does not block unrelated
+realm/client work. The operator must still inspect and remove temporary users
+before production. The managed application roles remain after that cleanup.
 
 Administrator password and backend client secret are never printed, written
 to `.env`, put in command arguments, or saved to a repository file. After a

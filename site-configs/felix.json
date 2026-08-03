@@ -142,17 +142,17 @@
     },
     "emailSender": {
       "enabled": false,
-      "from": "",
-      "fromDisplayName": "Felix",
-      "replyTo": "",
-      "replyToDisplayName": "Felix",
+      "from": "webmaster@felicitas-wisdom.com",
+      "fromDisplayName": "FelixApp Keycloak Admin",
+      "replyTo": "felix@felicitas-wisdom.com",
+      "replyToDisplayName": "FelixApp",
       "envelopeFrom": "",
-      "host": "",
-      "port": 587,
-      "startTls": true,
-      "ssl": false,
+      "host": "smtp.strato.de",
+      "port": 465,
+      "startTls": false,
+      "ssl": true,
       "authentication": true,
-      "username": ""
+      "username": "webmaster@felicitas-wisdom.com"
     },
     "realmRoles": [
       {

@@ -573,7 +573,11 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             ("de", "en"),
         )
         self.assertFalse(identity.email_sender_settings.enabled)
-        self.assertEqual(identity.email_sender_settings.port, 587)
+        self.assertEqual(identity.email_sender_settings.port, 465)
+        self.assertEqual(
+            identity.email_sender_settings.from_address,
+            "webmaster@felicitas-wisdom.com",
+        )
         self.assertEqual(
             identity.audience_mapper_name,
             "backend-audience",
@@ -652,7 +656,7 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         smtp_secret = copy.deepcopy(self.felix_config)
         smtp_secret["auth"]["emailSender"]["password"] = "forbidden"
         conflicting_smtp_tls = copy.deepcopy(self.felix_config)
-        conflicting_smtp_tls["auth"]["emailSender"]["ssl"] = True
+        conflicting_smtp_tls["auth"]["emailSender"]["startTls"] = True
         cases = (
             (invalid_settings, "realmSettings contains unsupported fields"),
             (invalid_mapper, "audienceMapperName is unsafe"),

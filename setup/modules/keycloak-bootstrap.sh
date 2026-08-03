@@ -187,7 +187,7 @@ _profile_keycloak_secret_name() {
 }
 
 # _profile_keycloak_summary
-# Prints the public reconciliation target before any credentials are requested.
+# Prints a concise, non-interactive explanation before credential verification.
 #
 # Arguments:
 #   None.
@@ -200,39 +200,40 @@ _profile_keycloak_summary() {
     secret_name="$(_profile_keycloak_secret_name 2>/dev/null || true)"
     echo ""
     echo "Keycloak realm bootstrap"
-    echo "------------------------"
-    echo "  Profile:         $(_profile_json_value '.appId')"
-    echo "  Existing server: $(_profile_keycloak_active_value KEYCLOAK_BASE_URL '.auth.serverUrl')"
-    echo "  Realm:           $(_profile_keycloak_active_value KEYCLOAK_REALM '.auth.realm')"
-    echo "  Frontend client: $(_profile_keycloak_active_value KEYCLOAK_FRONTEND_CLIENT_ID '.auth.frontendClientId')"
-    echo "  Backend client:  $(_profile_keycloak_active_value KEYCLOAK_BACKEND_CLIENT_ID '.auth.adminClientId')"
-    echo "  Docker secret name: ${secret_name:-not declared}"
+    echo "========================"
     echo ""
-    echo "This updates the existing Keycloak deployment through its Admin API."
-    echo "It does not deploy another Keycloak instance and does not change social"
-    echo "identity providers or unrelated realm settings."
-    echo "The guided review accepts active realm settings, clients, audience,"
-    echo "and service roots, then offers installer-style role and per-user"
-    echo "selection from the site-profile defaults. Changes are validated,"
-    echo "saved to root .env where applicable, and"
-    echo "used to rebuild swarm-stack.yml."
-    echo "The Keycloak server remains the tracked credential trust anchor."
-    echo "WebApp/mobile builds must use the selected realm and client identity."
-    echo "After login, installed login/account/admin/email themes are loaded"
-    echo "from Keycloak and offered through numbered single-choice menus."
-    echo "The final read-only live-state plan is shown before Enter-default"
-    echo "approval. Success requires Admin API read-back, issuer/JWKS verification,"
-    echo "client-credentials proof, and a capability-derived authorization check"
-    echo "before a missing Docker secret is created."
-    echo "The site profile supplies allowed role and predefined-user options."
-    echo "Additional public user definitions remain secret-free runtime intent."
-    echo "Missing selected-user passwords are requested without echo"
-    echo "and are never stored. Production cleanup is shown as an explicit warning."
-    echo "The client-secret value is never printed or stored in deployment files."
-    echo "After creating/rotating it, you may open a private read-only temporary"
-    echo "copy in nano/vim/vi; that file is deleted as soon as the editor closes."
-    echo "Optional debug tracing prints only HTTP methods, Admin API paths,"
-    echo "query-key names, and status codes; credentials and payloads stay hidden."
+    echo "Target"
+    echo "  Profile:          $(_profile_json_value '.appId')"
+    echo "  Existing server:  $(_profile_keycloak_active_value KEYCLOAK_BASE_URL '.auth.serverUrl')"
+    echo "  Current realm:    $(_profile_keycloak_active_value KEYCLOAK_REALM '.auth.realm')"
+    echo "  Docker secret:    ${secret_name:-not declared}"
+    echo ""
+    echo "Authentication first"
+    echo "  The existing server is the fixed credential trust anchor."
+    echo "  The next prompts request and verify a Keycloak administrator username"
+    echo "  and password. No realm configuration question appears before a real"
+    echo "  Admin API login succeeds. Enter q at the username prompt to skip this"
+    echo "  bootstrap and return later."
+    echo ""
+    echo "What the guided bootstrap manages"
+    echo "  - realm identity and managed realm settings"
+    echo "  - installed themes and theme-supported locales"
+    echo "  - optional realm email sender configuration"
+    echo "  - frontend/backend clients, audience, roles, and selected users"
+    echo "  - the missing or explicitly rotated backend-client Docker secret"
+    echo ""
+    echo "Safety boundaries"
+    echo "  - it updates this existing server; it never deploys Keycloak"
+    echo "  - unrelated realms, clients, and social providers stay unchanged"
+    echo "  - skipped users are left unchanged and are never silently deleted"
+    echo "  - passwords and client secrets never enter .env, JSON, plans, or logs"
+    echo "  - a sanitized live-state plan is shown before any mutation"
+    echo "  - successful apply requires Admin API and public OIDC verification"
+    echo ""
+    echo "Public choices are saved to root .env and rebuild swarm-stack.yml."
+    echo "WebApp/mobile builds must use the selected"
+    echo "realm and client identity. A new secret may optionally be viewed through"
+    echo "a private self-deleting temporary editor file after it is safely stored."
 }
 
 # _profile_keycloak_reconcile
@@ -315,7 +316,6 @@ run_profile_keycloak_bootstrap() {
 #   action while the selected stack is running.
 run_profile_keycloak_secret_rotation() {
     local python_command=""
-    local confirmation=""
 
     if ! profile_supports_keycloak_bootstrap; then
         echo "[ERROR] The selected profile has no executable Keycloak contract."
@@ -327,11 +327,6 @@ run_profile_keycloak_secret_rotation() {
     }
     _profile_keycloak_summary
     echo "[WARN] This replaces the Docker secret and requires the stack to be stopped."
-    read -r -p "Type 'rotate' to continue: " confirmation
-    if [ "$confirmation" != "rotate" ]; then
-        echo "Keycloak secret rotation cancelled."
-        return 1
-    fi
     _profile_keycloak_reconcile \
         "$python_command" \
         "--replace-secret"

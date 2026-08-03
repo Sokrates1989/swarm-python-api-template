@@ -108,8 +108,9 @@ secret-free temporary-user defaults, and realm/client policy remain tracked
 profile data. Interactive runtime intent chooses a role subset, each declared
 user independently, exact per-user roles/password mode, and optional additional
 users. Missing test-user passwords are accepted only as hidden runtime input.
-Skipping users turns any retained declared account into a production-cleanup
-blocker; it never silently deletes identity state.
+A skipped user is neither inspected nor changed during that run, so it cannot
+block unrelated realm/client reconciliation. Production cleanup remains an
+explicit operator warning and never becomes a silent deletion.
 
 ## Current file structure
 

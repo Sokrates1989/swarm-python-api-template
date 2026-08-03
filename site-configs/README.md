@@ -218,23 +218,30 @@ The shared validator rejects Keycloak's `master` realm, built-in managed
 client IDs, and any profile that reuses one client ID for both the public
 frontend and confidential backend.
 
-Before authentication, the interactive bootstrap presents the role catalog as
-an installer-style checkbox list. Up/Down navigates, Space toggles, Enter
-confirms, and all/none shortcuts are available. The selected subset becomes the
-only role set created, frontend-scoped, and assignable to users during that
-run; deselection never silently deletes a live role. Each profile-declared user
-then has an independent create/update choice, an exact role multiselect, and a
-regular-versus-temporary password-mode choice. Operators may append validated
-manual bootstrap users until declining the loop. These detailed choices are
-secret-free runtime intent; the site profile remains the allowed/default
-catalog and `.env` retains the aggregate lifecycle default.
+The administrator username/password pair is the first interactive boundary.
+Invalid credentials or insufficient Admin API permission loop back to that
+pair; no configuration question is shown until `/admin/serverinfo` succeeds.
+Entering `q` at the username prompt or interrupting credential entry skips the
+whole Keycloak bootstrap cleanly so it can be run from the menu later.
 
-The pre-authentication guided review asks for internationalization, locales,
-and the realm email sender. After the adjacent administrator username/password
-prompts, the bootstrap reads Keycloak's installed theme inventory and presents
-four numbered single-choice menus. Each menu offers `default` plus only the
-live login, account, admin, or email themes for that category. Selections then
-persist to the ignored root `.env` before the live-state plan is built.
+After authenticated access is proven, the guided review asks for public realm
+identity and booleans, then reads Keycloak's installed theme inventory. Four
+numbered single-choice menus offer `default` plus only the live login, account,
+admin, or email themes in each category. The server-info metadata also drives
+an installer-style locale multiselect for the selected login theme. When the
+server default is inherited and its resolved name is not exposed by the Admin
+API, the picker says so and offers the union of locales reported by installed
+login themes.
+
+The same reusable checkbox control presents the application role catalog.
+Up/Down navigates, Space toggles, Enter confirms, and all/none shortcuts are
+available. The selected subset becomes the only role set created,
+frontend-scoped, and assignable to users during that run; deselection never
+silently deletes a live role. Each profile-declared user then has an independent
+create/update choice, an exact role multiselect, and a regular-versus-temporary
+password-mode choice. Operators may append validated manual bootstrap users
+until declining the loop. These detailed choices are secret-free runtime
+intent; all selected public settings persist together before the live plan.
 
 If verified-email or password-reset features are selected, SMTP is the
 recommended Enter default. Public SMTP values persist to the ignored root
@@ -242,9 +249,12 @@ recommended Enter default. Public SMTP values persist to the ignored root
 authenticated live-state plan and is sent directly to Keycloak. A disabled
 `emailSender` profile default means the profile does not alter an existing
 realm SMTP map. Interactive setup still requires the operator to configure
-SMTP or disable email-dependent settings. Entering `none` for optional sender
-metadata stores the documented `<empty>` sentinel so a non-empty profile
-default can be cleared unambiguously.
+SMTP before relying on email-dependent settings. Declining SMTP setup leaves
+an existing sender unchanged and does not block unrelated realm/client work;
+the plan prints a delivery warning when no sender exists. Profile defaults stay
+available for a later run. Entering `none` for optional sender metadata stores
+the documented `<empty>` sentinel so a non-empty profile default can be cleared
+unambiguously.
 
 The bootstrap authenticates to the existing server, restricts theme selection
 to the live server inventory, prints a read-only sanitized plan, applies only
@@ -275,12 +285,13 @@ password credential is missing, the bootstrap asks for that password without
 terminal echo after the authenticated plan, repeats the selected roles and
 password mode, and sends the credential directly to Keycloak. Skipping one user
 or disabling all test-user management never silently deletes accounts.
-Existing skipped declared test users are
-reported as production-cleanup blockers until the operator deletes them in
-Keycloak and reruns the plan. Application roles remain the production
-authorization contract after those temporary identities are gone. A disabled
-realm may be reconciled, but it must be enabled for a bootstrap run that needs
-to create or rotate and prove the confidential client secret.
+Skipped users are not inspected or mutated during that run and therefore do
+not block unrelated realm/client reconciliation. The plan still reminds the
+operator that any temporary live accounts require separate production cleanup.
+Application roles remain the production authorization contract after those
+temporary identities are gone. A disabled realm may be reconciled, but it must
+be enabled for a bootstrap run that needs to create or rotate and prove the
+confidential client secret.
 
 Every successful interactive run prints the exact realm-settings Admin UI URL
 and pauses for a manual review of themes, localization, and email sender state.

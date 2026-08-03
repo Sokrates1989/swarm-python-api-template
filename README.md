@@ -255,23 +255,27 @@ application roles, secret-free temporary test users, and service-account roles
 are profile fields, as are the Traefik
 certificate resolver, direct service ports, and optional pgAdmin. Realm
 booleans and the aggregate test-user lifecycle are operator-selectable public
-`.env` values. Before authentication, an installer-style checkbox dialogue
-selects the profile role catalog subset, asks independently about every
-predefined user and its exact roles/password mode, and can collect additional
-secret-free users in a loop. Arrow keys navigate, Space toggles, and Enter
-confirms. Passwords are requested without echo only when authenticated live
-state shows that a selected account lacks one. The bootstrap reminds the
-operator to remove temporary identities before production and blocks a skipped
-declared user while that account still exists.
+`.env` values. The Keycloak administrator username/password pair is always the
+first interactive boundary and loops until both login and Admin API access are
+valid, or the operator explicitly skips the complete bootstrap. Only then does
+the generic dialogue load live theme metadata and ask realm questions.
 
-After the adjacent Keycloak administrator username/password prompts, the same
-generic bootstrap loads the live server inventory and presents separate
-numbered login, account, admin, and email theme menus. Only `default` and
-actually installed themes can be selected. It also reconciles locale and public
-SMTP settings. SMTP passwords never enter JSON or `.env`; they are requested
-only when an authenticated SMTP create/update needs one. Keycloak connection
-testing is followed by a required Admin UI checklist and one real delivered
-verification/reset email.
+Separate numbered menus offer only `default` and installed login, account,
+admin, and email themes. An installer-style checkbox control selects locales
+reported for the selected login theme. The same reusable control selects the
+profile role catalog subset and exact per-user roles; arrow keys navigate,
+Space toggles, and Enter confirms. Each predefined user can be created/updated
+or skipped, and additional secret-free users can be collected in a loop. A
+skipped user is left completely unchanged and does not block other Keycloak
+reconciliation. Passwords are requested without echo only when live state shows
+that a selected account lacks one.
+
+Public SMTP settings can be configured or deliberately skipped. Skipping keeps
+an existing realm sender intact and produces a non-blocking warning when email
+features have no sender. SMTP passwords never enter JSON or `.env`; they are
+requested only when an authenticated SMTP create/update needs one. Keycloak
+connection testing is followed by a required Admin UI checklist and one real
+delivered verification/reset email.
 
 Site configs store safe defaults and allowed capabilities. Final
 deployment-instance selections such as domain, proxy, SSL ownership, image

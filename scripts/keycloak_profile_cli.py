@@ -2,11 +2,12 @@
 Module: keycloak_profile_cli.py
 
 Description:
-    Owns the interactive, secret-safe operator dialogue for generic Keycloak
-    profile bootstrap. It guides the operator through public profile values,
-    offers redacted request tracing, prints sanitized plans, reads the
-    administrator password without echo, and delegates all mutation to the
-    bootstrap coordinator.
+    Owns the post-authentication, secret-safe operator dialogue for generic
+    Keycloak profile bootstrap. It guides public profile values, offers
+    redacted request tracing, prints sanitized plans, reads runtime-only SMTP
+    and selected-user passwords without echo, and delegates all mutation to
+    the bootstrap coordinator. The credential-first gate lives in the focused
+    authentication-dialog module.
 
 Dependencies:
     - Python standard library.
@@ -34,7 +35,9 @@ from keycloak_profile_secret_bridge import docker_secret_exists
 from keycloak_profile_verification import build_reconciliation_plan
 from keycloak_profile_realm_configuration import (
     KeycloakEmailSenderSettings,
-    KeycloakLocalizationSettings,
+)
+from keycloak_profile_theme_inventory import (
+    prompt_live_theme_and_localization_settings,
 )
 
 
@@ -81,14 +84,14 @@ def _print_application_access_target(identity: KeycloakIdentity) -> None:
             "those users."
         )
     else:
-        print("No temporary bootstrap test users will be created.")
+        print("No temporary bootstrap test users will be created or changed.")
 
 
 def print_target(
     profile: ExecutableProfile,
     identity: KeycloakIdentity,
 ) -> None:
-    """Print the complete public desired state before authentication.
+    """Print the complete public desired state after authentication.
 
     Args:
         profile: Active executable profile.
@@ -258,45 +261,6 @@ def _prompt_port(label: str, default: int) -> int:
         print("Please enter a TCP port from 1 to 65535.")
 
 
-def _prompt_localization_settings(
-    identity: KeycloakIdentity,
-) -> KeycloakLocalizationSettings:
-    """Collect realm internationalization and locale choices.
-
-    Args:
-        identity: Active identity providing localization defaults.
-
-    Returns:
-        Operator-selected localization settings.
-    """
-
-    current = identity.localization_settings
-    print("")
-    print("Realm localization")
-    print("------------------")
-    enabled = _prompt_boolean(
-        "Enable realm internationalization", current.enabled
-    )
-    raw_default = ",".join(current.supported_locales)
-    raw_locales = _prompt_value(
-        "Supported locales (comma-separated)",
-        raw_default,
-    )
-    locales = tuple(
-        dict.fromkeys(
-            item.strip() for item in raw_locales.split(",") if item.strip()
-        )
-    )
-    default_locale = _prompt_value(
-        "Default locale", current.default_locale
-    )
-    return KeycloakLocalizationSettings(
-        enabled=enabled,
-        supported_locales=locales,
-        default_locale=default_locale,
-    )
-
-
 def _prompt_email_sender_settings(
     identity: KeycloakIdentity,
     realm_settings: tuple[tuple[str, bool], ...],
@@ -332,10 +296,10 @@ def _prompt_email_sender_settings(
     )
     if not enabled:
         if email_required:
-            raise KeycloakProfileError(
-                "Verified-email or password-reset settings require SMTP. "
-                "Rerun and configure the email sender, or disable both "
-                "dependent realm settings."
+            print(
+                "[WARN] Email verification or password reset is enabled, but "
+                "this run will leave realm SMTP unchanged. Configure and test "
+                "email delivery before relying on those features."
             )
         return replace(current, enabled=False)
     print("Type 'none' to clear an optional sender field.")
@@ -458,19 +422,23 @@ def _prompt_public_identity_values(
 
 def prompt_bootstrap_values(
     identity: KeycloakIdentity,
+    client: KeycloakAdminClient | None = None,
 ) -> KeycloakBootstrapValues:
     """Collect editable public bootstrap values with active defaults.
 
     Args:
         identity: Complete profile/deployment-derived Keycloak identity.
+        client: Authenticated Admin client used to load installed themes and
+            their supported locales. ``None`` preserves active theme/locale
+            values for non-interactive compatibility callers.
 
     Returns:
         Selected values ready for validation and deployment persistence.
 
     Note:
         The Keycloak server URL is printed as a fixed trust anchor because the
-        administrator password must never be redirected by an interactive
-        value entered immediately before authentication.
+        administrator password has already been verified against this trust
+        anchor before this dialogue is reached.
     """
 
     print("")
@@ -478,15 +446,23 @@ def prompt_bootstrap_values(
     print("--------------------------------")
     print("Press Enter to accept each active profile/deployment value.")
     print("Different values are validated, saved to .env, and used to rebuild")
-    print("the stack before Keycloak authentication and reconciliation.")
+    print("the stack before Keycloak reconciliation.")
     print("WebApp/mobile builds must use the same realm and client identity.")
     print("")
     print(f"Keycloak server URL (fixed trust anchor): {identity.server_url}")
     selected = _prompt_public_identity_values(identity)
     realm_settings = _prompt_realm_settings(identity)
-    print("")
-    print("Installed realm themes are selected after Keycloak admin login.")
-    localization_settings = _prompt_localization_settings(identity)
+    theme_settings = identity.theme_settings
+    localization_settings = identity.localization_settings
+    if client is not None:
+        theme_settings, localization_settings = (
+            prompt_live_theme_and_localization_settings(
+                client,
+                identity.theme_settings,
+                identity.localization_settings,
+                _prompt_boolean,
+            )
+        )
     email_sender_settings = _prompt_email_sender_settings(
         identity,
         realm_settings,
@@ -503,7 +479,7 @@ def prompt_bootstrap_values(
         realm=selected["realm"],
         realm_display_name=selected["realm_display_name"],
         realm_settings=realm_settings,
-        theme_settings=identity.theme_settings,
+        theme_settings=theme_settings,
         localization_settings=localization_settings,
         email_sender_settings=email_sender_settings,
         realm_roles=realm_roles,
@@ -678,6 +654,11 @@ def print_plan(plan: dict[str, object]) -> None:
         print(f"  {label:<23} {plan[key]}")
     if plan.get("smtpPasswordRequired") is True:
         print("  SMTP password           required after plan approval")
+    warnings = plan.get("warnings", [])
+    if isinstance(warnings, list) and warnings:
+        print("  Warnings:")
+        for warning in warnings:
+            print(f"    - {warning}")
     blockers = plan["blockers"]
     if isinstance(blockers, list) and blockers:
         print("  Blockers:")

@@ -433,41 +433,23 @@ def inspect_bootstrap_test_users(
         realm_exists: Whether user endpoints are currently available.
 
     Returns:
-        Username to action mapping. Disabled desired state uses ``absent`` or
-        ``remove-before-production`` rather than deleting automatically.
+        Username to action mapping. A user not selected for this run uses
+        ``skip`` regardless of live presence and is never read, changed,
+        deleted, or converted into an apply blocker.
     """
 
     actions: dict[str, str] = {}
     for user in client.identity.bootstrap_test_users:
-        current = _read_user(client, user.username) if realm_exists else None
         selected = (
             client.identity.bootstrap_test_users_enabled
             and user.selected_for_bootstrap
         )
         if not selected:
-            actions[user.username] = (
-                "absent" if current is None else "remove-before-production"
-            )
-        else:
-            actions[user.username] = _user_action(client, user, current)
+            actions[user.username] = "skip"
+            continue
+        current = _read_user(client, user.username) if realm_exists else None
+        actions[user.username] = _user_action(client, user, current)
     return actions
-
-
-def bootstrap_test_user_blockers(actions: Mapping[str, str]) -> list[str]:
-    """Convert retained disabled test users into explicit cleanup blockers.
-
-    Args:
-        actions: Test-user action map from live inspection.
-
-    Returns:
-        Sanitized operator actions required before production bootstrap.
-    """
-
-    return [
-        f"Delete bootstrap test user before production: {username}"
-        for username, action in actions.items()
-        if action == "remove-before-production"
-    ]
 
 
 def required_test_user_passwords(actions: Mapping[str, str]) -> tuple[str, ...]:
@@ -706,13 +688,9 @@ def verify_application_access(client: _AdminClient) -> None:
     drifted_users = [
         user.username
         for user in client.identity.bootstrap_test_users
-        if user_actions[user.username]
-        != (
-            "keep"
-            if client.identity.bootstrap_test_users_enabled
-            and user.selected_for_bootstrap
-            else "absent"
-        )
+        if client.identity.bootstrap_test_users_enabled
+        and user.selected_for_bootstrap
+        and user_actions[user.username] != "keep"
     ]
     if drifted_users:
         raise KeycloakApplicationAccessError(
@@ -725,7 +703,6 @@ __all__ = [
     "KeycloakApplicationAccessError",
     "KeycloakBootstrapTestUser",
     "KeycloakRealmRole",
-    "bootstrap_test_user_blockers",
     "ensure_bootstrap_test_users",
     "ensure_realm_roles",
     "inspect_bootstrap_test_users",

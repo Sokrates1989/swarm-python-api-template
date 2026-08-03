@@ -257,10 +257,10 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
         current.pop("id")
         return current
 
-    def test_disabling_test_users_requires_explicit_production_cleanup(
+    def test_disabling_test_users_leaves_existing_accounts_unchanged(
         self,
     ) -> None:
-        """Block production desired state until temporary users are removed.
+        """Skip existing users without blocking unrelated reconciliation.
 
         Returns:
             Nothing.
@@ -278,15 +278,17 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             replace_secret=False,
         )
 
-        cleanup = [
-            blocker
-            for blocker in plan["blockers"]
-            if "Delete bootstrap test user before production" in blocker
-        ]
-        self.assertEqual(len(cleanup), len(self.identity.bootstrap_test_users))
+        self.assertEqual(plan["blockers"], [])
+        self.assertTrue(
+            all(
+                action == "skip"
+                for action in plan["bootstrapTestUserActions"].values()
+            )
+        )
+        self.assertIn("left unchanged", " ".join(plan["warnings"]))
 
-    def test_skipping_one_declared_user_requires_only_its_cleanup(self) -> None:
-        """Apply the per-user lifecycle without disabling selected users.
+    def test_skipping_one_declared_user_is_a_non_blocking_noop(self) -> None:
+        """Keep selected-user management while ignoring one skipped user.
 
         Returns:
             Nothing.
@@ -312,18 +314,12 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             replace_secret=False,
         )
 
-        cleanup = [
-            blocker
-            for blocker in plan["blockers"]
-            if "Delete bootstrap test user before production" in blocker
-        ]
+        self.assertEqual(plan["blockers"], [])
         self.assertEqual(
-            cleanup,
-            [
-                "Delete bootstrap test user before production: "
-                f"{skipped_username}"
-            ],
+            plan["bootstrapTestUserActions"][skipped_username],
+            "skip",
         )
+        self.assertIn(skipped_username, " ".join(plan["warnings"]))
 
     def test_disabled_realm_blocks_a_new_secret_proof(self) -> None:
         """Require an enabled realm while creating the backend credential.

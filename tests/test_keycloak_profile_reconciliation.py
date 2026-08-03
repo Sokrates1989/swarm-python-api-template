@@ -58,6 +58,7 @@ from keycloak_profile_realm_configuration import (  # noqa: E402
 )
 from keycloak_profile_theme_inventory import (  # noqa: E402
     load_available_themes,
+    load_theme_inventory,
 )
 from keycloak_profile_roles import (  # noqa: E402
     KeycloakRoleError,
@@ -65,6 +66,7 @@ from keycloak_profile_roles import (  # noqa: E402
 )
 from keycloak_profile_verification import (  # noqa: E402
     _plan_blockers,
+    _plan_warnings,
     _theme_availability_blockers,
     build_reconciliation_plan,
     verify_reconciled_state,
@@ -214,7 +216,10 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             self.assertEqual((method, path), ("GET", "/admin/serverinfo"))
             return 200, {
                 "themes": {
-                    "login": [{"name": "keycloak"}, {"name": "felix"}],
+                    "login": [
+                        {"name": "keycloak", "locales": ["en"]},
+                        {"name": "felix", "locales": ["en", "de"]},
+                    ],
                     "account": [{"name": "keycloak.v3"}],
                     "admin": [{"name": "keycloak.v2"}],
                     "email": [{"name": "keycloak"}],
@@ -225,6 +230,10 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         self.assertEqual(
             load_available_themes(client)["login"],
             ("felix", "keycloak"),
+        )
+        self.assertEqual(
+            load_theme_inventory(client)["login"][0].locales,
+            ("de", "en"),
         )
         self.assertEqual(_theme_availability_blockers(client), [])
         unavailable = replace(
@@ -239,10 +248,10 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         self.assertEqual(len(blockers), 1)
         self.assertIn("'missing' is unavailable", blockers[0])
 
-    def test_email_dependent_realm_requires_managed_or_existing_smtp(
+    def test_email_dependent_realm_warns_when_smtp_is_skipped(
         self,
     ) -> None:
-        """Block unsafe email settings unless a sender is configured.
+        """Warn without blocking when the operator skips SMTP management.
 
         Returns:
             Nothing.
@@ -264,18 +273,19 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             "replace_secret": False,
         }
 
-        blockers = _plan_blockers(
+        self.assertEqual(_plan_blockers(client, **arguments), [])
+        warnings = _plan_warnings(
             client,
             email_sender_present=False,
-            **arguments,
+            test_user_actions={},
         )
-        self.assertEqual(len(blockers), 1)
-        self.assertIn("Configure a realm email sender", blockers[0])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Email verification or password reset", warnings[0])
         self.assertEqual(
-            _plan_blockers(
+            _plan_warnings(
                 client,
                 email_sender_present=True,
-                **arguments,
+                test_user_actions={},
             ),
             [],
         )

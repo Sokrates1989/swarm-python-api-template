@@ -3,9 +3,9 @@ Module: test_keycloak_profile_cli.py
 
 Description:
     Protects the guided, secret-safe Keycloak bootstrap prompt sequence. The
-    complete public target and value review precede the administrator username,
-    and the password prompt follows that username without another bootstrap
-    summary in between.
+    administrator login and Admin API capability are verified before every
+    realm question. It also protects live theme/locale choices and clean
+    bootstrap cancellation.
 
 Dependencies:
     - Python standard library.
@@ -19,7 +19,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +28,9 @@ if str(SCRIPTS_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
 import keycloak_profile_bootstrap_cli as bootstrap  # noqa: E402
+from keycloak_profile_auth_dialog import (  # noqa: E402
+    authenticate_admin_until_valid,
+)
 from keycloak_profile_cli import (  # noqa: E402
     _prompt_required_value,
     prompt_admin_ui_verification,
@@ -44,6 +47,8 @@ from keycloak_profile_realm_configuration import (  # noqa: E402
     KeycloakThemeSettings,
 )
 from keycloak_profile_theme_inventory import (  # noqa: E402
+    KeycloakThemeInfo,
+    prompt_live_theme_and_localization_settings,
     prompt_live_theme_settings,
 )
 
@@ -87,13 +92,19 @@ class KeycloakProfileCliTests(unittest.TestCase):
             )
         )
         inventory = {
-            "login": ("felix", "keycloak"),
-            "account": ("keycloak.v3",),
-            "admin": ("custom", "keycloak"),
-            "email": ("keycloak",),
+            "login": (
+                KeycloakThemeInfo("felix", ("de", "en")),
+                KeycloakThemeInfo("keycloak", ("en",)),
+            ),
+            "account": (KeycloakThemeInfo("keycloak.v3", ("en",)),),
+            "admin": (
+                KeycloakThemeInfo("custom", ("de", "en")),
+                KeycloakThemeInfo("keycloak", ("en",)),
+            ),
+            "email": (KeycloakThemeInfo("keycloak", ("en",)),),
         }
         with patch(
-            "keycloak_profile_theme_inventory.load_available_themes",
+            "keycloak_profile_theme_inventory.load_theme_inventory",
             return_value=inventory,
         ), patch(
             "builtins.input",
@@ -114,6 +125,124 @@ class KeycloakProfileCliTests(unittest.TestCase):
         )
         self.assertIn("keycloak.v3", rendered)
         self.assertNotIn("missing-theme", rendered)
+
+    def test_locales_use_selected_login_theme_live_metadata(self) -> None:
+        """Offer locale checkboxes from the selected login theme only.
+
+        Returns:
+            Nothing.
+        """
+
+        inventory = {
+            "login": (
+                KeycloakThemeInfo("felix", ("de", "en")),
+                KeycloakThemeInfo("keycloak", ("en", "fr")),
+            ),
+            "account": (KeycloakThemeInfo("keycloak.v3", ("en",)),),
+            "admin": (KeycloakThemeInfo("keycloak.v2", ("en",)),),
+            "email": (KeycloakThemeInfo("keycloak", ("en",)),),
+        }
+        with patch(
+            "keycloak_profile_theme_inventory.load_theme_inventory",
+            return_value=inventory,
+        ), patch(
+            "keycloak_profile_theme_inventory.select_many",
+            return_value=("de", "en"),
+        ) as selector, patch(
+            "builtins.input",
+            side_effect=["2", "", "", "", ""],
+        ), patch("builtins.print"):
+            themes, localization = prompt_live_theme_and_localization_settings(
+                object(),
+                KeycloakThemeSettings(
+                    "default", "default", "default", "default"
+                ),
+                KeycloakLocalizationSettings(True, ("de", "en"), "de"),
+                lambda _label, _default: True,
+            )
+
+        self.assertEqual(themes.login, "felix")
+        self.assertEqual(localization.supported_locales, ("de", "en"))
+        offered = tuple(option.value for option in selector.call_args.args[2])
+        self.assertEqual(offered, ("de", "en"))
+        self.assertNotIn("fr", offered)
+
+    def test_admin_authentication_retries_and_proves_admin_api_access(
+        self,
+    ) -> None:
+        """Retry invalid credentials before permitting realm questions.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(server_url="https://keycloak.example.com")
+        verified = Mock()
+        with patch(
+            "keycloak_profile_auth_dialog.KeycloakAdminClient",
+            side_effect=[KeycloakProfileError("HTTP 401"), verified],
+        ) as client_factory, patch(
+            "builtins.input",
+            side_effect=["Patrick", ""],
+        ), patch(
+            "keycloak_profile_auth_dialog.getpass.getpass",
+            side_effect=["wrong", "correct"],
+        ), patch("builtins.print"):
+            client = authenticate_admin_until_valid(identity)
+
+        self.assertIs(client, verified)
+        self.assertEqual(client_factory.call_count, 2)
+        verified.request.assert_called_once_with("GET", "/admin/serverinfo")
+
+    def test_admin_authentication_can_skip_complete_bootstrap(self) -> None:
+        """Map an explicit username-stage skip to a clean no-op.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(server_url="https://keycloak.example.com")
+        with patch("builtins.input", return_value="q"), patch(
+            "keycloak_profile_auth_dialog.getpass.getpass"
+        ) as password_prompt, patch("builtins.print"):
+            client = authenticate_admin_until_valid(identity)
+
+        self.assertIsNone(client)
+        password_prompt.assert_not_called()
+
+    def test_bootstrap_skip_avoids_every_configuration_question(self) -> None:
+        """Exit successfully when credential-stage bootstrap is skipped.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = object()
+        identity = object()
+        with patch.object(
+            bootstrap,
+            "load_executable_profile",
+            return_value=profile,
+        ), patch.object(
+            bootstrap,
+            "load_keycloak_identity",
+            return_value=identity,
+        ), patch.object(
+            bootstrap,
+            "authenticate_admin_until_valid",
+            return_value=None,
+        ), patch.object(
+            bootstrap,
+            "prompt_bootstrap_values",
+        ) as values_prompt, patch.object(
+            bootstrap,
+            "print_target",
+        ) as target_output, patch("builtins.print"):
+            status = bootstrap.main(["--root", str(REPOSITORY_ROOT)])
+
+        self.assertEqual(status, 0)
+        values_prompt.assert_not_called()
+        target_output.assert_not_called()
 
     def test_bootstrap_values_accept_defaults_and_operator_changes(
         self,
@@ -419,8 +548,8 @@ class KeycloakProfileCliTests(unittest.TestCase):
         with patch("builtins.input", return_value=""):
             self.assertEqual(prompt_admin_user(), "admin")
 
-    def test_target_precedes_adjacent_username_and_password_prompts(self) -> None:
-        """Keep bootstrap output outside the username/password prompt pair.
+    def test_credentials_precede_every_realm_configuration_question(self) -> None:
+        """Require verified credentials before tracing and public review.
 
         Returns:
             Nothing.
@@ -429,7 +558,7 @@ class KeycloakProfileCliTests(unittest.TestCase):
         events: list[str] = []
         profile = object()
         identity = object()
-        client = object()
+        client = SimpleNamespace(identity=identity, debug=False)
         plan: dict[str, object] = {"blockers": []}
         selected_values = SimpleNamespace(
             apply_access_selection=lambda active_identity: active_identity
@@ -473,24 +602,9 @@ class KeycloakProfileCliTests(unittest.TestCase):
             ),
             patch.object(
                 bootstrap,
-                "prompt_admin_user",
-                side_effect=lambda: events.append("username") or "Patrick",
-            ),
-            patch.object(
-                bootstrap,
-                "authenticate_admin",
+                "authenticate_admin_until_valid",
                 side_effect=lambda *_args, **_kwargs: (
-                    events.append("password") or client
-                ),
-            ),
-            patch.object(
-                bootstrap,
-                "_review_authenticated_theme_configuration",
-                side_effect=(
-                    lambda active_profile, active_identity, *_args, **_kwargs: (
-                        events.append("themes") or active_profile,
-                        active_identity,
-                    )
+                    events.append("credentials") or client
                 ),
             ),
             patch.object(
@@ -548,14 +662,12 @@ class KeycloakProfileCliTests(unittest.TestCase):
         self.assertEqual(
             events,
             [
+                "credentials",
+                "debug",
                 "target",
                 "values",
                 "persist",
                 "target",
-                "debug",
-                "username",
-                "password",
-                "themes",
                 "inspect",
                 "plan",
                 "smtp-password",

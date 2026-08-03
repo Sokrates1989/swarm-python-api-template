@@ -109,30 +109,37 @@ Let's Encrypt mode.
 ## Bootstrap/update the realm
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
-Review the server, realm, display name, frontend/backend client IDs, frontend
-and backend roots, audience, all six managed realm settings, supported locales
-and default locale, and the realm email sender through their Enter-default
-prompts. Public SMTP fields are stored in the ignored `.env`; any SMTP password
-is requested after the live plan without echo and is never persisted. Then use
-the installer-style role chooser: Up/Down moves, Space selects or clears, and
-Enter confirms the exact profile roles this run may create and assign. Entered
-deployment values replace the defaults, are validated against protected legacy
-identity, persist to root
-`.env`, and rebuild `swarm-stack.yml` before authentication. If the prior
-audience matched the prior backend client ID, entering a different backend ID
-also becomes the proposed audience; accept it or enter a deliberately distinct
-resource-server audience.
-The Keycloak server is shown as a fixed tracked credential trust anchor.
-WebApp/mobile artifacts must be built with the selected realm and client IDs.
-Optionally enable secret-safe request tracing, then enter the existing
-Keycloak admin username and its password at the immediately following hidden
-Python prompt.
+The existing Keycloak server is shown as the fixed credential trust anchor,
+then the administrator username and hidden password are the first questions.
+Invalid credentials or insufficient Admin API access return to the credential
+pair. Enter `q` at the username prompt to skip bootstrap and run it later. No
+realm question is shown before authenticated `/admin/serverinfo` access works.
 
-After authentication, Keycloak's live installed-theme inventory is loaded.
+After authentication, optionally enable secret-safe request tracing. Review
+the realm, display name, frontend/backend client IDs, frontend and backend
+roots, audience, and all six managed realm settings through their Enter-default
+prompts. Keycloak's live installed-theme inventory is then loaded.
 Choose the login, account, admin, and email themes from their numbered menus;
-each offers `default` plus only installed themes for that category. Changed
-theme selections are saved to `.env` and the stack is rebuilt before the
-authenticated reconciliation plan is constructed.
+each offers `default` plus only installed themes for that category. Select
+supported locales through the installer-style checkbox menu populated from the
+chosen login theme's server-reported locale metadata, then choose the default
+from that selected subset.
+
+Review the optional realm email sender. Felix proposes its tracked public
+Strato sender defaults; declining the step preserves them for later and leaves
+any existing live sender unchanged. If email verification/password reset has no
+sender, the plan warns without blocking unrelated client/realm work. Public
+SMTP fields are stored in ignored `.env`; a required SMTP password is requested
+after the plan without echo and is never persisted.
+
+Use the installer-style role chooser: Up/Down moves, Space selects or clears,
+and Enter confirms the exact profile roles this run may create and assign.
+Entered deployment values replace the defaults, are validated against protected
+legacy identity, persist together to root `.env`, and rebuild
+`swarm-stack.yml`. If the prior audience matched the prior backend client ID,
+entering a different backend ID also becomes the proposed audience; accept it
+or enter a deliberately distinct resource-server audience. WebApp/mobile
+artifacts must use the selected realm and client IDs.
 
 The profile declares the application roles `user` and `admin`, plus two
 temporary role-specific users. For each declared
@@ -143,9 +150,9 @@ password credential is missing, enter and confirm its password at
 the hidden prompts shown after the authenticated live-state plan. Passwords are
 sent only to Keycloak and never enter JSON, `.env`, logs, plans, or summaries. Every run
 with temporary users enabled warns: **Once you enter production mode, remember
-to delete those users.** To enter production mode, disable the test-user
-lifecycle, explicitly delete the two declared users from Keycloak, and rerun
-the bootstrap until its cleanup blockers are gone. Application roles remain.
+to delete those users.** Skipping a declared user leaves it entirely unchanged
+and does not block the rest of bootstrap. Before production, inspect and delete
+any temporary users separately; application roles remain.
 
 If an existing Docker client secret belongs to a previously selected realm or
 backend client, stop the Felix stack and use the explicit Keycloak secret
