@@ -142,14 +142,15 @@ deployment environment.
 
 Before credentials, the operator walks through the active server, realm,
 display name, client IDs, service roots, audience, all allowlisted realm
-booleans, and then an installer-style application-access dialogue. The role
-catalog comes from the profile; Up/Down navigates, Space selects or clears,
-and Enter confirms the exact roles this run may create and assign. Every
+booleans, localization, public SMTP sender fields, and then an installer-style
+application-access dialogue. The role catalog comes from the profile; Up/Down
+navigates, Space selects or clears, and Enter confirms the exact roles this run
+may create and assign. Every
 predefined user receives an independent create/update question, another role
 selector, and a temporary-password-mode question. An additional-user loop
 collects validated public identity and roles without collecting credentials.
-When the previous audience
-matched the previous backend client ID, entering a new backend ID also changes
+When the previous audience matched the previous backend client ID, entering a
+new backend ID also changes
 the proposed audience default; the audience remains independently editable for
 profiles that deliberately use a separate resource identifier. Selections are
 validated, persisted to the ignored root `.env`, and used to rebuild
@@ -157,8 +158,14 @@ validated, persisted to the ignored root `.env`, and used to rebuild
 all of those selections. The server URL remains the tracked credential trust
 anchor and cannot be redirected from this password-bearing dialogue. The
 administrator username and hidden password prompts remain adjacent.
+Immediately after authentication, the bootstrap reads the live Keycloak theme
+inventory and presents one numbered menu for each realm theme category. Only
+`default` and installed category values are selectable; changed theme
+selections are persisted before plan construction.
+
 Independently built WebApp/mobile artifacts must use the selected realm and
 client identity.
+
 Changing the realm or backend client while its Docker secret already exists
 keeps fail-closed behavior: stop the stack and use the explicit rotation
 action so the proven new credential replaces the prior binding.
@@ -168,13 +175,13 @@ methods, paths, query-key names, and HTTP status codes—never request bodies,
 headers, query values, tokens, passwords, or client secrets. Strict read-back
 errors also name the exact profile-owned fields that remain drifted.
 
-After authentication, the operator sees a sanitized live-state plan. Selected
-users missing either the account or its password credential then receive
-hidden, confirmation-checked passwords in selected-user order. Each credential
-prompt repeats that user's roles and regular/temporary password mode. Passwords
-are never persisted or printed, followed by the Enter-default apply
-confirmation. Apply success requires Admin API read-back plus public issuer
-and JWKS verification.
+After authenticated theme selection, the operator sees a sanitized live-state
+plan. Selected users missing either the account or its password credential
+then receive hidden, confirmation-checked passwords in selected-user order.
+Each credential prompt repeats that user's roles and regular/temporary password
+mode. Passwords are never persisted or printed. The Enter-default apply
+confirmation follows them. Apply success requires Admin API read-back plus
+public issuer and JWKS verification.
 Selected application roles are reconciled and explicitly scoped into the
 public client while its full-scope switch remains disabled. Turning temporary users off does
 not delete accounts automatically: retained test identities block the plan

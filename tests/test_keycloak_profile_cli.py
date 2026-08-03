@@ -43,6 +43,9 @@ from keycloak_profile_realm_configuration import (  # noqa: E402
     KeycloakLocalizationSettings,
     KeycloakThemeSettings,
 )
+from keycloak_profile_theme_inventory import (  # noqa: E402
+    prompt_live_theme_settings,
+)
 
 
 class KeycloakProfileCliTests(unittest.TestCase):
@@ -65,6 +68,52 @@ class KeycloakProfileCliTests(unittest.TestCase):
 
         self.assertEqual(selected, "smtp.example.com")
         self.assertIn("is required", str(printed.call_args_list))
+
+    def test_live_theme_menus_offer_only_authenticated_inventory(
+        self,
+    ) -> None:
+        """Select each realm theme from default plus live installed names.
+
+        Returns:
+            Nothing.
+        """
+
+        identity = SimpleNamespace(
+            theme_settings=KeycloakThemeSettings(
+                "default",
+                "keycloak.v3",
+                "keycloak",
+                "keycloak",
+            )
+        )
+        inventory = {
+            "login": ("felix", "keycloak"),
+            "account": ("keycloak.v3",),
+            "admin": ("custom", "keycloak"),
+            "email": ("keycloak",),
+        }
+        with patch(
+            "keycloak_profile_theme_inventory.load_available_themes",
+            return_value=inventory,
+        ), patch(
+            "builtins.input",
+            side_effect=["2", "", "2", "1"],
+        ), patch("builtins.print") as printed:
+            selected = prompt_live_theme_settings(
+                object(),
+                identity.theme_settings,
+            )
+
+        self.assertEqual(selected.login, "felix")
+        self.assertEqual(selected.account, "keycloak.v3")
+        self.assertEqual(selected.admin, "custom")
+        self.assertEqual(selected.email, "default")
+        rendered = " ".join(
+            " ".join(str(argument) for argument in call.args)
+            for call in printed.call_args_list
+        )
+        self.assertIn("keycloak.v3", rendered)
+        self.assertNotIn("missing-theme", rendered)
 
     def test_bootstrap_values_accept_defaults_and_operator_changes(
         self,
@@ -429,10 +478,26 @@ class KeycloakProfileCliTests(unittest.TestCase):
             ),
             patch.object(
                 bootstrap,
-                "authenticate_and_plan",
+                "authenticate_admin",
                 side_effect=lambda *_args, **_kwargs: (
-                    events.append("password") or client,
-                    False,
+                    events.append("password") or client
+                ),
+            ),
+            patch.object(
+                bootstrap,
+                "_review_authenticated_theme_configuration",
+                side_effect=(
+                    lambda active_profile, active_identity, *_args, **_kwargs: (
+                        events.append("themes") or active_profile,
+                        active_identity,
+                    )
+                ),
+            ),
+            patch.object(
+                bootstrap,
+                "inspect_reconciliation_plan",
+                side_effect=lambda *_args, **_kwargs: (
+                    events.append("inspect") or False,
                     plan,
                 ),
             ),
@@ -490,6 +555,8 @@ class KeycloakProfileCliTests(unittest.TestCase):
                 "debug",
                 "username",
                 "password",
+                "themes",
+                "inspect",
                 "plan",
                 "smtp-password",
                 "user-passwords",

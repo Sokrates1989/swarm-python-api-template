@@ -229,29 +229,34 @@ manual bootstrap users until declining the loop. These detailed choices are
 secret-free runtime intent; the site profile remains the allowed/default
 catalog and `.env` retains the aggregate lifecycle default.
 
-The guided review asks for all four realm themes, internationalization and
-locales, and the realm email sender. If verified-email or password-reset
-features are selected, SMTP is the recommended Enter default. Public SMTP
-values persist to the ignored root `.env`; an authentication password is
-requested without echo only after the authenticated live-state plan and is
-sent directly to Keycloak. A disabled `emailSender` profile default means the
-profile does not alter an existing realm SMTP map. Interactive setup still
-requires the operator to configure SMTP or disable email-dependent settings.
-Entering `none` for optional sender metadata stores the documented `<empty>`
-sentinel so a non-empty profile default can be cleared unambiguously.
+The pre-authentication guided review asks for internationalization, locales,
+and the realm email sender. After the adjacent administrator username/password
+prompts, the bootstrap reads Keycloak's installed theme inventory and presents
+four numbered single-choice menus. Each menu offers `default` plus only the
+live login, account, admin, or email themes for that category. Selections then
+persist to the ignored root `.env` before the live-state plan is built.
 
-The bootstrap authenticates to the existing server, verifies custom themes
-against the live server inventory, prints a read-only sanitized plan, applies
-only after confirmation, then verifies Admin API read-back, issuer, JWKS,
+If verified-email or password-reset features are selected, SMTP is the
+recommended Enter default. Public SMTP values persist to the ignored root
+`.env`; an authentication password is requested without echo only after the
+authenticated live-state plan and is sent directly to Keycloak. A disabled
+`emailSender` profile default means the profile does not alter an existing
+realm SMTP map. Interactive setup still requires the operator to configure
+SMTP or disable email-dependent settings. Entering `none` for optional sender
+metadata stores the documented `<empty>` sentinel so a non-empty profile
+default can be cleared unambiguously.
+
+The bootstrap authenticates to the existing server, restricts theme selection
+to the live server inventory, prints a read-only sanitized plan, applies only
+after confirmation, then verifies Admin API read-back, issuer, JWKS,
 audience mapper, application roles, temporary users, exact declared
 service-account role groups, and forbidden-user absence. When a new or updated
 authenticated SMTP map is applied, Keycloak's SMTP connection test must also
-pass. With
-the frontend client's full-scope switch disabled, all declared application
-roles are added to its dedicated realm-role scope so assigned roles can reach
-tokens. Exact service-account verification covers both direct assignments and
-the backend client's dedicated role-scope mappings, including rejection of
-roles on undeclared clients. A missing client-secret Docker secret is created
+pass. With the frontend client's full-scope switch disabled, all declared
+application roles are added to its dedicated realm-role scope so assigned
+roles can reach tokens. Exact service-account verification covers both direct
+assignments and the backend client's dedicated role-scope mappings, including
+rejection of roles on undeclared clients. A missing client-secret Docker secret is created
 only after Keycloak returns the real credential and accepts it in a
 client-credentials grant. Profiles declaring a built-in realm-management
 user-read role additionally require the resulting token to authorize a

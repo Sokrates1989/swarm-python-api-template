@@ -56,6 +56,9 @@ from keycloak_profile_realm_configuration import (  # noqa: E402
     KeycloakEmailSenderSettings,
     KeycloakThemeSettings,
 )
+from keycloak_profile_theme_inventory import (  # noqa: E402
+    load_available_themes,
+)
 from keycloak_profile_roles import (  # noqa: E402
     KeycloakRoleError,
     ensure_service_account_roles,
@@ -212,10 +215,17 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             return 200, {
                 "themes": {
                     "login": [{"name": "keycloak"}, {"name": "felix"}],
+                    "account": [{"name": "keycloak.v3"}],
+                    "admin": [{"name": "keycloak.v2"}],
+                    "email": [{"name": "keycloak"}],
                 }
             }
 
         client = RecordingAdminClient(identity, handler)
+        self.assertEqual(
+            load_available_themes(client)["login"],
+            ("felix", "keycloak"),
+        )
         self.assertEqual(_theme_availability_blockers(client), [])
         unavailable = replace(
             identity,

@@ -110,14 +110,14 @@ Let's Encrypt mode.
 
 Choose **Bootstrap / update Keycloak realm** from the same quick-start menu.
 Review the server, realm, display name, frontend/backend client IDs, frontend
-and backend roots, audience, all six managed realm settings, login/account/
-admin/email themes, supported locales and default locale, and the realm email
-sender through their Enter-default prompts. Public SMTP fields are stored in
-the ignored `.env`; any SMTP password is requested after the live plan without
-echo and is never persisted. Then use the installer-style role chooser: Up/Down moves,
-Space selects or clears, and Enter confirms the exact profile roles this run
-may create and assign. Entered deployment values replace
-the defaults, are validated against protected legacy identity, persist to root
+and backend roots, audience, all six managed realm settings, supported locales
+and default locale, and the realm email sender through their Enter-default
+prompts. Public SMTP fields are stored in the ignored `.env`; any SMTP password
+is requested after the live plan without echo and is never persisted. Then use
+the installer-style role chooser: Up/Down moves, Space selects or clears, and
+Enter confirms the exact profile roles this run may create and assign. Entered
+deployment values replace the defaults, are validated against protected legacy
+identity, persist to root
 `.env`, and rebuild `swarm-stack.yml` before authentication. If the prior
 audience matched the prior backend client ID, entering a different backend ID
 also becomes the proposed audience; accept it or enter a deliberately distinct
@@ -127,6 +127,12 @@ WebApp/mobile artifacts must be built with the selected realm and client IDs.
 Optionally enable secret-safe request tracing, then enter the existing
 Keycloak admin username and its password at the immediately following hidden
 Python prompt.
+
+After authentication, Keycloak's live installed-theme inventory is loaded.
+Choose the login, account, admin, and email themes from their numbered menus;
+each offers `default` plus only installed themes for that category. Changed
+theme selections are saved to `.env` and the stack is rebuilt before the
+authenticated reconciliation plan is constructed.
 
 The profile declares the application roles `user` and `admin`, plus two
 temporary role-specific users. For each declared

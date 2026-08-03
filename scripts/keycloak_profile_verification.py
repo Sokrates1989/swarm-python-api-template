@@ -51,6 +51,7 @@ from keycloak_profile_roles import (
     verify_service_account_roles,
 )
 from keycloak_profile_realm_configuration import DEFAULT_THEME
+from keycloak_profile_theme_inventory import load_available_themes
 
 
 def _read_realm(
@@ -364,33 +365,6 @@ def _realm_has_email_sender(
     )
 
 
-def _theme_names(server_info: dict[str, Any], theme_type: str) -> set[str]:
-    """Extract installed names for one Keycloak theme category.
-
-    Args:
-        server_info: Keycloak server-info representation.
-        theme_type: Theme category such as ``login`` or ``email``.
-
-    Returns:
-        Installed theme names. An empty set means the response was malformed
-        or did not expose that category.
-    """
-
-    themes = server_info.get("themes")
-    if not isinstance(themes, dict):
-        return set()
-    raw_items = themes.get(theme_type)
-    if not isinstance(raw_items, list):
-        return set()
-    names: set[str] = set()
-    for item in raw_items:
-        if isinstance(item, str):
-            names.add(item)
-        elif isinstance(item, dict) and isinstance(item.get("name"), str):
-            names.add(item["name"])
-    return names
-
-
 def _theme_availability_blockers(
     client: KeycloakAdminClient,
 ) -> list[str]:
@@ -420,14 +394,10 @@ def _theme_availability_blockers(
     }
     if not custom:
         return []
-    _, payload = client.request("GET", "/admin/serverinfo")
-    if not isinstance(payload, dict):
-        raise KeycloakProfileError(
-            "Keycloak server theme inventory returned invalid data."
-        )
+    inventory = load_available_themes(client)
     blockers: list[str] = []
     for theme_type, name in custom.items():
-        available = _theme_names(payload, theme_type)
+        available = inventory[theme_type]
         if name not in available:
             visible = ", ".join(sorted(available)) or "none reported"
             blockers.append(

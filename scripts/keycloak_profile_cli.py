@@ -33,10 +33,8 @@ from keycloak_profile_client import (
 from keycloak_profile_secret_bridge import docker_secret_exists
 from keycloak_profile_verification import build_reconciliation_plan
 from keycloak_profile_realm_configuration import (
-    DEFAULT_THEME,
     KeycloakEmailSenderSettings,
     KeycloakLocalizationSettings,
-    KeycloakThemeSettings,
 )
 
 
@@ -260,35 +258,6 @@ def _prompt_port(label: str, default: int) -> int:
         print("Please enter a TCP port from 1 to 65535.")
 
 
-def _prompt_theme_settings(identity: KeycloakIdentity) -> KeycloakThemeSettings:
-    """Collect login, account, admin, and email theme selections.
-
-    Args:
-        identity: Active identity providing theme defaults.
-
-    Returns:
-        Operator-selected theme settings.
-    """
-
-    current = identity.theme_settings
-    print("")
-    print("Realm themes")
-    print("------------")
-    print(
-        "Enter an installed Keycloak theme name, or 'default' to inherit "
-        "the server default."
-    )
-    print("Custom selections are checked against the live server after login.")
-    return KeycloakThemeSettings(
-        login=_prompt_value("Login theme", current.login or DEFAULT_THEME),
-        account=_prompt_value(
-            "Account theme", current.account or DEFAULT_THEME
-        ),
-        admin=_prompt_value("Admin theme", current.admin or DEFAULT_THEME),
-        email=_prompt_value("Email theme", current.email or DEFAULT_THEME),
-    )
-
-
 def _prompt_localization_settings(
     identity: KeycloakIdentity,
 ) -> KeycloakLocalizationSettings:
@@ -309,7 +278,10 @@ def _prompt_localization_settings(
         "Enable realm internationalization", current.enabled
     )
     raw_default = ",".join(current.supported_locales)
-    raw_locales = _prompt_value("Supported locales (comma-separated)", raw_default)
+    raw_locales = _prompt_value(
+        "Supported locales (comma-separated)",
+        raw_default,
+    )
     locales = tuple(
         dict.fromkeys(
             item.strip() for item in raw_locales.split(",") if item.strip()
@@ -512,7 +484,8 @@ def prompt_bootstrap_values(
     print(f"Keycloak server URL (fixed trust anchor): {identity.server_url}")
     selected = _prompt_public_identity_values(identity)
     realm_settings = _prompt_realm_settings(identity)
-    theme_settings = _prompt_theme_settings(identity)
+    print("")
+    print("Installed realm themes are selected after Keycloak admin login.")
     localization_settings = _prompt_localization_settings(identity)
     email_sender_settings = _prompt_email_sender_settings(
         identity,
@@ -530,7 +503,7 @@ def prompt_bootstrap_values(
         realm=selected["realm"],
         realm_display_name=selected["realm_display_name"],
         realm_settings=realm_settings,
-        theme_settings=theme_settings,
+        theme_settings=identity.theme_settings,
         localization_settings=localization_settings,
         email_sender_settings=email_sender_settings,
         realm_roles=realm_roles,
@@ -742,6 +715,73 @@ def confirm_apply(skip_confirmation: bool) -> bool:
     return answer.lower() not in {"n", "no"}
 
 
+def authenticate_admin(
+    identity: KeycloakIdentity,
+    admin_user: str,
+    *,
+    debug: bool = False,
+) -> KeycloakAdminClient:
+    """Authenticate once while preserving the adjacent credential prompts.
+
+    Args:
+        identity: Profile-derived Keycloak identity.
+        admin_user: Existing Keycloak administrator username.
+        debug: Emit secret-safe Admin API request traces when true.
+
+    Returns:
+        Authenticated Keycloak Admin client.
+
+    Raises:
+        KeycloakProfileError: If password input or authentication fails.
+    """
+
+    password = getpass.getpass(
+        f"Keycloak admin password for {admin_user}: "
+    )
+    if not password:
+        raise KeycloakProfileError("Keycloak admin password is required.")
+    print("\nAuthenticating with the existing Keycloak server...")
+    try:
+        return KeycloakAdminClient(
+            identity,
+            admin_user,
+            password,
+            debug=debug,
+        )
+    finally:
+        password = ""
+
+
+def inspect_reconciliation_plan(
+    client: KeycloakAdminClient,
+    *,
+    replace_secret: bool,
+) -> tuple[bool, dict[str, object]]:
+    """Inspect Docker and Keycloak state after authenticated configuration.
+
+    Args:
+        client: Authenticated client carrying the final selected identity.
+        replace_secret: Whether the requested plan includes rotation.
+
+    Returns:
+        Docker-secret presence and sanitized reconciliation plan.
+
+    Raises:
+        KeycloakProfileError: If live Keycloak inspection fails.
+        KeycloakSecretBridgeError: If Docker secret state cannot be inspected.
+    """
+
+    identity = client.identity
+    print("\nInspecting the existing Keycloak server and Docker secret state...")
+    docker_present = docker_secret_exists(identity.docker_secret)
+    plan = build_reconciliation_plan(
+        client,
+        docker_secret_present=docker_present,
+        replace_secret=replace_secret,
+    )
+    return docker_present, plan
+
+
 def authenticate_and_plan(
     identity: KeycloakIdentity,
     admin_user: str,
@@ -749,7 +789,10 @@ def authenticate_and_plan(
     replace_secret: bool,
     debug: bool = False,
 ) -> tuple[KeycloakAdminClient, bool, dict[str, object]]:
-    """Authenticate once and inspect live state without mutation.
+    """Authenticate and inspect directly for backward-compatible callers.
+
+    Interactive bootstrap uses the split functions so live theme selection can
+    occur after authentication but before plan construction.
 
     Args:
         identity: Profile-derived Keycloak identity.
@@ -759,30 +802,11 @@ def authenticate_and_plan(
 
     Returns:
         Authenticated client, Docker-secret presence, and sanitized plan.
-
-    Raises:
-        KeycloakProfileError: If password input, authentication, or inspection
-            fails.
-        KeycloakSecretBridgeError: If Docker secret state cannot be inspected.
     """
 
-    password = getpass.getpass(
-        f"Keycloak admin password for {admin_user}: "
-    )
-    if not password:
-        raise KeycloakProfileError("Keycloak admin password is required.")
-    print("\nAuthenticating and inspecting the existing Keycloak server...")
-    client = KeycloakAdminClient(
-        identity,
-        admin_user,
-        password,
-        debug=debug,
-    )
-    password = ""
-    docker_present = docker_secret_exists(identity.docker_secret)
-    plan = build_reconciliation_plan(
+    client = authenticate_admin(identity, admin_user, debug=debug)
+    docker_present, plan = inspect_reconciliation_plan(
         client,
-        docker_secret_present=docker_present,
         replace_secret=replace_secret,
     )
     return client, docker_present, plan
@@ -888,6 +912,7 @@ def prompt_admin_ui_verification(
 
 
 __all__ = [
+    "authenticate_admin",
     "authenticate_and_plan",
     "confirm_apply",
     "print_completion",
@@ -899,4 +924,5 @@ __all__ = [
     "prompt_bootstrap_test_user_passwords",
     "prompt_smtp_password",
     "prompt_secret_safe_debug",
+    "inspect_reconciliation_plan",
 ]

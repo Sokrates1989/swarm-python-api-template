@@ -264,11 +264,14 @@ state shows that a selected account lacks one. The bootstrap reminds the
 operator to remove temporary identities before production and blocks a skipped
 declared user while that account still exists.
 
-The same generic bootstrap validates selected custom themes against the live
-Keycloak server and reconciles locale and public SMTP settings. SMTP passwords
-never enter JSON or `.env`; they are requested only when an authenticated SMTP
-create/update needs one. Keycloak connection testing is followed by a required
-Admin UI checklist and one real delivered verification/reset email.
+After the adjacent Keycloak administrator username/password prompts, the same
+generic bootstrap loads the live server inventory and presents separate
+numbered login, account, admin, and email theme menus. Only `default` and
+actually installed themes can be selected. It also reconciles locale and public
+SMTP settings. SMTP passwords never enter JSON or `.env`; they are requested
+only when an authenticated SMTP create/update needs one. Keycloak connection
+testing is followed by a required Admin UI checklist and one real delivered
+verification/reset email.
 
 Site configs store safe defaults and allowed capabilities. Final
 deployment-instance selections such as domain, proxy, SSL ownership, image

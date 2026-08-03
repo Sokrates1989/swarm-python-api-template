@@ -80,6 +80,8 @@ test-user lifecycle, audience, and active service roots use these profile
 values as defaults but may be changed in the guided bootstrap. Valid public
 selections are persisted to the ignored root `.env` and rebuild the generated
 stack. The SMTP password is requested later without echo and never persists.
+Realm themes are selected only after administrator authentication from
+numbered menus populated by Keycloak's live installed-theme inventory.
 The shared flow preserves unrelated clients, social identity providers, and an
 existing SMTP map when profile management remains disabled.
 
