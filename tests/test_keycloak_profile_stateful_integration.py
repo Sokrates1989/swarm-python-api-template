@@ -173,6 +173,13 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             summary["bootstrapTestUsersAction"],
             f"create={user_count}",
         )
+        cleanup = summary["bootstrapUserCleanup"]
+        self.assertIsInstance(cleanup, dict)
+        self.assertIs(cleanup["pending"], True)
+        self.assertEqual(
+            cleanup["usernames"],
+            sorted(user.username for user in self.identity.bootstrap_test_users),
+        )
         self.assertEqual(summary["dockerSecretAction"], "created")
         self.assertIs(summary["keycloakStateVerified"], True)
         self.assertIs(summary["dockerSecretBindingVerified"], True)
@@ -285,7 +292,7 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
                 for action in plan["bootstrapTestUserActions"].values()
             )
         )
-        self.assertIn("left unchanged", " ".join(plan["warnings"]))
+        self.assertNotIn("temporary", " ".join(plan["warnings"]).lower())
 
     def test_skipping_one_declared_user_is_a_non_blocking_noop(self) -> None:
         """Keep selected-user management while ignoring one skipped user.
@@ -319,7 +326,7 @@ class KeycloakProfileStatefulIntegrationTests(unittest.TestCase):
             plan["bootstrapTestUserActions"][skipped_username],
             "skip",
         )
-        self.assertIn(skipped_username, " ".join(plan["warnings"]))
+        self.assertNotIn(skipped_username, " ".join(plan["warnings"]))
 
     def test_disabled_realm_blocks_a_new_secret_proof(self) -> None:
         """Require an enabled realm while creating the backend credential.

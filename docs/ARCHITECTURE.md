@@ -109,8 +109,11 @@ profile data. Interactive runtime intent chooses a role subset, each declared
 user independently, exact per-user roles/password mode, and optional additional
 users. Missing test-user passwords are accepted only as hidden runtime input.
 A skipped user is neither inspected nor changed during that run, so it cannot
-block unrelated realm/client reconciliation. Production cleanup remains an
-explicit operator warning and never becomes a silent deletion.
+block unrelated realm/client reconciliation. Only users proven created by a
+successful bootstrap are recorded in public `.env` cleanup state. The main
+overview retains that warning until the operator manually deletes those exact
+accounts and acknowledges cleanup. Existing users are never classified by name
+or deleted by this deployment tool.
 
 ## Current file structure
 

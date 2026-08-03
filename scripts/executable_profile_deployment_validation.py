@@ -83,12 +83,51 @@ def _validate_keycloak_boolean_values(
         "KEYCLOAK_SMTP_SSL",
         "KEYCLOAK_SMTP_AUTH",
         "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING",
     ]
     for key in keys:
         if values[key] not in {"", "true", "false"}:
             raise ExecutableProfileError(
                 f".env {key} must be true or false."
             )
+
+
+def _validate_keycloak_bootstrap_cleanup_state(
+    values: Mapping[str, str],
+) -> None:
+    """Validate operator-tracked temporary-user cleanup state.
+
+    Args:
+        values: Complete generated deployment environment.
+
+    Returns:
+        Nothing when the pending flag and username list are coherent.
+
+    Raises:
+        ExecutableProfileError: If names are unsafe, duplicated, or disagree
+            with the pending flag.
+    """
+
+    raw_names = values["KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES"]
+    usernames = [name.strip() for name in raw_names.split(",") if name.strip()]
+    if len(usernames) != len(set(usernames)):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES must be unique."
+        )
+    if any(not NAME_PATTERN.fullmatch(name) for name in usernames):
+        raise ExecutableProfileError(
+            ".env KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES contains an "
+            "unsafe username."
+        )
+    pending = values["KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING"]
+    if pending == "true" and not usernames:
+        raise ExecutableProfileError(
+            "Pending Keycloak bootstrap-user cleanup requires usernames."
+        )
+    if pending in {"", "false"} and usernames:
+        raise ExecutableProfileError(
+            "Keycloak bootstrap-user cleanup names require a pending state."
+        )
 
 
 def _validate_keycloak_realm_experience_values(
@@ -281,6 +320,8 @@ def _validate_keycloak_deployment(
         *(key for _, key in KEYCLOAK_LOCALIZATION_ENV_KEYS),
         *(key for _, key in KEYCLOAK_EMAIL_SENDER_ENV_KEYS),
         "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING",
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES",
         "KEYCLOAK_AUDIENCE",
         "KEYCLOAK_FRONTEND_CLIENT_ID",
         "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -292,6 +333,7 @@ def _validate_keycloak_deployment(
             )
         return
     _validate_keycloak_boolean_values(values)
+    _validate_keycloak_bootstrap_cleanup_state(values)
     _validate_keycloak_realm_experience_values(values)
     base_url = values["KEYCLOAK_BASE_URL"].rstrip("/")
     realm = values["KEYCLOAK_REALM"]

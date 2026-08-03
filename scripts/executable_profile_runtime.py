@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from executable_profile_support import (
     DIRECT_SECRET_KEYS,
     FALSE_DEBUG_KEYS,
+    OPERATIONAL_DEPLOYMENT_KEYS,
     SECRET_PATTERN,
     ExecutableProfileError,
     mapping,
@@ -242,11 +243,17 @@ def public_fingerprint(
         deployment: Validated root environment.
 
     Returns:
-        Lowercase SHA-256 digest.
+        Lowercase SHA-256 digest excluding operator-only reminder metadata
+        that cannot affect rendered or runtime behavior.
     """
 
+    evidence_deployment = {
+        key: value
+        for key, value in deployment.items()
+        if key not in OPERATIONAL_DEPLOYMENT_KEYS
+    }
     canonical = json.dumps(
-        {"site": data, "deployment": deployment},
+        {"site": data, "deployment": evidence_deployment},
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,

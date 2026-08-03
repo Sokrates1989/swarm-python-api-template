@@ -117,6 +117,8 @@ DEPLOYMENT_KEYS = (
     "KEYCLOAK_SMTP_AUTH",
     "KEYCLOAK_SMTP_USERNAME",
     "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+    "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING",
+    "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES",
     "KEYCLOAK_AUDIENCE",
     "KEYCLOAK_FRONTEND_CLIENT_ID",
     "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -155,6 +157,15 @@ DEPLOYMENT_KEYS = (
 )
 DEPLOYMENT_KEY_SET = frozenset(DEPLOYMENT_KEYS)
 
+# Operator workflow metadata lives in `.env` for durable menu state but does
+# not affect rendered services, runtime configuration, or release evidence.
+OPERATIONAL_DEPLOYMENT_KEYS = frozenset(
+    {
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING",
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES",
+    }
+)
+
 # Keycloak identity selected per deployment; the server URL is intentionally
 # absent because it remains the tracked administrator-credential trust anchor.
 KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
@@ -188,6 +199,8 @@ KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
         "KEYCLOAK_SMTP_AUTH",
         "KEYCLOAK_SMTP_USERNAME",
         "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING",
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES",
         "KEYCLOAK_AUDIENCE",
         "KEYCLOAK_FRONTEND_CLIENT_ID",
         "KEYCLOAK_BACKEND_CLIENT_ID",
@@ -223,6 +236,8 @@ OPTIONAL_DEPLOYMENT_DEFAULTS = {
     "KEYCLOAK_SMTP_AUTH": "",
     "KEYCLOAK_SMTP_USERNAME": "",
     "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED": "",
+    "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING": "",
+    "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES": "",
 }
 
 # Public root-environment keys corresponding to profile-owned realm settings.
@@ -505,6 +520,10 @@ def _keycloak_deployment_defaults(
             if enabled
             else ""
         ),
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING": (
+            "false" if enabled else ""
+        ),
+        "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES": "",
         "KEYCLOAK_AUDIENCE": str(auth.get("audience", "")),
         "KEYCLOAK_FRONTEND_CLIENT_ID": str(auth.get("frontendClientId", "")),
         "KEYCLOAK_BACKEND_CLIENT_ID": str(
@@ -633,6 +652,7 @@ __all__ = [
     "KEYCLOAK_THEME_ENV_KEYS",
     "MEMORY_PATTERN",
     "NAME_PATTERN",
+    "OPERATIONAL_DEPLOYMENT_KEYS",
     "SECRET_PATTERN",
     "SEMVER_PATTERN",
     "config_path",

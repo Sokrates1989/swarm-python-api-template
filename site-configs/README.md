@@ -138,8 +138,8 @@ The same rule applies to:
 - API and WebApp images, versions, replicas, and optional memory limits;
 - Keycloak realm, clients, callbacks, origins, audience, protected legacy
   identity, exact realm settings, application realm roles, temporary test-user
-  declarations, audience-mapper name, forbidden default usernames, and backend
-  service-account client roles;
+  declarations, audience-mapper name, bootstrap-reserved usernames, and
+  backend service-account client roles;
 - required and optional Docker secret identifiers; and
 - enabled capability environment and secret mounts.
 
@@ -203,7 +203,8 @@ For `auth.provider=keycloak`, schema 5 also requires:
   application-role assignments, and mandatory production-cleanup markers;
 - `audienceMapperName`;
 - `forbiddenDefaultUsernames`, which may be empty but must contain unique safe
-  names; and
+  names reserved from new automated bootstrap declarations. This field never
+  classifies, blocks, or deletes an existing live account; and
 - `serviceAccountClientRoles`, grouped by the role-owning Keycloak client.
 
 Bootstrap-user email addresses must also satisfy the shared backend user
@@ -260,7 +261,7 @@ The bootstrap authenticates to the existing server, restricts theme selection
 to the live server inventory, prints a read-only sanitized plan, applies only
 after confirmation, then verifies Admin API read-back, issuer, JWKS,
 audience mapper, application roles, temporary users, exact declared
-service-account role groups, and forbidden-user absence. When a new or updated
+service-account role groups, and bootstrap-owned user state. When a new or updated
 authenticated SMTP map is applied, Keycloak's SMTP connection test must also
 pass. With the frontend client's full-scope switch disabled, all declared
 application roles are added to its dedicated realm-role scope so assigned
@@ -286,8 +287,16 @@ terminal echo after the authenticated plan, repeats the selected roles and
 password mode, and sends the credential directly to Keycloak. Skipping one user
 or disabling all test-user management never silently deletes accounts.
 Skipped users are not inspected or mutated during that run and therefore do
-not block unrelated realm/client reconciliation. The plan still reminds the
-operator that any temporary live accounts require separate production cleanup.
+not block unrelated realm/client reconciliation. Only accounts whose live plan
+said `create` and whose apply succeeded enter the root `.env` cleanup reminder.
+Existing or self-registered accounts are never inferred to be temporary from
+their username. The main menu keeps the reminder visible until the operator
+manually deletes those exact accounts in Keycloak and acknowledges that fact;
+acknowledgement performs no Keycloak request.
+The public operational fields
+`KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING` and
+`KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES` are tool-managed, survive shared setup
+reruns, and are excluded from runtime configuration and release fingerprints.
 Application roles remain the production authorization contract after those
 temporary identities are gone. A disabled realm may be reconciled, but it must
 be enabled for a bootstrap run that needs to create or rotate and prove the

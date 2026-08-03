@@ -244,7 +244,8 @@ class KeycloakProfileAccessDialogTests(unittest.TestCase):
             rendered_messages,
         )
         self.assertIn(
-            "Username 'test' is forbidden by the selected site profile "
+            "Username 'test' is reserved from automated bootstrap creation "
+            "by the selected site profile "
             "(auth.forbiddenDefaultUsernames)",
             rendered_messages,
         )

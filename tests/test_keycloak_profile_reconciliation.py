@@ -265,10 +265,8 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         )
         client = Mock(identity=identity)
         arguments = {
-            "realm_exists": False,
             "backend_action": "create",
             "unexpected_roles": (),
-            "test_user_actions": {},
             "docker_secret_present": False,
             "replace_secret": False,
         }
@@ -277,7 +275,6 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         warnings = _plan_warnings(
             client,
             email_sender_present=False,
-            test_user_actions={},
         )
         self.assertEqual(len(warnings), 1)
         self.assertIn("Email verification or password reset", warnings[0])
@@ -285,7 +282,6 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             _plan_warnings(
                 client,
                 email_sender_present=True,
-                test_user_actions={},
             ),
             [],
         )
@@ -706,10 +702,6 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 "keycloak_profile_verification._read_mapper_action",
                 return_value="keep",
             ),
-            patch(
-                "keycloak_profile_verification.find_forbidden_users",
-                return_value=(),
-            ),
         ):
             plan = build_reconciliation_plan(
                 client,
@@ -721,8 +713,8 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
         self.assertEqual(plan["serviceAccountRoles"], "keep")
         self.assertEqual(plan["blockers"], [])
 
-    def test_forbidden_default_user_blocks_reconciliation_plan(self) -> None:
-        """Expose a present ``test`` user as an explicit apply blocker.
+    def test_reserved_bootstrap_username_never_blocks_a_live_account(self) -> None:
+        """Keep bootstrap input policy separate from live-user ownership.
 
         Returns:
             Nothing.
@@ -748,10 +740,6 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 "keycloak_profile_verification._role_plan",
                 return_value=("keep", ()),
             ),
-            patch(
-                "keycloak_profile_verification.find_forbidden_users",
-                return_value=("test",),
-            ),
         ):
             plan = build_reconciliation_plan(
                 client,
@@ -759,11 +747,14 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
                 replace_secret=False,
             )
 
-        self.assertEqual(
-            plan["blockers"],
-            ["Delete forbidden default user explicitly: test"],
-        )
+        self.assertEqual(plan["blockers"], [])
         self.assertEqual(plan["dockerSecret"], "fetch-prove-and-create")
+        reserved_name_lookups = [
+            call
+            for call in client.request.call_args_list
+            if (call.kwargs.get("query") or {}).get("username") == "test"
+        ]
+        self.assertEqual(reserved_name_lookups, [])
 
     def _assert_public_metadata_rejected(
         self,
@@ -806,10 +797,6 @@ class KeycloakProfileReconciliationTests(unittest.TestCase):
             patch(
                 "keycloak_profile_verification."
                 "verify_service_account_roles",
-            ),
-            patch(
-                "keycloak_profile_verification.find_forbidden_users",
-                return_value=(),
             ),
         ):
             with self.assertRaisesRegex(KeycloakProfileError, message):

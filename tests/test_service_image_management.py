@@ -280,15 +280,79 @@ PROXY_TYPE=traefik
 DB_TYPE=postgresql
 DOMAIN=api.example.com
 WEB_DOMAIN=app.example.com
+KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING=true
+KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES=test-admin,test-user
 show_deployment_overview
 """
         completed = run_bash(script)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        for service in ("api", "web", "redis", "postgres", "pgadmin"):
+        for service in ("api", "web", "redis", "postgres"):
             self.assertIn(f"[OK] {service} (1/1)", completed.stdout)
+        self.assertIn("[WARN] pgadmin (1/1)", completed.stdout)
+        self.assertIn("management UI active", completed.stdout)
+        self.assertIn(
+            "Bootstrap users: [WARN] manual cleanup pending: test-admin,test-user",
+            completed.stdout,
+        )
+        self.assertEqual(completed.stdout.count("manual cleanup pending"), 1)
         self.assertIn("API      : api.example.com", completed.stdout)
         self.assertIn("WebApp   : app.example.com", completed.stdout)
+
+    def test_overview_marks_missing_replicas_and_unhealthy_stack_as_error(
+        self,
+    ) -> None:
+        """Use red-severity labels for a stopped or under-replicated service.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(MENU_OVERVIEW)}
+_box_rule() {{ echo RULE; }}
+_box_line() {{ echo "$1"; }}
+_box_line_list() {{ echo " - $1"; }}
+_stack_running() {{ return 0; }}
+_stack_services_healthy() {{ return 1; }}
+_deployed_stack_service_records() {{
+    printf '%s\n' 'demo_api|0/1|registry/backend:1.0.6'
+}}
+STACK_NAME=demo
+DEPLOYMENT_PROFILE_ID=example
+show_deployment_overview
+"""
+        completed = run_bash(script)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("[ERROR] unhealthy", completed.stdout)
+        self.assertIn("[ERROR] api (0/1)", completed.stdout)
+
+    def test_overview_colors_semantic_statuses_on_interactive_terminals(
+        self,
+    ) -> None:
+        """Retain explicit labels while applying standard ANSI status colors.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(MENU_OVERVIEW)}
+_MENU_COLOR_ENABLED=true
+printf 'ok=%s\n' "$(_menu_colorize ok '[OK] healthy')"
+printf 'warn=%s\n' "$(_menu_colorize warning '[WARN] review')"
+printf 'error=%s\n' "$(_menu_colorize error '[ERROR] unhealthy')"
+colorized="$(_menu_colorize error '[ERROR] unhealthy')"
+printf 'width=%s\n' "$(_calc_display_width "$colorized")"
+"""
+        completed = run_bash(script)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("\x1b[32m[OK] healthy\x1b[0m", completed.stdout)
+        self.assertIn("\x1b[33m[WARN] review\x1b[0m", completed.stdout)
+        self.assertIn("\x1b[31m[ERROR] unhealthy\x1b[0m", completed.stdout)
+        self.assertIn("width=17", completed.stdout)
 
     def test_all_service_scope_assigns_one_stack_aware_version(self) -> None:
         """Apply one selected version to API and WebApp assignments.

@@ -51,7 +51,7 @@ def _print_application_access_target(identity: KeycloakIdentity) -> None:
         Nothing.
     """
 
-    print("Forbidden default users:")
+    print("Usernames reserved from automated bootstrap:")
     usernames = identity.forbidden_default_usernames
     for username in usernames or ("none",):
         print(f"  - {username}")
@@ -78,10 +78,9 @@ def _print_application_access_target(identity: KeycloakIdentity) -> None:
         )
     print("")
     if selected_count:
-        print("[WARN] Temporary bootstrap test users are enabled.")
         print(
-            "[WARN] Once you enter production mode, remember to delete "
-            "those users."
+            "Selected users may be created or updated. Only accounts newly "
+            "created by this run receive an operator cleanup reminder."
         )
     else:
         print("No temporary bootstrap test users will be created or changed.")
@@ -815,15 +814,19 @@ def print_completion(
         "Admin console: "
         f"{identity.server_url}/admin/master/console/#/{identity.realm}"
     )
-    if any(
-        identity.bootstrap_test_users_enabled and user.selected_for_bootstrap
-        for user in identity.bootstrap_test_users
-    ):
+    cleanup = summary.get("bootstrapUserCleanup", {})
+    if isinstance(cleanup, Mapping) and cleanup.get("pending") is True:
+        usernames = cleanup.get("usernames", [])
+        listed = (
+            ", ".join(str(name) for name in usernames)
+            if isinstance(usernames, list)
+            else "tracked bootstrap users"
+        )
         print("")
-        print("[WARN] Temporary bootstrap test users remain enabled.")
+        print(f"[WARN] Manual cleanup remains pending for: {listed}")
         print(
-            "[WARN] Once you enter production mode, remember to delete "
-            "those users."
+            "[WARN] Delete only these temporary accounts manually in "
+            "Keycloak, then acknowledge cleanup from the deployment menu."
         )
     if summary.get("dockerSecretBindingVerified") is False:
         print(

@@ -327,7 +327,7 @@ def _validate_bootstrap_test_users(
     Args:
         auth: Profile authentication mapping.
         realm_roles: Validated application realm-role names.
-        forbidden_usernames: Explicitly forbidden default usernames.
+        forbidden_usernames: Usernames reserved from bootstrap declarations.
 
     Raises:
         ExecutableProfileError: If declarations or aggregate policy are unsafe.

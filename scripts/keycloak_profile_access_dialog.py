@@ -185,8 +185,9 @@ def _prompt_manual_username(
     Args:
         existing_usernames: Profile-declared and previously entered usernames
             that cannot be declared again in the current bootstrap.
-        forbidden_usernames: Site-profile policy names that must remain absent
-            from the Keycloak realm.
+        forbidden_usernames: Site-profile policy names unavailable for new
+            automated bootstrap declarations. Existing realm accounts are
+            outside this input validation boundary.
 
     Returns:
         A trimmed username accepted by syntax, uniqueness, and profile policy.
@@ -206,9 +207,11 @@ def _prompt_manual_username(
             continue
         if username in forbidden_usernames:
             print(
-                f"Username {username!r} is forbidden by the selected site "
-                "profile (auth.forbiddenDefaultUsernames). Choose another "
-                "username."
+                f"Username {username!r} is reserved from automated bootstrap "
+                "creation by the selected site profile "
+                "(auth.forbiddenDefaultUsernames). This does not classify or "
+                "delete an existing Keycloak account; choose another new "
+                "bootstrap username."
             )
             continue
         if username in existing_usernames:

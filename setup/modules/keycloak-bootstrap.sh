@@ -128,6 +128,67 @@ profile_supports_keycloak_bootstrap() {
     profile_uses_keycloak && profile_uses_executable_renderer
 }
 
+# profile_has_pending_bootstrap_user_cleanup
+# Checks operator-tracked cleanup state for users this bootstrap created.
+#
+# Returns:
+#   0 only when both a pending marker and at least one username are present.
+profile_has_pending_bootstrap_user_cleanup() {
+    [ "${KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING:-}" = "true" ] &&
+        [ -n "${KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES:-}" ]
+}
+
+# acknowledge_profile_bootstrap_user_cleanup
+# Records that the operator manually removed tracked temporary users.
+#
+# Returns:
+#   0 after acknowledgement or cancellation; 1 on persistence failure.
+#
+# Side effects:
+#   Updates only public reminder fields in root .env. It never authenticates to
+#   Keycloak and never queries, changes, or deletes a live account.
+acknowledge_profile_bootstrap_user_cleanup() {
+    local python_command=""
+    local answer=""
+    local usernames="${KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES:-}"
+
+    if ! profile_has_pending_bootstrap_user_cleanup; then
+        echo "[INFO] No bootstrap-created temporary-user cleanup is pending."
+        return 0
+    fi
+    echo ""
+    echo "Acknowledge manual Keycloak user cleanup"
+    echo "========================================"
+    echo ""
+    echo "Tracked users created by the bootstrap:"
+    printf '%s\n' "$usernames" | tr ',' '\n' | sed 's/^/  - /'
+    echo ""
+    echo "This action only clears the local reminder after you have manually"
+    echo "deleted those exact temporary accounts in Keycloak Admin UI."
+    echo "It performs no Keycloak request and never deletes a user."
+    echo ""
+    if [[ -r /dev/tty ]]; then
+        read -r -p "Have you manually deleted every listed user? [Y/n]: " \
+            answer < /dev/tty
+    else
+        read -r -p "Have you manually deleted every listed user? [Y/n]: " \
+            answer
+    fi
+    if [[ "${answer:-y}" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        python_command="$(_profile_keycloak_python)" || {
+            echo "[ERROR] Python 3 is required to save the acknowledgement."
+            return 1
+        }
+        "$python_command" \
+            "${PROJECT_ROOT}/scripts/keycloak_profile_cleanup.py" \
+            --root "$PROJECT_ROOT" \
+            acknowledge || return 1
+        load_root_env "$PROJECT_ROOT" || return 1
+        return 0
+    fi
+    echo "[INFO] Cleanup reminder retained."
+}
+
 # _profile_keycloak_python
 # Resolves the Python 3 command required by the reconciliation adapter.
 #
@@ -225,7 +286,8 @@ _profile_keycloak_summary() {
     echo "Safety boundaries"
     echo "  - it updates this existing server; it never deploys Keycloak"
     echo "  - unrelated realms, clients, and social providers stay unchanged"
-    echo "  - skipped users are left unchanged and are never silently deleted"
+    echo "  - no user is deleted or treated as disposable by this tool"
+    echo "  - only users actually created here receive a cleanup reminder"
     echo "  - passwords and client secrets never enter .env, JSON, plans, or logs"
     echo "  - a sanitized live-state plan is shown before any mutation"
     echo "  - successful apply requires Admin API and public OIDC verification"

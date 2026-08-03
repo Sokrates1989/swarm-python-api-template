@@ -71,7 +71,7 @@ never deploys another Keycloak instance and never depends on the local
 development `keycloak` repository.
 
 The shared bootstrap reads callback templates, audience-mapper policy,
-application-role and temporary test-user declarations, forbidden default
+application-role and temporary test-user declarations, bootstrap-reserved
 usernames, protected legacy identity, backend service-account roles, the fixed
 Keycloak server trust anchor, and the confidential-client Docker secret target
 from this JSON. Realm/display name, all six allowlisted realm booleans, four
@@ -109,7 +109,9 @@ remain protected. For Felix, the only declared backend grant is
 `realm-management/manage-users`; undeclared broader grants in either the
 service-account assignment or the backend client's dedicated scope, direct
 realm roles other than Keycloak's generated default role, roles on undeclared
-clients, and the unmanaged default `test` user block automatic apply.
+clients block automatic apply. The name `test` remains unavailable for new
+automated bootstrap declarations, but an existing self-registered `test`
+account is not considered tool-owned and never blocks or triggers deletion.
 
 The profile declares the selectable production-facing role catalog `user` and
 `admin`. An installer-style checkbox menu
@@ -128,12 +130,14 @@ multiselect from the selected catalog, asks whether its password must change at
 first login, and then offers a loop for additional validated users. For a
 selected missing user or password credential, the bootstrap prompts twice for
 a hidden password after showing the authenticated plan and sends it only to
-Keycloak. Every bootstrap
-summary repeats: **Once you enter production mode, remember to delete those
-users.** Skipping either user or disabling this run's user management does not
+Keycloak. When this run actually creates an account, its username is persisted
+as public cleanup-reminder state in the ignored root `.env`. The overview stays
+yellow until the operator manually deletes those exact accounts and uses the
+non-destructive acknowledgement action. Skipping either user or disabling this
+run's user management does not
 inspect, change, or auto-delete that identity and does not block unrelated
-realm/client work. The operator must still inspect and remove temporary users
-before production. The managed application roles remain after that cleanup.
+realm/client work. The tool never deletes a Keycloak user. The managed
+application roles remain after manual temporary-user cleanup.
 
 Administrator password and backend client secret are never printed, written
 to `.env`, put in command arguments, or saved to a repository file. After a

@@ -4,6 +4,60 @@
 # Shared formatting helpers for menu output.
 # Safe to source multiple times.
 
+# Cache terminal color capability before command substitutions redirect stdout.
+# NO_COLOR remains the standard operator override.
+if [ -z "${_MENU_COLOR_ENABLED+x}" ]; then
+    _MENU_COLOR_ENABLED=false
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] &&
+        [ "${TERM:-dumb}" != "dumb" ]; then
+        _MENU_COLOR_ENABLED=true
+    fi
+fi
+
+# _menu_colorize
+# Applies a semantic terminal color without changing plain captured output.
+#
+# Arguments:
+# - $1: ok, warning, error, info, or off
+# - $2: text to render
+_menu_colorize() {
+    local level="$1"
+    local text="$2"
+    local code=""
+
+    if [ "${_MENU_COLOR_ENABLED:-false}" != "true" ]; then
+        printf '%s' "$text"
+        return 0
+    fi
+    case "$level" in
+        ok) code=$'\033[32m' ;;
+        warning) code=$'\033[33m' ;;
+        error) code=$'\033[31m' ;;
+        info) code=$'\033[36m' ;;
+        off) code=$'\033[90m' ;;
+        *) printf '%s' "$text"; return 0 ;;
+    esac
+    printf '%b%s%b' "$code" "$text" $'\033[0m'
+}
+
+# _strip_menu_colors
+# Removes ANSI SGR sequences before box-width calculation.
+#
+# Arguments:
+# - $1: potentially colorized text
+#
+# Output:
+# - plain text with terminal color sequences removed
+_strip_menu_colors() {
+    local plain="$1"
+    local pattern=$'\033''\[[0-9;]*m'
+
+    while [[ "$plain" =~ $pattern ]]; do
+        plain="${plain/"${BASH_REMATCH[0]}"/}"
+    done
+    printf '%s' "$plain"
+}
+
 # _box_rule
 # Prints a horizontal rule for the overview box.
 _box_rule() {
@@ -63,7 +117,8 @@ _icon_display_extra() {
 # Output:
 # - prints estimated display width
 _calc_display_width() {
-    local text="$1"
+    local text
+    text="$(_strip_menu_colors "$1")"
     local base_len=${#text}
     local extra=0
 

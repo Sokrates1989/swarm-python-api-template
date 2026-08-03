@@ -599,6 +599,8 @@ _load_executable_keycloak_env_fields() {
     export KEYCLOAK_SMTP_AUTH="$(_root_env_value "$env_file" KEYCLOAK_SMTP_AUTH)"
     export KEYCLOAK_SMTP_USERNAME="$(_root_env_value "$env_file" KEYCLOAK_SMTP_USERNAME)"
     export KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED="$(_root_env_value "$env_file" KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED)"
+    export KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING="$(_root_env_value "$env_file" KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING)"
+    export KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES="$(_root_env_value "$env_file" KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES)"
     export KEYCLOAK_AUDIENCE="$(_root_env_value "$env_file" KEYCLOAK_AUDIENCE)"
     export KEYCLOAK_FRONTEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_FRONTEND_CLIENT_ID)"
     export KEYCLOAK_BACKEND_CLIENT_ID="$(_root_env_value "$env_file" KEYCLOAK_BACKEND_CLIENT_ID)"

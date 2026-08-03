@@ -10,6 +10,14 @@
 #   show_git_status_line - one-line status for the deployment overview
 #   handle_git_pull      - performs git pull and auto-restarts quick-start.sh
 
+# Load semantic status colors when this helper is sourced independently.
+GIT_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! declare -F _menu_colorize >/dev/null 2>&1 &&
+    [ -f "${GIT_HELPERS_DIR}/menu_formatting.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${GIT_HELPERS_DIR}/menu_formatting.sh"
+fi
+
 # _GIT_UPDATE_STATUS: cached result of the git update check.
 # Values: "" (not checked), "up-to-date", "behind", "ahead", "diverged", "error"
 _GIT_UPDATE_STATUS=""
@@ -62,11 +70,21 @@ check_git_updates() {
 # Prints a single-line repo status for the deployment overview.
 show_git_status_line() {
     case "$_GIT_UPDATE_STATUS" in
-        up-to-date) echo "  Repo     : ✅ up to date" ;;
-        behind)     echo "  Repo     : ⚠️  ${_GIT_UPDATE_BEHIND_COUNT} update(s) available" ;;
-        ahead)      echo "  Repo     : ℹ️  local commits ahead of remote" ;;
-        diverged)   echo "  Repo     : ⚠️  diverged from remote" ;;
-        error)      echo "  Repo     : ❓ unable to check (no git or no remote)" ;;
+        up-to-date)
+            echo "Repo     : $(_menu_colorize ok '[OK] up to date')"
+            ;;
+        behind)
+            echo "Repo     : $(_menu_colorize warning "[WARN] ${_GIT_UPDATE_BEHIND_COUNT} update(s) available")"
+            ;;
+        ahead)
+            echo "Repo     : $(_menu_colorize warning '[WARN] local commits ahead of remote')"
+            ;;
+        diverged)
+            echo "Repo     : $(_menu_colorize error '[ERROR] diverged from remote')"
+            ;;
+        error)
+            echo "Repo     : $(_menu_colorize warning '[WARN] unable to check remote state')"
+            ;;
     esac
 }
 

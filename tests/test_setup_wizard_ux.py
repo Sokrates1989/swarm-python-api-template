@@ -96,6 +96,27 @@ class SetupWizardUxTests(unittest.TestCase):
             display.index("Quick restore from saved .env"),
         )
 
+    def test_main_menu_offers_non_destructive_bootstrap_user_acknowledgement(
+        self,
+    ) -> None:
+        """Expose cleanup acknowledgement only while tracked state is pending.
+
+        Returns:
+            Nothing.
+        """
+
+        menu = MENU_HANDLERS.read_text(encoding="utf-8")
+        bootstrap = KEYCLOAK_BOOTSTRAP.read_text(encoding="utf-8")
+
+        self.assertIn("profile_has_pending_bootstrap_user_cleanup", menu)
+        self.assertIn(
+            "Acknowledge manually deleted bootstrap users",
+            menu,
+        )
+        self.assertIn("acknowledge_profile_bootstrap_user_cleanup", menu)
+        self.assertIn("It performs no Keycloak request", bootstrap)
+        self.assertNotIn("docker exec", bootstrap)
+
     def test_renderer_dispatch_occurs_after_shared_collection(self) -> None:
         """Require collection before persistence and rendering dispatch.
 
@@ -207,6 +228,8 @@ class SetupWizardUxTests(unittest.TestCase):
             "KEYCLOAK_SMTP_AUTH",
             "KEYCLOAK_SMTP_USERNAME",
             "KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED",
+            "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING",
+            "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES",
             "KEYCLOAK_AUDIENCE",
             "KEYCLOAK_FRONTEND_CLIENT_ID",
             "KEYCLOAK_BACKEND_CLIENT_ID",

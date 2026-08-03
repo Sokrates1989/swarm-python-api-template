@@ -135,6 +135,13 @@ show_main_menu() {
             MENU_SETUP_AUTH=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         fi
+        local MENU_ACK_KEYCLOAK_USERS=""
+        if declare -F profile_has_pending_bootstrap_user_cleanup \
+            >/dev/null 2>&1 &&
+            profile_has_pending_bootstrap_user_cleanup; then
+            MENU_ACK_KEYCLOAK_USERS=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
+        fi
 
         local MENU_DEPLOY=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
@@ -192,6 +199,9 @@ show_main_menu() {
         fi
         if [ -n "$MENU_KEYCLOAK_BOOTSTRAP" ]; then
             echo "  ${MENU_KEYCLOAK_BOOTSTRAP}) Bootstrap / update Keycloak realm"
+        fi
+        if [ -n "$MENU_ACK_KEYCLOAK_USERS" ]; then
+            echo "  ${MENU_ACK_KEYCLOAK_USERS}) Acknowledge manually deleted bootstrap users"
         fi
         echo ""
 
@@ -251,6 +261,12 @@ show_main_menu() {
             if ! run_profile_keycloak_bootstrap; then
                 echo "[ERROR] Keycloak bootstrap did not complete."
             fi
+            read -r -p "Press Enter to continue..."
+            continue
+        fi
+        if [ -n "$MENU_ACK_KEYCLOAK_USERS" ] &&
+            [ "$choice" = "$MENU_ACK_KEYCLOAK_USERS" ]; then
+            acknowledge_profile_bootstrap_user_cleanup || true
             read -r -p "Press Enter to continue..."
             continue
         fi

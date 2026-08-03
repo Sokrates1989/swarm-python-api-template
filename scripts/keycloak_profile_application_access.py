@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 
 class KeycloakApplicationAccessError(RuntimeError):
@@ -638,12 +638,15 @@ def _ensure_test_user(
 def ensure_bootstrap_test_users(
     client: _AdminClient,
     passwords: Mapping[str, str],
+    created_user_observer: Callable[[str], None] | None = None,
 ) -> str:
     """Reconcile every enabled profile test user without automatic deletion.
 
     Args:
         client: Authenticated Keycloak Admin client.
         passwords: Runtime-only passwords for creation or credential recovery.
+        created_user_observer: Optional callback invoked after one selected
+            user has been successfully created and fully reconciled.
 
     Returns:
         Sanitized action-count summary or ``disabled``.
@@ -657,10 +660,12 @@ def ensure_bootstrap_test_users(
     )
     if not selected_users:
         return "disabled"
-    actions = {
-        user.username: _ensure_test_user(client, user, passwords)
-        for user in selected_users
-    }
+    actions: dict[str, str] = {}
+    for user in selected_users:
+        action = _ensure_test_user(client, user, passwords)
+        actions[user.username] = action
+        if action == "create" and created_user_observer is not None:
+            created_user_observer(user.username)
     return summarize_actions(actions)
 
 

@@ -132,6 +132,10 @@ _deployment_field_specific_help_id() {
         KEYCLOAK_BOOTSTRAP_TEST_USERS_ENABLED)
             echo "boolean-toggle"
             ;;
+        KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING|\
+        KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES)
+            echo "operator-cleanup-state"
+            ;;
         DEPLOYMENT_PROFILE_ID|PROFILE_SCHEMA_VERSION|APP_ID|APP_ENVIRONMENT|\
         APP_PROFILE|BACKEND_APP_ID|BACKEND_DATA_PROFILE|AUTH_PROVIDER|\
         STACK_FAMILY|STACK_ROLE|PRIMARY_SERVICE|DB_TYPE)
@@ -198,6 +202,9 @@ _deployment_field_specific_help() {
             ;;
         boolean-toggle)
             echo "Use true or false. Keep dependent replica/domain fields consistent when enabling a service."
+            ;;
+        operator-cleanup-state)
+            echo "Tool-managed reminder state for temporary users created by bootstrap; acknowledge cleanup through the main menu instead of editing this value."
             ;;
         profile-owned)
             echo "Profile-owned identity value; keep the generated value unchanged."

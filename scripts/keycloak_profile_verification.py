@@ -5,7 +5,9 @@ Description:
     Builds a secret-free, read-only Keycloak reconciliation plan and verifies
     the resulting realm, clients, audience mapper, application roles,
     frontend role scope, temporary users, service-account roles, issuer, JWKS,
-    and forbidden default-user policy. Success requires observed state, not
+    and bootstrap-owned state. Usernames reserved from automated bootstrap are
+    input policy only: an existing live account is never treated as disposable
+    or converted into a deletion blocker. Success requires observed state, not
     only successful mutation response codes.
 
 Dependencies:
@@ -180,41 +182,6 @@ def _read_mapper_action(
     return _component_action(matches[0], desired)
 
 
-def find_forbidden_users(
-    client: KeycloakAdminClient,
-) -> tuple[str, ...]:
-    """Find exact profile-forbidden default usernames.
-
-    Args:
-        client: Authenticated Keycloak Admin client.
-
-    Returns:
-        Sorted usernames present in the selected realm.
-
-    Raises:
-        KeycloakProfileError: If Keycloak returns malformed user data.
-    """
-
-    found: list[str] = []
-    path = realm_path(client.identity, "/users")
-    for username in client.identity.forbidden_default_usernames:
-        _, payload = client.request(
-            "GET",
-            path,
-            query={"username": username, "exact": "true"},
-        )
-        if not isinstance(payload, list):
-            raise KeycloakProfileError(
-                "Keycloak user lookup returned invalid data."
-            )
-        if any(
-            isinstance(item, dict) and item.get("username") == username
-            for item in payload
-        ):
-            found.append(username)
-    return tuple(sorted(found))
-
-
 def _role_plan(
     client: KeycloakAdminClient,
     backend: tuple[str, dict[str, Any]] | None,
@@ -266,10 +233,8 @@ def _secret_plan_action(
 def _plan_blockers(
     client: KeycloakAdminClient,
     *,
-    realm_exists: bool,
     backend_action: str,
     unexpected_roles: tuple[str, ...],
-    test_user_actions: dict[str, str],
     docker_secret_present: bool,
     replace_secret: bool,
 ) -> list[str]:
@@ -277,10 +242,8 @@ def _plan_blockers(
 
     Args:
         client: Authenticated Keycloak Admin client.
-        realm_exists: Whether the selected realm already exists.
         backend_action: Planned backend client action.
         unexpected_roles: Undeclared qualified service-account roles.
-        test_user_actions: Profile test-user live-state actions.
         docker_secret_present: Whether the declared Docker secret exists.
         replace_secret: Whether explicit rotation was requested.
 
@@ -288,15 +251,10 @@ def _plan_blockers(
         Sanitized blocker messages.
     """
 
-    forbidden = find_forbidden_users(client) if realm_exists else ()
     blockers = [
-        f"Delete forbidden default user explicitly: {username}"
-        for username in forbidden
-    ]
-    blockers.extend(
         f"Remove undeclared service-account role explicitly: {role}"
         for role in unexpected_roles
-    )
+    ]
     realm_enabled = dict(client.identity.realm_settings)["enabled"]
     if not realm_enabled and (replace_secret or not docker_secret_present):
         blockers.append(
@@ -320,7 +278,6 @@ def _plan_warnings(
     client: KeycloakAdminClient,
     *,
     email_sender_present: bool,
-    test_user_actions: Mapping[str, str],
 ) -> list[str]:
     """Build non-blocking operator follow-up warnings.
 
@@ -328,7 +285,6 @@ def _plan_warnings(
         client: Authenticated Keycloak Admin client.
         email_sender_present: Whether live realm state contains a usable public
             SMTP sender map.
-        test_user_actions: Per-run bootstrap-user action mapping.
 
     Returns:
         Sanitized warnings that do not prevent unrelated reconciliation.
@@ -349,17 +305,6 @@ def _plan_warnings(
             "Email verification or password reset is enabled without a "
             "managed or existing SMTP sender; configure and test email "
             "delivery before relying on those features."
-        )
-    skipped = sorted(
-        username
-        for username, action in test_user_actions.items()
-        if action == "skip"
-    )
-    if skipped:
-        warnings.append(
-            "Skipped bootstrap users are left unchanged this run; remove any "
-            "temporary live accounts separately before production: "
-            + ", ".join(skipped)
         )
     return warnings
 
@@ -496,7 +441,7 @@ def _application_access_plan(
 
     Returns:
         Sanitized plan fields and the detailed test-user action map used for
-        cleanup blockers.
+        credential collection and post-apply cleanup tracking.
 
     Raises:
         KeycloakApplicationAccessError: If live role or user data is malformed.
@@ -603,24 +548,21 @@ def build_reconciliation_plan(
             realm_exists=realm_exists,
         )
     )
-    application_plan, test_user_actions = _application_access_plan(
+    application_plan, _ = _application_access_plan(
         client,
         realm_exists=realm_exists,
         frontend_uuid=frontend_uuid,
     )
     blockers = _plan_blockers(
         client,
-        realm_exists=realm_exists,
         backend_action=backend_action,
         unexpected_roles=unexpected_roles,
-        test_user_actions=test_user_actions,
         docker_secret_present=docker_secret_present,
         replace_secret=replace_secret,
     )
     warnings = _plan_warnings(
         client,
         email_sender_present=_realm_has_email_sender(current_realm),
-        test_user_actions=test_user_actions,
     )
     return {
         "realm": realm_action,
@@ -805,13 +747,6 @@ def verify_reconciled_state(
     verify_frontend_realm_role_scope(client, frontend[0])
     verify_service_account_roles(client, backend[0])
     verify_application_access(client)
-    forbidden = find_forbidden_users(client)
-    if forbidden:
-        raise KeycloakProfileError(
-            "Forbidden default Keycloak users are present: "
-            + ", ".join(forbidden)
-            + "."
-        )
     realm_enabled = _realm_is_enabled(client.identity)
     if realm_enabled:
         _verify_public_metadata(client)
@@ -826,7 +761,6 @@ def verify_reconciled_state(
         "serviceAccountRoles": True,
         "applicationRealmRoles": True,
         "bootstrapTestUsers": True,
-        "noForbiddenDefaultUsers": True,
         "issuer": realm_enabled,
         "jwks": realm_enabled,
         "realmDisabledByOperator": not realm_enabled,
@@ -835,6 +769,5 @@ def verify_reconciled_state(
 
 __all__ = [
     "build_reconciliation_plan",
-    "find_forbidden_users",
     "verify_reconciled_state",
 ]

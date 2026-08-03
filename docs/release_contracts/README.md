@@ -42,7 +42,8 @@ The contract records these reviewed release defaults and boundaries:
 - clients/audience `felix-frontend` and `felix-backend`;
 - application roles `user` and `admin`;
 - two profile-declared temporary test identities, enabled by default for the
-  candidate bootstrap and requiring explicit production cleanup;
+  candidate bootstrap and requiring explicit manual production cleanup when
+  the bootstrap actually creates them;
 - legacy host `felix.app.fe-wi.com`;
 - protected separate legacy realm `felixappnew` plus protected legacy clients
   and origin state inside the shared `felix` realm;
@@ -55,6 +56,8 @@ roots with validated deployment-instance values in the ignored root `.env`.
 Such choices must match the WebApp/mobile artifacts used for that deployment.
 Role and test-user identity declarations remain tracked, while passwords for
 missing accounts or password credentials exist only as hidden runtime input.
+Successfully created usernames enter ignored `.env` reminder state; the tool
+never infers ownership from a username and never deletes a Keycloak account.
 The tracked Keycloak server and
 protected legacy identity remain immutable safety boundaries.
 

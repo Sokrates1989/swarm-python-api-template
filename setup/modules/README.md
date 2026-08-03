@@ -104,7 +104,12 @@ still performs the same secret, network, deployment, and health checks.
 `menu-overview.sh` discovers live services by Docker's stack-namespace label
 and lists every service with replica and image state. If the stack does not yet
 exist, it reads the generated stack instead. It does not keep a hard-coded API,
-WebApp, database, or infrastructure inventory.
+WebApp, database, or infrastructure inventory. Interactive terminals color
+healthy state green, warnings yellow, and stopped/unhealthy state red while
+retaining ASCII status labels for logs and copied output. Under-replicated
+services are errors; a running database-management UI is deliberately a
+warning because it expands the active administration surface. The same box
+shows pending cleanup only for Keycloak users recorded as created by bootstrap.
 
 `menu-image-actions.sh` reads application-image capabilities from the active
 profile and saved root environment. It lets the operator choose one release
@@ -184,9 +189,11 @@ confirmation follows them. Apply success requires Admin API read-back plus
 public issuer and JWKS verification.
 Selected application roles are reconciled and explicitly scoped into the
 public client while its full-scope switch remains disabled. Turning temporary users off does
-not delete accounts automatically: retained test identities block the plan
-until the operator removes them, and the dialogue warns, "Once you enter
-production mode, remember to delete those users." The confidential client
+not delete accounts automatically, and skipped identities never block the
+plan. Only successful `create` actions enter the root `.env` cleanup reminder.
+The overview keeps that reminder visible until the operator manually removes
+those exact users and selects the acknowledgement action. Acknowledgement does
+not contact Keycloak, and no shared menu action deletes users. The confidential client
 secret moves directly from Keycloak process memory to a client-credentials
 proof. When the declared roles grant realm-user access, the token must also
 pass a read-only Admin API request. Only then is the same value sent to

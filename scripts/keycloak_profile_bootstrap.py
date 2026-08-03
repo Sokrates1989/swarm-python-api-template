@@ -21,6 +21,7 @@ from typing import Callable
 
 from executable_profile import (
     ExecutableProfile,
+    load_executable_profile,
 )
 from keycloak_profile_client import (
     KeycloakAdminClient,
@@ -28,6 +29,11 @@ from keycloak_profile_client import (
     KeycloakProfileError,
     load_keycloak_identity,
     resolve_client_uuid as _resolve_client_uuid,
+)
+from keycloak_profile_cleanup import (
+    BootstrapUserCleanupState,
+    read_bootstrap_user_cleanup_state,
+    record_created_bootstrap_users,
 )
 from keycloak_profile_application_access import (
     KeycloakApplicationAccessError,
@@ -297,6 +303,7 @@ def _apply_and_verify_keycloak(
     realm_action: str,
     bootstrap_test_user_passwords: Mapping[str, str],
     progress: Callable[[str], None] | None,
+    created_user_observer: Callable[[str], None] | None,
 ) -> tuple[str, str, str, str, str, str, str, str, str]:
     """Apply every declared Keycloak component and verify observed state.
 
@@ -307,6 +314,8 @@ def _apply_and_verify_keycloak(
         bootstrap_test_user_passwords: Runtime-only passwords for users needing
             creation or password-credential recovery.
         progress: Optional secret-free progress callback.
+        created_user_observer: Optional callback recording each user this run
+            successfully creates.
 
     Returns:
         Realm, application-role, frontend, backend, mapper, service-account
@@ -344,6 +353,7 @@ def _apply_and_verify_keycloak(
     test_users_action = ensure_bootstrap_test_users(
         client,
         bootstrap_test_user_passwords,
+        created_user_observer,
     )
     _report(progress, f"      Bootstrap test users: {test_users_action}")
     _report(progress, "[9/10] Verifying Admin API state, issuer, and JWKS...")
@@ -398,6 +408,7 @@ def _build_summary(
     binding_verified: bool,
     secret_value_evidence: dict[str, object],
     smtp_connection_test: str,
+    cleanup_state: BootstrapUserCleanupState,
 ) -> dict[str, object]:
     """Build the final secret-free reconciliation result.
 
@@ -410,6 +421,8 @@ def _build_summary(
         binding_verified: Whether the secret was proven and written this run.
         secret_value_evidence: One-way credential observation evidence.
         smtp_connection_test: Secret-free SMTP verification outcome.
+        cleanup_state: Operator-tracked users created by bootstrap and still
+            awaiting manual deletion acknowledgement.
 
     Returns:
         JSON-compatible summary without credentials.
@@ -441,6 +454,11 @@ def _build_summary(
         "frontendRealmRoleScopeAction": frontend_role_scope,
         "serviceAccountRolesAction": roles,
         "bootstrapTestUsersAction": test_users,
+        "bootstrapUserCleanup": {
+            "pending": cleanup_state.pending,
+            "usernames": list(cleanup_state.usernames),
+            "source": "users-created-by-this-bootstrap-only",
+        },
         "dockerSecretName": identity.docker_secret,
         "dockerSecretAction": docker_action,
         "keycloakStateVerified": True,
@@ -632,12 +650,35 @@ def reconcile_authenticated(
         docker_secret_present=docker_secret_present,
         replace_secret=replace_secret,
     )
+    cleanup_state = read_bootstrap_user_cleanup_state(profile)
+
+    def record_created_user(username: str) -> None:
+        """Persist one successfully created temporary-user reminder.
+
+        Args:
+            username: Exact Keycloak username just created by reconciliation.
+
+        Returns:
+            Nothing after atomic public state persistence.
+        """
+
+        nonlocal cleanup_state
+        cleanup_state = record_created_bootstrap_users(
+            load_executable_profile(profile.root),
+            {"bootstrapTestUserActions": {username: "create"}},
+        )
+        _report(
+            progress,
+            f"      Recorded manual cleanup reminder for {username!r}.",
+        )
+
     actions = _apply_and_verify_keycloak(
         client,
         identity,
         realm_action,
         bootstrap_test_user_passwords or {},
         progress,
+        record_created_user,
     )
     (
         docker_action,
@@ -661,6 +702,7 @@ def reconcile_authenticated(
         binding_verified,
         secret_value_evidence,
         smtp_connection_test,
+        cleanup_state,
     )
 
 

@@ -126,7 +126,9 @@ class KeycloakIdentity:
         audience_mapper_name: Exact frontend audience-mapper name.
         redirect_uris: Exact mobile and WebApp callback allowlist.
         web_origins: Exact browser origin allowlist.
-        forbidden_default_usernames: Usernames that block automatic apply.
+        forbidden_default_usernames: Usernames unavailable to automated
+            bootstrap creation. Existing live accounts with those names are
+            never inferred to be tool-owned, blocked, or deleted.
         frontend_root_url: Public WebApp root URL.
         api_root_url: Public backend root URL.
         docker_secret: Docker secret receiving the backend client secret.

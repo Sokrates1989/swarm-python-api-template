@@ -20,6 +20,13 @@ if [ -n "${_MENU_OVERVIEW_LOADED:-}" ]; then
 fi
 _MENU_OVERVIEW_LOADED=1
 
+# Load color-aware box primitives when this module is sourced directly.
+MENU_OVERVIEW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${MENU_OVERVIEW_DIR}/menu_formatting.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_OVERVIEW_DIR}/menu_formatting.sh"
+fi
+
 # ------------------------------------------------------------------------------
 # _stack_running
 # ------------------------------------------------------------------------------
@@ -319,6 +326,48 @@ _short_overview_image_reference() {
 }
 
 # ------------------------------------------------------------------------------
+# _service_is_management_surface
+# ------------------------------------------------------------------------------
+# Identifies a database-administration service without app-specific branches.
+#
+# Arguments:
+#   $1 - Stack service suffix.
+#
+# Returns:
+#   0 for the profile-selected admin UI or known shared admin UI types.
+# ------------------------------------------------------------------------------
+_service_is_management_surface() {
+    local service="$1"
+
+    if [ -n "${APP_ADMIN_UI_TYPE:-}" ] &&
+        [ "$service" = "$APP_ADMIN_UI_TYPE" ]; then
+        return 0
+    fi
+    case "$service" in
+        pgadmin|mongo-express) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
+# _bootstrap_user_cleanup_text
+# ------------------------------------------------------------------------------
+# Renders a warning only for users known to have been created by bootstrap.
+#
+# Output:
+#   Color-aware reminder text, or nothing when no cleanup is pending.
+# ------------------------------------------------------------------------------
+_bootstrap_user_cleanup_text() {
+    if [ "${KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING:-}" != "true" ] ||
+        [ -z "${KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES:-}" ]; then
+        return 0
+    fi
+    printf '%s: %s' \
+        "$(_menu_colorize warning '[WARN] manual cleanup pending')" \
+        "$KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_NAMES"
+}
+
+# ------------------------------------------------------------------------------
 # _overview_service_line
 # ------------------------------------------------------------------------------
 # Formats one managed service record for a human-readable overview.
@@ -338,15 +387,41 @@ _overview_service_line() {
     local replicas="$3"
     local image="$4"
     local status='[OFF]'
+    local level='off'
+    local note=''
+    local current=0
+    local desired=0
 
     service="${service#${stack_name}_}"
     if _replica_count_is_healthy "$replicas"; then
-        status='[OK]'
+        if _service_is_management_surface "$service"; then
+            status='[WARN]'
+            level='warning'
+            note=' [management UI active]'
+        else
+            status='[OK]'
+            level='ok'
+        fi
     elif [ "$replicas" != "configured" ]; then
-        status='[WARN]'
+        if [[ "$replicas" =~ ^([0-9]+)/([0-9]+)$ ]]; then
+            current="${BASH_REMATCH[1]}"
+            desired="${BASH_REMATCH[2]}"
+            if [ "$current" -lt "$desired" ]; then
+                status='[ERROR]'
+                level='error'
+            else
+                status='[WARN]'
+                level='warning'
+            fi
+        else
+            status='[WARN]'
+            level='warning'
+        fi
     fi
     image="$(_short_overview_image_reference "$image")"
-    printf '%s %s (%s) %s' "$status" "$service" "$replicas" "$image"
+    status="$(_menu_colorize "$level" "$status")"
+    printf '%s %s (%s) %s%s' \
+        "$status" "$service" "$replicas" "$image" "$note"
 }
 
 # ------------------------------------------------------------------------------
@@ -399,6 +474,9 @@ show_plain_deployment_overview() {
         echo "  - $(_overview_service_line \
             "$stack_name" "$service" "$replicas" "$image")"
     done < <(_stack_service_records "$stack_name")
+    if [ -n "$(_bootstrap_user_cleanup_text)" ]; then
+        echo "Bootstrap users: $(_bootstrap_user_cleanup_text)"
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -409,14 +487,16 @@ show_plain_deployment_overview() {
 # ------------------------------------------------------------------------------
 show_deployment_overview() {
     local stack_name="${STACK_NAME:-unknown}"
-    local stack_status='[OFF] not running'
+    local stack_status=""
 
     if _stack_running "$stack_name"; then
         if _stack_services_healthy "$stack_name"; then
-            stack_status='[OK] healthy'
+            stack_status="$(_menu_colorize ok '[OK] healthy')"
         else
-            stack_status='[WARN] degraded'
+            stack_status="$(_menu_colorize error '[ERROR] unhealthy')"
         fi
+    else
+        stack_status="$(_menu_colorize error '[OFF] not running')"
     fi
     _box_rule
     _box_line 'Deployment Overview'
@@ -437,6 +517,9 @@ show_deployment_overview() {
         _box_line "WebApp   : ${WEB_DOMAIN}"
     fi
     _print_boxed_service_overview "$stack_name"
+    if [ -n "$(_bootstrap_user_cleanup_text)" ]; then
+        _box_line "Bootstrap users: $(_bootstrap_user_cleanup_text)"
+    fi
     if declare -F show_git_status_line >/dev/null; then
         _box_line "$(show_git_status_line)"
     fi
