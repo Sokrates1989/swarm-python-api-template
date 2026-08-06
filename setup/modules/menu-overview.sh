@@ -368,6 +368,51 @@ _bootstrap_user_cleanup_text() {
 }
 
 # ------------------------------------------------------------------------------
+# _advanced_logging_overview_text
+# ------------------------------------------------------------------------------
+# Renders the production-safe logging preset for supporting API profiles.
+#
+# Output:
+#   Color-aware status, or nothing when the profile lacks this capability.
+# ------------------------------------------------------------------------------
+_advanced_logging_overview_text() {
+    if ! declare -F profile_supports_advanced_logging >/dev/null 2>&1 ||
+        ! profile_supports_advanced_logging; then
+        return 0
+    fi
+    if [ "${ADVANCED_LOGGING_ENABLED:-true}" = "true" ]; then
+        _menu_colorize ok '[OK] INFO diagnostics'
+    else
+        _menu_colorize off '[OFF] WARNING and ERROR only'
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# _database_admin_overview_text
+# ------------------------------------------------------------------------------
+# Renders configured database-management state from profile capabilities.
+#
+# Output:
+#   Color-aware state, or nothing when the profile has no supported admin UI.
+# ------------------------------------------------------------------------------
+_database_admin_overview_text() {
+    local display_name=""
+
+    if ! declare -F profile_supports_database_admin_toggle >/dev/null 2>&1 ||
+        ! profile_supports_database_admin_toggle; then
+        return 0
+    fi
+    display_name="$(database_admin_display_name)"
+    if [ "${PGADMIN_ENABLED:-false}" = "true" ]; then
+        printf '%s (%s)' \
+            "$(_menu_colorize warning "[WARN] ${display_name} enabled")" \
+            "replicas=${PGADMIN_REPLICAS:-1}"
+    else
+        _menu_colorize off "[OFF] ${display_name} disabled"
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # _overview_service_line
 # ------------------------------------------------------------------------------
 # Formats one managed service record for a human-readable overview.
@@ -447,39 +492,6 @@ _print_boxed_service_overview() {
 }
 
 # ------------------------------------------------------------------------------
-# show_plain_deployment_overview
-# ------------------------------------------------------------------------------
-# Displays the startup summary before the operations menu begins.
-# ------------------------------------------------------------------------------
-show_plain_deployment_overview() {
-    local stack_name="${STACK_NAME:-unknown}"
-    local service=""
-    local replicas=""
-    local image=""
-
-    echo "Stack Name:     ${stack_name}"
-    echo "Profile:        ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-not set}}"
-    if [ -n "${APP_RELEASE_STACK_ID:-}" ]; then
-        echo "Release Stack:  ${APP_RELEASE_STACK_ID} (floor ${APP_RELEASE_VERSION_FLOOR})"
-    fi
-    echo "API Domain:     ${DOMAIN:-not set}"
-    if [ -n "${WEB_DOMAIN:-}" ]; then
-        echo "WebApp Domain:  ${WEB_DOMAIN}"
-    fi
-    echo "Database:       ${DB_TYPE:-not set} (${DB_MODE:-not set})"
-    echo "Proxy:          ${PROXY_TYPE:-not set}"
-    echo "Services:"
-    while IFS='|' read -r service replicas image; do
-        [ -n "$service" ] || continue
-        echo "  - $(_overview_service_line \
-            "$stack_name" "$service" "$replicas" "$image")"
-    done < <(_stack_service_records "$stack_name")
-    if [ -n "$(_bootstrap_user_cleanup_text)" ]; then
-        echo "Bootstrap users: $(_bootstrap_user_cleanup_text)"
-    fi
-}
-
-# ------------------------------------------------------------------------------
 # show_deployment_overview
 # ------------------------------------------------------------------------------
 # Displays the operations-menu box with profile identity and every managed
@@ -488,6 +500,8 @@ show_plain_deployment_overview() {
 show_deployment_overview() {
     local stack_name="${STACK_NAME:-unknown}"
     local stack_status=""
+    local logging_status=""
+    local database_admin_status=""
 
     if _stack_running "$stack_name"; then
         if _stack_services_healthy "$stack_name"; then
@@ -498,6 +512,8 @@ show_deployment_overview() {
     else
         stack_status="$(_menu_colorize error '[OFF] not running')"
     fi
+    logging_status="$(_advanced_logging_overview_text)"
+    database_admin_status="$(_database_admin_overview_text)"
     _box_rule
     _box_line 'Deployment Overview'
     _box_rule
@@ -515,6 +531,12 @@ show_deployment_overview() {
     fi
     if [ -n "${WEB_DOMAIN:-}" ]; then
         _box_line "WebApp   : ${WEB_DOMAIN}"
+    fi
+    if [ -n "$logging_status" ]; then
+        _box_line "Logging  : ${logging_status}"
+    fi
+    if [ -n "$database_admin_status" ]; then
+        _box_line "DB Admin : ${database_admin_status}"
     fi
     _print_boxed_service_overview "$stack_name"
     if [ -n "$(_bootstrap_user_cleanup_text)" ]; then

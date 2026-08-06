@@ -111,6 +111,22 @@ services are errors; a running database-management UI is deliberately a
 warning because it expands the active administration surface. The same box
 shows pending cleanup only for Keycloak users recorded as created by bootstrap.
 
+`menu-shortcuts.sh` defines a cross-repository letter contract: `b` bootstrap,
+`d` deploy, `g` advanced logging, `h` health, `i` images, `l` logs, `p`
+database admin, `r` refresh, `s` secrets, `u` update, and `q` exit. Dynamic
+numeric entries remain compatibility choices, but capabilities must not change
+these letter meanings. `menu_formatting.sh` applies semantic colors only to an
+interactive terminal and honors `NO_COLOR`.
+
+`menu-runtime-actions.sh` derives quick-action availability from the selected
+profile. Advanced logging switches executable API profiles between their
+tracked INFO diagnostics and a WARNING/ERROR-only override; it never enables
+DEBUG, SQL echo, or HTTP payload/header logging. Database administration is
+available only for local databases with a declared admin UI and supports both
+pgAdmin and Mongo Express. Both actions reuse the public-environment
+transaction described below. A stopped stack is validated and rendered but
+not started implicitly; a running stack is redeployed and health-checked.
+
 `menu-image-actions.sh` reads application-image capabilities from the active
 profile and saved root environment. It lets the operator choose one release
 service or all release services, while `semantic-version.sh` provides the one

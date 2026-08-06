@@ -84,7 +84,9 @@ class SetupWizardUxTests(unittest.TestCase):
             )
         ]
         display = source[
-            source.index('echo "Setup:"') : source.index('echo "Deployment:"')
+            source.index("_menu_heading 'Setup:'") : source.index(
+                "_menu_heading 'Deployment:'"
+            )
         ]
 
         self.assertLess(

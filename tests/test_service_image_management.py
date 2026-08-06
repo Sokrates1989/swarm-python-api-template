@@ -36,6 +36,12 @@ from executable_profile_support import ExecutableProfileError  # noqa: E402
 SETUP_WIZARD = REPOSITORY_ROOT / "setup" / "setup-wizard.sh"
 MENU_HANDLERS = REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
 MENU_OVERVIEW = REPOSITORY_ROOT / "setup" / "modules" / "menu-overview.sh"
+MENU_SHORTCUTS = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-shortcuts.sh"
+)
+MENU_RUNTIME_ACTIONS = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-runtime-actions.sh"
+)
 IMAGE_ACTIONS = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu-image-actions.sh"
 )
@@ -132,7 +138,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         """
 
         source = MENU_HANDLERS.read_text(encoding="utf-8")
-        case_start = source.index("case $choice")
+        case_start = source.index('case "$choice"')
         image_start = source.index("${MENU_UPDATE_IMAGE})", case_start)
         image_end = source.index("${MENU_SCALE})", image_start)
         image_case = source[image_start:image_end]
@@ -179,7 +185,9 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertIn("com.docker.stack.namespace", overview)
         self.assertIn("{{.Name}}|{{.Replicas}}|{{.Image}}", overview)
         self.assertIn("_print_boxed_service_overview", overview)
-        self.assertIn("show_plain_deployment_overview", quick_start)
+        self.assertNotIn("show_plain_deployment_overview", quick_start)
+        self.assertNotIn("show_plain_deployment_overview", overview)
+        self.assertIn("show_deployment_overview", overview)
         self.assertNotIn(
             'echo "Image:          ${IMAGE_NAME:-not set}',
             quick_start,
@@ -224,6 +232,52 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertIn("DEPLOY_CONFIGURED_STACK_MUTATED", source)
         self.assertIn("health-verified", source)
         self.assertNotIn("docker service update --image", source)
+
+    def test_operator_shortcuts_have_stable_cross_repository_meanings(
+        self,
+    ) -> None:
+        """Protect the shared letters from menu-number and feature drift.
+
+        Returns:
+            Nothing.
+        """
+
+        source = MENU_SHORTCUTS.read_text(encoding="utf-8")
+        expected = {
+            "bootstrap": "b",
+            "deploy": "d",
+            "logging": "g",
+            "health": "h",
+            "images": "i",
+            "logs": "l",
+            "database-admin": "p",
+            "refresh": "r",
+            "secrets": "s",
+            "update": "u",
+            "exit": "q",
+        }
+
+        for action, key in expected.items():
+            with self.subTest(action=action):
+                self.assertIn(f'{action}) echo "{key}"', source)
+
+    def test_quick_runtime_actions_reuse_the_deployment_transaction(
+        self,
+    ) -> None:
+        """Keep logging and database-admin toggles generic and rollback-safe.
+
+        Returns:
+            Nothing.
+        """
+
+        source = MENU_RUNTIME_ACTIONS.read_text(encoding="utf-8")
+
+        self.assertIn("_apply_profile_environment_update", source)
+        self.assertIn("ADVANCED_LOGGING_ENABLED=${target}", source)
+        self.assertIn("PGADMIN_ENABLED=${target}", source)
+        self.assertIn("PGADMIN_REPLICAS=${replicas}", source)
+        self.assertIn("Sensitive HTTP bodies/headers", source)
+        self.assertNotIn('LOG_LEVEL=DEBUG', source)
 
 
 @unittest.skipUnless(
@@ -448,6 +502,77 @@ manage_service_images
         self.assertIn("WEB_IMAGE_VERSION=1.0.6", updated)
         self.assertIn("DEPLOY-MODE=confirmed", completed.stdout)
         self.assertIn("deployed and health-verified", completed.stdout)
+
+    def test_logging_and_database_admin_toggles_share_verified_deploy(
+        self,
+    ) -> None:
+        """Apply both quick actions through the common deployment boundary.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scripts_directory = root / "scripts"
+            scripts_directory.mkdir()
+            environment = root / ".env"
+            environment.write_text(
+                "STACK_NAME=example\n"
+                "ADVANCED_LOGGING_ENABLED=true\n"
+                "PGADMIN_ENABLED=false\n"
+                "PGADMIN_REPLICAS=0\n",
+                encoding="utf-8",
+            )
+            build_script = scripts_directory / "build-site-stack.sh"
+            build_script.write_text(
+                "#!/bin/bash\n"
+                'printf "services:\\n  api:\\n    image: example:1.0.0\\n" '
+                '> "$(dirname "$0")/../swarm-stack.yml"\n',
+                encoding="utf-8",
+            )
+            build_script.chmod(0o755)
+            script = f"""
+source {bash_quote(PROFILE_PROMPTS)}
+source {bash_quote(MENU_RUNTIME_ACTIONS)}
+PROJECT_ROOT={bash_quote(root)}
+STACK_NAME=example
+APP_ADMIN_UI_TYPE=pgadmin
+APP_ADMIN_UI_DEFAULT_REPLICAS=1
+ADVANCED_LOGGING_ENABLED=true
+PGADMIN_ENABLED=false
+PGADMIN_REPLICAS=0
+prompt_yes_no() {{ return 0; }}
+format_deployment_environment_file() {{ return 0; }}
+backup_existing_files() {{ echo BACKUP-CREATED; }}
+_stack_running() {{ return 0; }}
+load_root_env() {{
+    STACK_NAME=example
+    ADVANCED_LOGGING_ENABLED="$(grep '^ADVANCED_LOGGING_ENABLED=' "$1/.env" | cut -d= -f2-)"
+    PGADMIN_ENABLED="$(grep '^PGADMIN_ENABLED=' "$1/.env" | cut -d= -f2-)"
+    PGADMIN_REPLICAS="$(grep '^PGADMIN_REPLICAS=' "$1/.env" | cut -d= -f2-)"
+    return 0
+}}
+_deploy_configured_stack() {{
+    printf 'DEPLOY-MODE=%s\n' "$1"
+    DEPLOY_CONFIGURED_STACK_MUTATED=true
+    return 0
+}}
+toggle_advanced_logging
+toggle_database_admin_ui
+"""
+            completed = run_bash(script)
+            updated = environment.read_text(encoding="utf-8")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("ADVANCED_LOGGING_ENABLED=false", updated)
+        self.assertIn("PGADMIN_ENABLED=true", updated)
+        self.assertIn("PGADMIN_REPLICAS=1", updated)
+        self.assertEqual(completed.stdout.count("DEPLOY-MODE=confirmed"), 2)
+        self.assertEqual(
+            completed.stdout.count("deployed and health-verified"),
+            2,
+        )
 
 
 def bash_quote(path: Path) -> str:

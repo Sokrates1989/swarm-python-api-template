@@ -134,6 +134,35 @@ before first deployment, the generated stack provides the inventory.
 The Felix hand-off is documented in
 [`docs/release_contracts/felix_rls13_runbook.md`](docs/release_contracts/felix_rls13_runbook.md).
 
+Interactive terminals use semantic colors while preserving explicit `[OK]`,
+`[WARN]`, `[ERROR]`, and `[OFF]` labels in copied output. Set `NO_COLOR=1` to
+disable ANSI output. The boxed main-menu overview is the single startup
+inventory; it replaces the former duplicate plain-text overview.
+
+Stable operator letters match the Figma Website Swarm repository:
+
+| Key | Stable action |
+|-----|---------------|
+| `b` | Bootstrap or update the configured Keycloak realm |
+| `d` | Deploy the configured stack |
+| `g` | Toggle advanced application logging |
+| `h` | Run deployment health/status checks |
+| `i` | Change application image versions |
+| `l` | View service logs |
+| `p` | Toggle the profile-supported database admin UI |
+| `r` | Refresh repository status |
+| `s` | Manage Docker secrets |
+| `u` | Update deployment scripts when updates are available |
+| `q` | Exit |
+
+Letters keep these meanings across repositories; numeric choices may change as
+profile capabilities add or remove menu entries. The `g` action is deliberately
+production-safe: enabled means INFO diagnostics, disabled means WARNING/ERROR
+only, while HTTP bodies and headers, SQL echo, and DEBUG remain disabled. The
+`p` action is shown only for a local database with a site-profile-declared
+admin UI. Both quick actions use the same environment validation, render,
+deploy, health, and rollback boundary as image updates.
+
 - **Re-run setup wizard** — reconfigure this deployment.
 - **Manage Docker secrets** — create/list/validate secrets (interactively or from file).
 - **Quick restore from saved .env** — validate the saved profile and immediately
@@ -148,6 +177,10 @@ The Felix hand-off is documented in
   semantic version, then render, deploy, and run health acceptance as one
   confirmed action. Digest-pinned infrastructure images remain profile-owned.
 - **Change replicas** — reopen the same setup dialogue for replica counts.
+- **Toggle advanced logging** — switch between INFO diagnostics and
+  WARNING/ERROR-only logging without enabling sensitive debug channels.
+- **Toggle database admin UI** — enable or disable the profile-declared
+  pgAdmin/Mongo Express service without reopening the full setup wizard.
 - **Remove deployment** — tear down the stack.
 - **Rebuild swarm stack** — regenerate `swarm-stack.yml` from compose modules.
 - **Inspect artifacts** — display `.env` and stack file status.

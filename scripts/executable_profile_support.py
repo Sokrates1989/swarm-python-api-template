@@ -144,6 +144,7 @@ DEPLOYMENT_KEYS = (
     "IMAGE_VERSION",
     "API_REPLICAS",
     "MEMORY_LIMIT",
+    "ADVANCED_LOGGING_ENABLED",
     "DATA_ROOT",
     "PGADMIN_ENABLED",
     "PGADMIN_DOMAIN",
@@ -209,6 +210,7 @@ KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
 
 # Additive generated-environment fields accepted from pre-upgrade `.env` files.
 OPTIONAL_DEPLOYMENT_DEFAULTS = {
+    "ADVANCED_LOGGING_ENABLED": "true",
     "KEYCLOAK_REALM_DISPLAY_NAME": "",
     "KEYCLOAK_REALM_ENABLED": "",
     "KEYCLOAK_REGISTRATION_ALLOWED": "",

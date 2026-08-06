@@ -324,6 +324,7 @@ load_app_config() {
     APP_RENDERER_API_TEMPLATE="$(_jq_or_default "$config_file" '.renderer.apiTemplate' "")"
     APP_RENDERER_FOOTER_TEMPLATE="$(_jq_or_default "$config_file" '.renderer.footerTemplate' "")"
     APP_ENV_KEYS="$(jq -r '.envKeys[]?' "$config_file" 2>/dev/null | tr '\n' ' ')"
+    APP_ADVANCED_LOGGING_LEVEL="$(_jq_or_default "$config_file" '.environment.LOG_LEVEL' "INFO")"
 
     # Database requirements
     APP_DB_TYPE="$(_jq_or_default "$config_file" '.database.type' "postgresql")"
@@ -547,6 +548,10 @@ _load_stack_env_fields() {
     export IMAGE_VERSION="$(_root_env_value "$env_file" IMAGE_VERSION)"
     export API_REPLICAS="$(_root_env_value "$env_file" API_REPLICAS)"
     export MEMORY_LIMIT="$(_root_env_value "$env_file" MEMORY_LIMIT)"
+    export ADVANCED_LOGGING_ENABLED="$(_root_env_value "$env_file" ADVANCED_LOGGING_ENABLED)"
+    if [ -z "$ADVANCED_LOGGING_ENABLED" ]; then
+        export ADVANCED_LOGGING_ENABLED="true"
+    fi
     export DATA_ROOT="$(_root_env_value "$env_file" DATA_ROOT)"
     export API_PUBLISHED_PORT="$(_root_env_value "$env_file" API_PUBLISHED_PORT)"
     export WEB_PUBLISHED_PORT="$(_root_env_value "$env_file" WEB_PUBLISHED_PORT)"

@@ -1,13 +1,12 @@
 #!/bin/bash
 # ==============================================================================
-# menu-image-transaction.sh - Atomic image configuration deployment boundary
+# menu-image-transaction.sh - Atomic public configuration deployment boundary
 # ==============================================================================
 #
-# Stages public image assignments, preserves the current environment and stack,
-# rerenders through the active profile, and invokes the shared Swarm deploy and
-# health boundary. Failures before Docker accepts a mutation restore both local
-# artifacts; post-mutation health failures retain the selected desired state for
-# diagnosis and explicit service rollback.
+# Stages validated public assignments, preserves the current environment and
+# stack, rerenders through the active profile, and optionally invokes the shared
+# Swarm deploy and health boundary. Image, logging, and database-management
+# quick actions therefore share one rollback-safe implementation.
 #
 # Dependencies:
 #   - deployment-environment-format.sh.
@@ -108,13 +107,13 @@ _restore_release_image_artifacts() {
         rm -f "${PROJECT_ROOT}/swarm-stack.yml"
     fi
     load_root_env "$PROJECT_ROOT" || true
-    echo "[OK] Restored the previous image configuration and rendered stack."
+    echo "[OK] Restored the previous public configuration and rendered stack."
 }
 
 # ------------------------------------------------------------------------------
 # _clean_release_image_transaction
 # ------------------------------------------------------------------------------
-# Deletes only the known files created inside one image-update transaction.
+# Deletes only the known files created inside one public-update transaction.
 #
 # Arguments:
 #   $1 - Transaction directory created by this module.
@@ -131,21 +130,37 @@ _clean_release_image_transaction() {
 }
 
 # ------------------------------------------------------------------------------
-# _apply_release_image_update
+# _apply_profile_environment_update
 # ------------------------------------------------------------------------------
-# Commits the staged public configuration, rerenders, deploys without a second
-# confirmation, and runs the common health check.
+# Commits validated public assignments, rerenders, and conditionally deploys
+# without a second confirmation through the common health boundary.
 #
 # Arguments:
 #   $1 - Protected transaction directory.
+#   $2 - Operator-facing operation label.
+#   $3 - Deployment mode: always or if-running.
+#   Remaining arguments - Exact KEY=VALUE public assignments.
 #
 # Returns:
-#   0 after verified deployment, 2 when values already match, or 1 on failure.
+#   0 after a verified deployment or stopped-stack render, 2 when values
+#   already match, or 1 on failure.
 # ------------------------------------------------------------------------------
-_apply_release_image_update() {
+_apply_profile_environment_update() {
     local transaction_directory="$1"
+    local operation_label="$2"
+    local deployment_mode="$3"
+    shift 3
+    local assignments=("$@")
     local staged_environment="${transaction_directory}/staged.env"
     local stack_file="${PROJECT_ROOT}/swarm-stack.yml"
+
+    case "$deployment_mode" in
+        always|if-running) ;;
+        *)
+            echo "[ERROR] Unsupported deployment mode: ${deployment_mode}"
+            return 1
+            ;;
+    esac
 
     cp "${PROJECT_ROOT}/.env" "${transaction_directory}/.env" || return 1
     cp "${PROJECT_ROOT}/.env" "$staged_environment" || return 1
@@ -154,9 +169,9 @@ _apply_release_image_update() {
     fi
     _stage_release_image_environment \
         "$staged_environment" \
-        "${IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}" || return 1
+        "${assignments[@]}" || return 1
     if cmp -s "${PROJECT_ROOT}/.env" "$staged_environment"; then
-        echo "[INFO] The selected image configuration is already active."
+        echo "[INFO] ${operation_label} is already in the selected state."
         return 2
     fi
     if declare -F backup_existing_files >/dev/null 2>&1; then
@@ -176,12 +191,18 @@ _apply_release_image_update() {
         _restore_release_image_artifacts "$transaction_directory"
         return 1
     fi
+    if [ "$deployment_mode" = "if-running" ] &&
+        ! _stack_running "$STACK_NAME"; then
+        echo ""
+        echo "[OK] ${operation_label} saved and rendered."
+        echo "     The stack is stopped; deploy it when you want to apply this state."
+        return 0
+    fi
     DEPLOY_CONFIGURED_STACK_MUTATED=false
     if _deploy_configured_stack confirmed; then
         echo ""
-        echo "[OK] Service image update deployed and health-verified."
+        echo "[OK] ${operation_label} deployed and health-verified."
         echo "     Stack: ${STACK_NAME}"
-        echo "     Version: ${IMAGE_UPDATE_SELECTED_VERSION}"
         return 0
     fi
     if [ "${DEPLOY_CONFIGURED_STACK_MUTATED:-false}" != "true" ]; then
@@ -193,4 +214,30 @@ _apply_release_image_update() {
         echo "        inspect status and use the rollback menu when required."
     fi
     return 1
+}
+
+# ------------------------------------------------------------------------------
+# _apply_release_image_update
+# ------------------------------------------------------------------------------
+# Adapts the image workflow to the shared public-configuration transaction.
+#
+# Arguments:
+#   $1 - Protected transaction directory.
+#
+# Returns:
+#   Shared transaction status.
+# ------------------------------------------------------------------------------
+_apply_release_image_update() {
+    local transaction_directory="$1"
+    local status=0
+
+    _apply_profile_environment_update \
+        "$transaction_directory" \
+        "Service image update" \
+        "always" \
+        "${IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}" || status=$?
+    if [ "$status" -eq 0 ]; then
+        echo "     Version: ${IMAGE_UPDATE_SELECTED_VERSION}"
+    fi
+    return "$status"
 }

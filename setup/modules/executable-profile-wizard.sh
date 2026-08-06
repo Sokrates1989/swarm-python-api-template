@@ -119,6 +119,7 @@ _profile_configuration_arguments() {
     arguments+=(--set "IMAGE_VERSION=${IMAGE_VERSION}")
     arguments+=(--set "API_REPLICAS=${API_REPLICAS}")
     arguments+=(--set "MEMORY_LIMIT=${MEMORY_LIMIT}")
+    arguments+=(--set "ADVANCED_LOGGING_ENABLED=${ADVANCED_LOGGING_ENABLED}")
     arguments+=(--set "DATA_ROOT=${DATA_ROOT}")
     arguments+=(--set "PGADMIN_ENABLED=${PGADMIN_ENABLED}")
     arguments+=(--set "PGADMIN_DOMAIN=${PGADMIN_DOMAIN}")

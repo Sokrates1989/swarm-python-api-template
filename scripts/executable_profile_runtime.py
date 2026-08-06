@@ -206,6 +206,8 @@ def runtime_environment(
                 ],
             }
         )
+    if deployment["ADVANCED_LOGGING_ENABLED"] != "true":
+        environment["LOG_LEVEL"] = "WARNING"
     for key in FALSE_DEBUG_KEYS:
         if key in environment and environment[key].lower() != "false":
             raise ExecutableProfileError(

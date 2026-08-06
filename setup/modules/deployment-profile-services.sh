@@ -86,6 +86,10 @@ _collect_deployment_service() {
 collect_deployment_services_and_storage() {
     local primary_label="Backend"
 
+    ADVANCED_LOGGING_ENABLED="$(_deployment_existing_value \
+        ADVANCED_LOGGING_ENABLED \
+        "true")"
+
     if [ "${APP_STACK_FAMILY:-api}" = "nginx" ]; then
         primary_label="Nginx"
     fi

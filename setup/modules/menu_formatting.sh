@@ -14,6 +14,10 @@ if [ -z "${_MENU_COLOR_ENABLED+x}" ]; then
     fi
 fi
 
+# Keep service images and status notes inside the overview border on normal
+# server terminals. Callers may override this before sourcing the module.
+MENU_BOX_TEXT_WIDTH="${MENU_BOX_TEXT_WIDTH:-92}"
+
 # _menu_colorize
 # Applies a semantic terminal color without changing plain captured output.
 #
@@ -40,6 +44,15 @@ _menu_colorize() {
     printf '%b%s%b' "$code" "$text" $'\033[0m'
 }
 
+# _menu_heading
+# Renders a menu section heading using the shared informational color.
+#
+# Arguments:
+# - $1: heading text
+_menu_heading() {
+    _menu_colorize info "$1"
+}
+
 # _strip_menu_colors
 # Removes ANSI SGR sequences before box-width calculation.
 #
@@ -61,7 +74,7 @@ _strip_menu_colors() {
 # _box_rule
 # Prints a horizontal rule for the overview box.
 _box_rule() {
-    local width=68
+    local width=$((MENU_BOX_TEXT_WIDTH + 2))
     printf '+%*s+\n' "$width" '' | tr ' ' '-'
 }
 
@@ -72,7 +85,7 @@ _box_rule() {
 # - $1: line contents
 _box_line() {
     local text="$1"
-    local width=66
+    local width="$MENU_BOX_TEXT_WIDTH"
     local display_len
     display_len=$(_calc_display_width "$text")
     local pad=$((width - display_len))

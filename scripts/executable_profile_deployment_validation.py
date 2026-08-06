@@ -693,6 +693,10 @@ def validate_deployment(
         raise ExecutableProfileError(
             ".env PGADMIN_ENABLED must be true or false."
         )
+    if values["ADVANCED_LOGGING_ENABLED"] not in {"true", "false"}:
+        raise ExecutableProfileError(
+            ".env ADVANCED_LOGGING_ENABLED must be true or false."
+        )
     _validate_operator_identity(data, values)
     _validate_keycloak_deployment(data, values)
     _validate_counts_and_resources(values)

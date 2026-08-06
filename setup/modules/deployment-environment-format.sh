@@ -90,7 +90,7 @@ deployment_environment_section_id() {
             echo "ports"
             ;;
         IMAGE_NAME|IMAGE_VERSION|API_REPLICAS|NGINX_REPLICAS|MEMORY_LIMIT|\
-        PORT|PYTHON_VERSION|DEBUG|DEBUG_ENABLED)
+        ADVANCED_LOGGING_ENABLED|PORT|PYTHON_VERSION|DEBUG|DEBUG_ENABLED)
             echo "backend"
             ;;
         DATA_ROOT|REDIS_*)

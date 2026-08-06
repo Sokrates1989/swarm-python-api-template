@@ -115,6 +115,9 @@ def default_deployment_values(
             "MEMORY_LIMIT": str(
                 resources.get("defaultMemoryLimit", "unlimited")
             ),
+            "ADVANCED_LOGGING_ENABLED": str(
+                str(environment.get("LOG_LEVEL", "INFO")).upper() == "INFO"
+            ).lower(),
             "DATA_ROOT": str(storage.get("dataRoot") or root.resolve()),
             "PGADMIN_ENABLED": str(pgadmin.get("enabled", False)).lower(),
             "PGADMIN_DOMAIN": str(pgadmin.get("domain", "")),

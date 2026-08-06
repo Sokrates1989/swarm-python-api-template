@@ -27,6 +27,12 @@ if [ -f "${MENU_HANDLERS_DIR}/menu_formatting.sh" ]; then
     source "${MENU_HANDLERS_DIR}/menu_formatting.sh"
 fi
 
+# Source stable cross-repository operator shortcut meanings.
+if [ -f "${MENU_HANDLERS_DIR}/menu-shortcuts.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-shortcuts.sh"
+fi
+
 # Source the shared all-service overview.
 if [ -f "${MENU_HANDLERS_DIR}/menu-overview.sh" ]; then
     # shellcheck source=/dev/null
@@ -61,6 +67,12 @@ fi
 if [ -f "${MENU_HANDLERS_DIR}/menu-image-actions.sh" ]; then
     # shellcheck source=/dev/null
     source "${MENU_HANDLERS_DIR}/menu-image-actions.sh"
+fi
+
+# Source targeted profile-driven logging and database-management toggles.
+if [ -f "${MENU_HANDLERS_DIR}/menu-runtime-actions.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-runtime-actions.sh"
 fi
 
 # _profile_requires_secrets
@@ -185,10 +197,10 @@ show_main_menu() {
             show_deployment_overview
         fi
 
-        echo "Setup:"
+        echo "$(_menu_heading 'Setup:')"
         echo "  ${MENU_SETUP_WIZARD}) Re-run setup wizard"
         if _profile_requires_secrets; then
-            echo "  ${MENU_SETUP_SECRETS}) Manage Docker secrets"
+            echo "  $(operator_menu_shortcut_key secrets)) Manage Docker secrets"
         fi
         echo "  ${MENU_RESTORE_ENV}) Quick restore from saved .env"
         if [ "$MENU_RESTORE_SECRETS" != "__disabled_restore_secrets" ]; then
@@ -198,55 +210,87 @@ show_main_menu() {
             echo "  ${MENU_SETUP_AUTH}) Configure Authentication (Cognito/Keycloak)"
         fi
         if [ -n "$MENU_KEYCLOAK_BOOTSTRAP" ]; then
-            echo "  ${MENU_KEYCLOAK_BOOTSTRAP}) Bootstrap / update Keycloak realm"
+            echo "  $(operator_menu_shortcut_key bootstrap)) Bootstrap / update Keycloak realm"
         fi
         if [ -n "$MENU_ACK_KEYCLOAK_USERS" ]; then
             echo "  ${MENU_ACK_KEYCLOAK_USERS}) Acknowledge manually deleted bootstrap users"
         fi
         echo ""
 
-        echo "Deployment:"
-        echo "  ${MENU_DEPLOY}) Deploy to Docker Swarm"
+        echo "$(_menu_heading 'Deployment:')"
+        echo "  $(operator_menu_shortcut_key deploy)) Deploy to Docker Swarm"
         echo "  ${MENU_ROLLBACK}) Roll back retained service specifications"
-        echo "  ${MENU_STATUS}) Check deployment status"
-        echo "  ${MENU_LOGS}) View service logs"
+        echo "  $(operator_menu_shortcut_key health)) Check deployment status"
+        echo "  $(operator_menu_shortcut_key logs)) View service logs"
         echo ""
 
-        echo "Management:"
-        echo "  ${MENU_UPDATE_IMAGE}) Change service image configuration"
+        echo "$(_menu_heading 'Management:')"
+        echo "  $(operator_menu_shortcut_key images)) Change service image configuration"
         echo "  ${MENU_SCALE}) Change replica configuration"
+        if profile_supports_advanced_logging; then
+            echo "  $(operator_menu_shortcut_key logging)) Toggle advanced logging ($(advanced_logging_status_label))"
+        fi
+        if profile_supports_database_admin_toggle; then
+            echo "  $(operator_menu_shortcut_key database-admin)) Toggle $(database_admin_display_name) ($(database_admin_status_label))"
+        fi
         echo "  ${MENU_REMOVE}) Remove deployment"
         echo "  ${MENU_BUILD_STACK}) Rebuild swarm stack"
         if [ -n "$MENU_CONFIGURE_ADMIN_UI" ]; then
-            echo "  ${MENU_CONFIGURE_ADMIN_UI}) Change database-management configuration"
+            echo "  ${MENU_CONFIGURE_ADMIN_UI}) Edit database-management configuration"
         fi
         echo "  ${MENU_INSPECT}) Inspect deployment artifacts"
         echo ""
 
-        echo "CI/CD:"
+        echo "$(_menu_heading 'CI/CD:')"
         echo "  ${MENU_CICD}) GitHub Actions CI/CD helper"
         echo ""
-        echo "  ${MENU_EXIT}) Exit"
-        echo ""
 
+        echo "$(_menu_heading 'Repository:')"
         if [ "$_GIT_UPDATE_STATUS" = "behind" ]; then
             echo "  ────────────────────────────────────────"
-            echo "  u) ⬆️  Update deployment scripts (${_GIT_UPDATE_BEHIND_COUNT} update(s) available)"
+            echo "  $(operator_menu_shortcut_key update)) ⬆️  Update deployment scripts (${_GIT_UPDATE_BEHIND_COUNT} update(s) available)"
             echo "  ────────────────────────────────────────"
             echo ""
         fi
+        echo "  $(operator_menu_shortcut_key refresh)) Refresh repo status"
+        echo ""
+        echo "  0/$(operator_menu_shortcut_key exit)) Exit"
+        echo ""
 
-        local prompt_text="Your choice (1-${MENU_EXIT}"
-        if [ "$_GIT_UPDATE_STATUS" = "behind" ]; then
-            prompt_text="${prompt_text}, u"
-        fi
-        prompt_text="${prompt_text}): "
+        local prompt_text="Your choice: "
 
         if [[ -r /dev/tty ]]; then
             read -r -p "$prompt_text" choice < /dev/tty
         else
             read -r -p "$prompt_text" choice
         fi
+
+        # Convert stable letters into the existing capability-derived actions.
+        # Numeric selections remain accepted as compatibility aliases.
+        local shortcut_action=""
+        shortcut_action="$(resolve_operator_menu_shortcut "$choice")" ||
+            shortcut_action=""
+        case "$shortcut_action" in
+            bootstrap)
+                choice="${MENU_KEYCLOAK_BOOTSTRAP:-__unsupported_bootstrap}"
+                ;;
+            deploy) choice="$MENU_DEPLOY" ;;
+            logging) choice="__quick_logging" ;;
+            health) choice="$MENU_STATUS" ;;
+            images) choice="$MENU_UPDATE_IMAGE" ;;
+            logs) choice="$MENU_LOGS" ;;
+            database-admin) choice="__quick_database_admin" ;;
+            refresh) choice="__refresh_repo" ;;
+            secrets)
+                if [ "$MENU_SETUP_SECRETS" = "__disabled_setup_secrets" ]; then
+                    choice="__unsupported_secrets"
+                else
+                    choice="$MENU_SETUP_SECRETS"
+                fi
+                ;;
+            update) choice="u" ;;
+            exit) choice="$MENU_EXIT" ;;
+        esac
 
         if [ -n "$MENU_SETUP_AUTH" ] && [ "$choice" = "$MENU_SETUP_AUTH" ]; then
             setup_auth_provider
@@ -271,7 +315,7 @@ show_main_menu() {
             continue
         fi
 
-        case $choice in
+        case "$choice" in
         ${MENU_DEPLOY})
             echo "[DEPLOY] Deploying to Docker Swarm..."
             echo ""
@@ -401,6 +445,30 @@ show_main_menu() {
                 "Change database-management settings through the shared wizard." ||
                 true
             ;;
+        __quick_logging)
+            if profile_supports_advanced_logging; then
+                toggle_advanced_logging || true
+            else
+                echo "[INFO] Advanced logging is not supported by this profile."
+            fi
+            ;;
+        __quick_database_admin)
+            if profile_supports_database_admin_toggle; then
+                toggle_database_admin_ui || true
+            else
+                echo "[INFO] Database management is not available for this profile."
+            fi
+            ;;
+        __unsupported_bootstrap)
+            echo "[INFO] Keycloak bootstrap is not available for this profile."
+            ;;
+        __unsupported_secrets)
+            echo "[INFO] This profile declares no Docker secrets."
+            ;;
+        __refresh_repo)
+            echo "[CHECK] Checking for deployment script updates..."
+            check_git_updates
+            ;;
         ${MENU_INSPECT})
             echo ""
             echo "🔍 Deployment Artifacts"
@@ -428,7 +496,7 @@ show_main_menu() {
         ${MENU_CICD})
             run_ci_cd_github_helper
             ;;
-        ${MENU_EXIT})
+        ${MENU_EXIT}|0)
             echo "👋 Goodbye!"
             exit 0
             ;;

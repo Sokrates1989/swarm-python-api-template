@@ -363,6 +363,55 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertIn("FELIX_PGADMIN_PASSWORD", stack)
         self.assertIn("pgadmin.felix-app.fe-wi.com", stack)
 
+    def test_advanced_logging_is_safe_and_operator_controllable(self) -> None:
+        """Toggle INFO diagnostics without exposing sensitive debug channels.
+
+        Returns:
+            Nothing.
+        """
+
+        enabled = self._configure("felix", self.felix_config)
+        disabled = self._configure(
+            "felix",
+            self.felix_config,
+            {"ADVANCED_LOGGING_ENABLED": "false"},
+        )
+
+        self.assertEqual(enabled.environment["LOG_LEVEL"], "INFO")
+        self.assertEqual(disabled.environment["LOG_LEVEL"], "WARNING")
+        for key in (
+            "DEBUG",
+            "DEBUG_ENABLED",
+            "SQL_ECHO_ENABLED",
+            "ENABLE_HTTP_DEBUG_LOGGING",
+            "LOG_REQUEST_HEADERS",
+            "LOG_REQUEST_BODY",
+            "LOG_RESPONSE_HEADERS",
+            "LOG_RESPONSE_BODY",
+        ):
+            with self.subTest(key=key):
+                self.assertEqual(enabled.environment[key], "false")
+                self.assertEqual(disabled.environment[key], "false")
+
+    def test_invalid_advanced_logging_toggle_is_rejected(self) -> None:
+        """Reject public logging values outside the strict boolean contract.
+
+        Returns:
+            Nothing.
+        """
+
+        self._write_config("felix", self.felix_config)
+        with self.assertRaisesRegex(
+            ExecutableProfileError,
+            "ADVANCED_LOGGING_ENABLED must be true or false",
+        ):
+            write_deployment_env(
+                self.root,
+                "felix",
+                {"ADVANCED_LOGGING_ENABLED": "verbose"},
+                force=True,
+            )
+
     def test_direct_ports_include_optional_pgadmin(self) -> None:
         """Publish every public service when Traefik is disabled.
 

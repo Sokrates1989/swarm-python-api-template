@@ -122,6 +122,9 @@ _deployment_field_specific_help_id() {
         SSL_MODE)
             echo "ssl-mode"
             ;;
+        ADVANCED_LOGGING_ENABLED)
+            echo "advanced-logging"
+            ;;
         PGADMIN_ENABLED|WEB_ENABLED|KEYCLOAK_REALM_ENABLED|\
         KEYCLOAK_REGISTRATION_ALLOWED|KEYCLOAK_RESET_PASSWORD_ALLOWED|\
         KEYCLOAK_REMEMBER_ME|KEYCLOAK_VERIFY_EMAIL|\
@@ -199,6 +202,9 @@ _deployment_field_specific_help() {
             ;;
         ssl-mode)
             echo "Use letsencrypt when Traefik obtains certificates, or proxy when TLS terminates upstream."
+            ;;
+        advanced-logging)
+            echo "Use true for production-safe INFO diagnostics or false for WARNING and ERROR only. Sensitive HTTP bodies/headers, SQL echo, and framework DEBUG always remain disabled."
             ;;
         boolean-toggle)
             echo "Use true or false. Keep dependent replica/domain fields consistent when enabling a service."

@@ -133,15 +133,5 @@ fi
 
 load_root_env "$PROJECT_ROOT"
 
-# ===========================================================================
-# Show deployment overview and open the operations menu
-# ===========================================================================
-
-echo ""
-echo "📋 Deployment Overview"
-echo "========================"
-show_plain_deployment_overview
-echo ""
-
-# Main menu
+# Open the operations menu. It owns the single canonical deployment overview.
 show_main_menu
