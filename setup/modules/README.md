@@ -191,10 +191,16 @@ Changing the realm or backend client while its Docker secret already exists
 keeps fail-closed behavior: stop the stack and use the explicit rotation
 action so the proven new credential replaces the prior binding.
 
-The operator may enable secret-safe debug tracing. It prints only Admin API
-methods, paths, query-key names, and HTTP status codes—never request bodies,
-headers, query values, tokens, passwords, or client secrets. Strict read-back
-errors also name the exact profile-owned fields that remain drifted.
+Secret-safe request tracing is enabled by default and can be explicitly
+disabled at its `[Y/n]` prompt or with `--no-debug`. It prints only Keycloak
+API surfaces, methods, paths, query-key names, and HTTP status codes—never
+request bodies, headers, query values, tokens, passwords, or client secrets.
+The administrator access/refresh-token pair remains process-memory-only; long
+guided reviews proactively refresh near expiry, and an unexpected HTTP 401
+triggers one automatic refresh and retry. Failed phases print sanitized
+recovery guidance and, for unexplained server responses, direct the operator
+to the existing Keycloak deployment's service logs. Strict read-back errors
+also name the exact profile-owned fields that remain drifted.
 
 After authenticated theme selection, the operator sees a sanitized live-state
 plan. Selected users missing either the account or its password credential

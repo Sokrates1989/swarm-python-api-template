@@ -46,6 +46,7 @@ from keycloak_profile_client import (
     load_keycloak_identity,
 )
 from keycloak_profile_configuration import persist_keycloak_values
+from keycloak_profile_diagnostics import print_keycloak_failure_diagnostics
 from keycloak_profile_roles import KeycloakRoleError
 from keycloak_profile_secret_bridge import KeycloakSecretBridgeError
 from keycloak_profile_secret_viewer import (
@@ -104,14 +105,27 @@ def build_parser() -> argparse.ArgumentParser:
             "the interactive value-by-value review."
         ),
     )
-    parser.add_argument(
+    tracing = parser.add_mutually_exclusive_group()
+    tracing.add_argument(
         "--debug",
+        dest="debug",
         action="store_true",
         help=(
-            "Print secret-safe Admin API method/path/query-key/status traces. "
-            "Bodies, headers, query values, and credentials remain hidden."
+            "Print secret-safe Keycloak API method/path/query-key/status traces. "
+            "Bodies, headers, query values, and credentials remain hidden "
+            "(default for non-interactive profile acceptance)."
         ),
     )
+    tracing.add_argument(
+        "--no-debug",
+        dest="debug",
+        action="store_false",
+        help=(
+            "Disable otherwise default-on secret-safe Keycloak request "
+            "tracing."
+        ),
+    )
+    parser.set_defaults(debug=None)
     return parser
 
 
@@ -244,9 +258,11 @@ def main(argv: list[str] | None = None) -> int:
     """
 
     args = build_parser().parse_args(argv)
+    phase = "loading and validating the selected site profile"
     try:
         profile = load_executable_profile(args.root)
         identity = load_keycloak_identity(profile)
+        phase = "administrator authentication and Admin API verification"
         client = authenticate_admin_until_valid(
             identity,
             args.admin_user or "admin",
@@ -259,18 +275,25 @@ def main(argv: list[str] | None = None) -> int:
                 "complete it."
             )
             return 0
-        debug = args.debug
-        if not args.accept_profile_values and not debug:
-            debug = prompt_secret_safe_debug()
+        if args.debug is None:
+            debug = (
+                True
+                if args.accept_profile_values
+                else prompt_secret_safe_debug()
+            )
+        else:
+            debug = args.debug
         client.debug = debug
         print("")
         print_target(profile, identity)
+        phase = "guided realm/client configuration review"
         profile, identity = _review_bootstrap_configuration(
             profile,
             identity,
             client,
             skip_review=args.accept_profile_values,
         )
+        phase = "authenticated Keycloak live-state inspection"
         docker_present, plan = inspect_reconciliation_plan(
             client,
             replace_secret=args.replace_secret,
@@ -280,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             raise KeycloakProfileError(
                 "Resolve every displayed blocker before bootstrap."
             )
+        phase = "Keycloak reconciliation and verification"
         summary = _apply_interactive_plan(
             profile,
             identity,
@@ -300,9 +324,12 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nKeycloak bootstrap cancelled; no further changes were applied.")
         return 130
+    except KeycloakProfileError as error:
+        print(f"[ERROR] {error}", file=sys.stderr)
+        print_keycloak_failure_diagnostics(error, phase)
+        return 1
     except (
         ExecutableProfileError,
-        KeycloakProfileError,
         KeycloakApplicationAccessError,
         KeycloakRoleError,
         KeycloakSecretBridgeError,

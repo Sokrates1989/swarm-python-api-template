@@ -12,6 +12,7 @@ Dependencies:
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 import urllib.parse
@@ -30,6 +31,10 @@ from keycloak_profile_client import (  # noqa: E402
     KeycloakAdminClient,
     KeycloakIdentity,
     KeycloakProfileError,
+)
+from keycloak_profile_admin_session import (  # noqa: E402
+    AdminSessionManager,
+    AdminTokenSession,
 )
 
 
@@ -111,6 +116,152 @@ class KeycloakProfileClientTests(unittest.TestCase):
         self.assertNotIn("hidden-body-value", trace)
         self.assertNotIn("hidden-query-value", trace)
         self.assertNotIn("unused-admin-token", trace)
+
+    def test_expired_admin_token_refreshes_before_live_state_request(
+        self,
+    ) -> None:
+        """Refresh a token expired during guided review before realm access.
+
+        Returns:
+            Nothing.
+        """
+
+        client = client_fixture()
+        client.debug = True
+        expired = AdminTokenSession(
+            access_token="expired-access-token",
+            refresh_token="hidden-refresh-token",
+            access_expires_at=1,
+            refresh_expires_at=0,
+        )
+        client._admin_session = AdminSessionManager(
+            client.identity.server_url,
+            expired,
+            client._trace_admin_token_response,
+        )
+        client.token = expired.access_token
+        refreshed_payload = json.dumps(
+            {
+                "access_token": "renewed-access-token",
+                "refresh_token": "renewed-refresh-token",
+                "expires_in": 300,
+                "refresh_expires_in": 1800,
+            }
+        ).encode("utf-8")
+        output = StringIO()
+        with patch(
+            "keycloak_profile_admin_session.read_keycloak_http",
+            return_value=(200, refreshed_payload),
+        ) as token_http, patch(
+            "keycloak_profile_client._read_http",
+            return_value=(200, b"{}"),
+        ) as admin_http, redirect_stdout(output):
+            status, payload = client.request(
+                "GET",
+                "/admin/realms/example",
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {})
+        token_request = token_http.call_args.args[0]
+        token_form = urllib.parse.parse_qs(
+            token_request.data.decode("utf-8")
+        )
+        self.assertEqual(token_form["grant_type"], ["refresh_token"])
+        self.assertEqual(
+            token_form["refresh_token"],
+            ["hidden-refresh-token"],
+        )
+        admin_request = admin_http.call_args.args[0]
+        self.assertEqual(
+            admin_request.get_header("Authorization"),
+            "Bearer renewed-access-token",
+        )
+        trace = output.getvalue()
+        self.assertIn("access token is expiring", trace)
+        self.assertIn("Keycloak OIDC POST", trace)
+        self.assertIn("HTTP 200", trace)
+        self.assertNotIn("hidden-refresh-token", trace)
+        self.assertNotIn("renewed-access-token", trace)
+
+    def test_http_401_refreshes_and_retries_admin_request_once(self) -> None:
+        """Recover from an unanticipated token rejection with one retry.
+
+        Returns:
+            Nothing.
+        """
+
+        client = client_fixture()
+        active = AdminTokenSession.from_payload(
+            {
+                "access_token": "rejected-access-token",
+                "refresh_token": "hidden-refresh-token",
+                "expires_in": 3600,
+                "refresh_expires_in": 7200,
+            }
+        )
+        client._admin_session = AdminSessionManager(
+            client.identity.server_url,
+            active,
+            client._trace_admin_token_response,
+        )
+        client.token = active.access_token
+        refreshed_payload = json.dumps(
+            {
+                "access_token": "retry-access-token",
+                "refresh_token": "retry-refresh-token",
+                "expires_in": 300,
+                "refresh_expires_in": 1800,
+            }
+        ).encode("utf-8")
+        with patch(
+            "keycloak_profile_admin_session.read_keycloak_http",
+            return_value=(200, refreshed_payload),
+        ), patch(
+            "keycloak_profile_client._read_http",
+            side_effect=[(401, b""), (200, b"{}")],
+        ) as admin_http:
+            status, payload = client.request(
+                "GET",
+                "/admin/realms/example",
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {})
+        self.assertEqual(admin_http.call_count, 2)
+        retry_request = admin_http.call_args_list[1].args[0]
+        self.assertEqual(
+            retry_request.get_header("Authorization"),
+            "Bearer retry-access-token",
+        )
+
+    def test_http_401_without_refresh_token_explains_reauthentication(
+        self,
+    ) -> None:
+        """Replace a generic 401 with an actionable expired-session message.
+
+        Returns:
+            Nothing.
+        """
+
+        client = client_fixture()
+        session = AdminTokenSession.from_payload(
+            {"access_token": "unrefreshable-token", "expires_in": 3600}
+        )
+        client._admin_session = AdminSessionManager(
+            client.identity.server_url,
+            session,
+            client._trace_admin_token_response,
+        )
+        client.token = session.access_token
+        with patch(
+            "keycloak_profile_client._read_http",
+            return_value=(401, b""),
+        ), self.assertRaisesRegex(
+            KeycloakProfileError,
+            "Restart bootstrap and authenticate again",
+        ):
+            client.request("GET", "/admin/realms/example")
 
     def test_client_credentials_proof_posts_exact_secret_in_body(self) -> None:
         """Send the Keycloak-returned value only in the token request body.

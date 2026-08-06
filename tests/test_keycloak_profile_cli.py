@@ -508,10 +508,10 @@ class KeycloakProfileCliTests(unittest.TestCase):
         self.assertEqual(selected.backend_client_id, "selected-backend")
         self.assertEqual(selected.audience, "selected-backend")
 
-    def test_debug_trace_explains_safety_and_requires_explicit_yes(
+    def test_debug_trace_explains_safety_and_defaults_to_enabled(
         self,
     ) -> None:
-        """Explain trace boundaries while keeping request tracing opt-in.
+        """Explain trace boundaries and require an explicit opt-out.
 
         Returns:
             Nothing.
@@ -520,7 +520,7 @@ class KeycloakProfileCliTests(unittest.TestCase):
         with patch("builtins.input", return_value=""), patch(
             "builtins.print"
         ) as print_mock:
-            self.assertFalse(prompt_secret_safe_debug())
+            self.assertTrue(prompt_secret_safe_debug())
 
         rendered_explanation = " ".join(
             " ".join(str(argument) for argument in call.args)
@@ -531,10 +531,23 @@ class KeycloakProfileCliTests(unittest.TestCase):
         self.assertIn("never shows request bodies", rendered_explanation)
         self.assertIn("client secrets", rendered_explanation)
 
-        with patch("builtins.input", return_value="yes"), patch(
+        with patch("builtins.input", return_value="no"), patch(
             "builtins.print"
         ):
-            self.assertTrue(prompt_secret_safe_debug())
+            self.assertFalse(prompt_secret_safe_debug())
+
+    def test_debug_command_flags_allow_explicit_override(self) -> None:
+        """Keep non-interactive tracing defaultable and explicitly reversible.
+
+        Returns:
+            Nothing.
+        """
+
+        parser = bootstrap.build_parser()
+
+        self.assertIsNone(parser.parse_args([]).debug)
+        self.assertTrue(parser.parse_args(["--debug"]).debug)
+        self.assertFalse(parser.parse_args(["--no-debug"]).debug)
 
     def test_admin_username_uses_explicit_or_enter_default(self) -> None:
         """Return an entered username and map an empty answer to ``admin``.

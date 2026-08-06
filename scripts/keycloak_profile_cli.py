@@ -587,11 +587,12 @@ def prompt_smtp_password(
 
 
 def prompt_secret_safe_debug() -> bool:
-    """Explain and ask whether safe Admin API tracing should be enabled.
+    """Explain and ask whether safe API tracing should remain enabled.
 
     Returns:
-        True only for an explicit ``y`` or ``yes`` answer. Request bodies,
-        headers, query values, and credentials remain excluded from tracing.
+        ``True`` for Enter, ``y``, or ``yes``; ``False`` only for an explicit
+        ``n`` or ``no``. Request bodies, headers, query values, and credentials
+        remain excluded from tracing.
     """
 
     print(
@@ -603,9 +604,9 @@ def prompt_secret_safe_debug() -> bool:
         "passwords, or client secrets."
     )
     answer = input(
-        "Enable secret-safe Keycloak API request tracing? [y/N]: "
+        "Enable secret-safe Keycloak API request tracing? [Y/n]: "
     ).strip()
-    return answer.lower() in {"y", "yes"}
+    return answer.lower() not in {"n", "no"}
 
 
 def prompt_admin_user(default: str = "admin") -> str:

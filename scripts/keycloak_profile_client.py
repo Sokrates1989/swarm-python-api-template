@@ -10,12 +10,12 @@ Description:
 Dependencies:
     - Python standard library.
     - Executable-profile support and application-access identity models.
+    - Administrator-session, HTTP transport, and shared error modules.
 """
 
 from __future__ import annotations
 
 import json
-import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
@@ -27,6 +27,7 @@ from executable_profile_support import (
     KEYCLOAK_REALM_SETTING_ENV_KEYS,
     mapping,
 )
+from keycloak_profile_admin_session import AdminSessionManager
 from keycloak_profile_application_access import (
     KeycloakBootstrapTestUser,
     KeycloakRealmRole,
@@ -40,64 +41,8 @@ from keycloak_profile_realm_configuration import (
     load_localization_settings,
     load_theme_settings,
 )
-
-
-class KeycloakProfileError(RuntimeError):
-    """Report a safe, operator-facing Keycloak reconciliation failure."""
-
-
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse redirects so credentials never leave the declared Keycloak URL."""
-
-    def redirect_request(
-        self,
-        request: urllib.request.Request,
-        file_pointer: Any,
-        code: int,
-        message: str,
-        headers: Any,
-        new_url: str,
-    ) -> None:
-        """Decline every redirect.
-
-        Args:
-            request: Original urllib request.
-            file_pointer: Response stream supplied by urllib.
-            code: HTTP redirect status.
-            message: HTTP status text.
-            headers: Redirect response headers.
-            new_url: Proposed redirect target.
-
-        Returns:
-            Always ``None``, which makes urllib surface the redirect status.
-        """
-
-        return None
-
-
-def _read_http(
-    request: urllib.request.Request,
-) -> tuple[int, bytes]:
-    """Send one request without redirects and return status plus raw body.
-
-    Args:
-        request: Prepared urllib request.
-
-    Returns:
-        HTTP status and response bytes, including HTTP error responses.
-
-    Raises:
-        KeycloakProfileError: If Keycloak cannot be reached.
-    """
-
-    opener = urllib.request.build_opener(_NoRedirectHandler())
-    try:
-        with opener.open(request, timeout=30) as response:
-            return int(response.status), response.read()
-    except urllib.error.HTTPError as error:
-        return int(error.code), error.read()
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
-        raise KeycloakProfileError("Unable to reach Keycloak.") from error
+from keycloak_profile_errors import KeycloakProfileError
+from keycloak_profile_http import read_keycloak_http as _read_http
 
 
 @dataclass(frozen=True)
@@ -190,6 +135,8 @@ class KeycloakAdminClient:
     Attributes:
         identity: Public realm/client configuration.
         token: Short-lived admin bearer token retained only in process memory.
+        _admin_session: Access/refresh token lifecycle retained only in
+            process memory so long guided reviews do not expire mid-run.
         debug: Whether secret-safe request method/path/status tracing is active.
     """
 
@@ -217,47 +164,101 @@ class KeycloakAdminClient:
 
         self.identity = identity
         self.debug = debug
-        self.token = self._request_admin_token(admin_user, admin_password)
+        self._admin_session = AdminSessionManager.authenticate(
+            identity.server_url,
+            admin_user,
+            admin_password,
+            self._trace_admin_token_response,
+        )
+        self.token = self._admin_session.access_token
 
-    def _request_admin_token(self, username: str, password: str) -> str:
-        """Request a short-lived admin access token.
+    def _trace_admin_token_response(
+        self,
+        method: str,
+        path: str,
+        status: int,
+    ) -> None:
+        """Trace token-endpoint metadata without exposing form values.
 
         Args:
-            username: Keycloak administrator username.
-            password: Keycloak administrator password.
+            method: HTTP method.
+            path: Public OIDC token endpoint path.
+            status: Observed HTTP status.
 
         Returns:
-            Bearer access token.
-
-        Raises:
-            KeycloakProfileError: If authentication or response parsing fails.
+            Nothing.
         """
 
-        body = urllib.parse.urlencode(
-            {
-                "grant_type": "password",
-                "client_id": "admin-cli",
-                "username": username,
-                "password": password,
-            }
-        ).encode("utf-8")
-        url = (
-            f"{self.identity.server_url}/realms/master/"
-            "protocol/openid-connect/token"
-        )
+        self._trace_response(method, path, None, status, surface="OIDC")
+
+    def _refresh_admin_session(self, reason: str) -> None:
+        """Refresh the administrator token without retaining its password.
+
+        Args:
+            reason: Secret-safe operator explanation for the refresh attempt.
+
+        Returns:
+            Nothing after replacing the in-memory token pair.
+
+        Raises:
+            KeycloakProfileError: If no refresh token remains or Keycloak
+                rejects the refresh grant.
+        """
+
+        manager = getattr(self, "_admin_session", None)
+        if not isinstance(manager, AdminSessionManager):
+            raise KeycloakProfileError(
+                "The Keycloak administrator session expired during the "
+                "guided bootstrap and no usable refresh token remains. "
+                "Restart bootstrap and authenticate again."
+            )
+        if self.debug:
+            print(f"[DEBUG] {reason}; refreshing the administrator session.")
+        manager.refresh()
+        self.token = manager.access_token
+
+    def _ensure_fresh_admin_session(self) -> None:
+        """Proactively refresh an access token near its known expiry.
+
+        Returns:
+            Nothing. Fixture clients without lifecycle metadata retain their
+            explicitly supplied token.
+        """
+
+        manager = getattr(self, "_admin_session", None)
+        if isinstance(manager, AdminSessionManager) and manager.needs_refresh():
+            self._refresh_admin_session("Administrator access token is expiring")
+
+    def _authenticated_request(
+        self,
+        method: str,
+        url: str,
+        data: bytes | None,
+    ) -> tuple[int, bytes]:
+        """Send one Admin API request using the current access token.
+
+        Args:
+            method: HTTP method.
+            url: Complete Keycloak Admin API URL.
+            data: Optional encoded JSON request body.
+
+        Returns:
+            Raw HTTP status and body.
+        """
+
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/json",
+        }
+        if data is not None:
+            headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
             url,
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data=data,
+            method=method,
+            headers=headers,
         )
-        payload = self._send(request, "authenticate with Keycloak")
-        token = payload.get("access_token")
-        if not isinstance(token, str) or not token:
-            raise KeycloakProfileError(
-                "Keycloak admin token response did not contain an access token."
-            )
-        return token
+        return _read_http(request)
 
     def request(
         self,
@@ -288,21 +289,27 @@ class KeycloakAdminClient:
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
         data = None if body is None else json.dumps(body).encode("utf-8")
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Accept": "application/json",
-        }
-        if data is not None:
-            headers["Content-Type"] = "application/json"
-        request = urllib.request.Request(
-            url,
-            data=data,
-            method=method,
-            headers=headers,
-        )
-        status, raw = _read_http(request)
+        self._ensure_fresh_admin_session()
+        status, raw = self._authenticated_request(method, url, data)
         self._trace_response(method, path, query, status)
+        if status == 401:
+            self._refresh_admin_session(
+                "Keycloak rejected the current administrator access token"
+            )
+            status, raw = self._authenticated_request(method, url, data)
+            self._trace_response(method, path, query, status)
+            if status == 401:
+                raise KeycloakProfileError(
+                    "Keycloak rejected the refreshed administrator token "
+                    f"for {method} {path} (HTTP 401). Verify the administrator "
+                    "still has master-realm management permissions."
+                )
         if status not in expected:
+            if status == 403:
+                raise KeycloakProfileError(
+                    "The authenticated Keycloak administrator is not "
+                    f"authorized for {method} {path} (HTTP 403)."
+                )
             raise KeycloakProfileError(
                 f"Keycloak request {method} {path} returned HTTP {status}."
             )
@@ -321,6 +328,8 @@ class KeycloakAdminClient:
         path: str,
         query: dict[str, str] | None,
         status: int,
+        *,
+        surface: str = "Admin API",
     ) -> None:
         """Print one secret-safe Admin API response trace when enabled.
 
@@ -329,6 +338,7 @@ class KeycloakAdminClient:
             path: Public Admin API path without server credentials.
             query: Optional query mapping; only key names are displayed.
             status: Observed HTTP status code.
+            surface: Secret-safe Keycloak API surface label.
 
         Returns:
             Nothing. Output is suppressed unless ``debug`` is true.
@@ -340,7 +350,7 @@ class KeycloakAdminClient:
         if query:
             query_note = f" query-keys={','.join(sorted(query))}"
         print(
-            f"[DEBUG] Keycloak Admin API {method} {path}"
+            f"[DEBUG] Keycloak {surface} {method} {path}"
             f"{query_note} -> HTTP {status}"
         )
 
