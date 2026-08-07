@@ -375,7 +375,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertIn("highest published stable version", actions)
         self.assertNotIn("select_semantic_version", actions)
         self.assertNotIn("below the", overview.lower())
-        self.assertIn("next minimum", overview)
+        self.assertIn("minimum for next release", overview)
 
     def test_quick_runtime_actions_reuse_the_deployment_transaction(
         self,

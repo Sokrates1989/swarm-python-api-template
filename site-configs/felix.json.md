@@ -23,8 +23,11 @@ Felix differs only through profile data:
   settings, application roles, and temporary test identities; and
 - exact Docker secret identifiers and file mounts.
 
-Felix is enrolled in release stack `felix` with the next-artifact floor `1.0.8`
-and component catalog `api`, `web`, `android`, and `ios`. The catalog is
+Felix is enrolled in release stack `felix` with the minimum for its next
+component release declared in `release.versionFloor` and component catalog
+`api`, `web`, `android`, and `ios`. This deployment profile is the single
+authority for that minimum; the Flutter and API repositories retain only their
+own component membership. The catalog is
 coordination metadata; this Swarm profile directly manages only the declared
 API and WebApp services.
 
@@ -54,8 +57,9 @@ stack without modifying production code.
 
 ## Coordinated service versions
 
-`release.versionFloor` constrains the next newly built/published Felix
-artifact; it does not declare that every deployed component must already have
+The compatibility field `release.versionFloor` stores the minimum version for
+the next newly built/published Felix artifact; it does not declare that every
+deployed component must already have
 that version. The shared image menu queries both Docker repositories and offers
 only tags that really exist. Selecting both services can advance each to its
 own highest stable tag or use their highest common published tag. Exact text is

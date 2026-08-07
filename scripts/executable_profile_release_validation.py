@@ -4,8 +4,9 @@ Module: executable_profile_release_validation.py
 Description:
     Validates optional site-profile metadata that enrolls independently
     published API, Web, Android, and iOS artifacts in one monotonic semantic-
-    version stack. The Swarm menu consumes only the public floor and managed
-    service IDs; source repositories remain responsible for publication proof.
+    version stack. The Swarm profile owns the public minimum for the next
+    release and the managed component IDs; source repositories remain
+    responsible for publication proof.
 
 Dependencies:
     - scripts/executable_profile_support.py.
@@ -40,7 +41,7 @@ def validate_release_coordination(
         Nothing. Profiles without ``release`` remain unenrolled.
 
     Raises:
-        ExecutableProfileError: If identity, floor, policy, or component
+        ExecutableProfileError: If identity, minimum, policy, or component
             coverage is incomplete or unsafe.
     """
 

@@ -71,7 +71,7 @@ Version 5.0 owns these main objects:
 | `exposure`, `routing` | Allowed public/direct exposure and safe routing defaults |
 | `database`, `services` | Database contract, exact service topology, digest pins, and audit track tags |
 | `image`, `web`, `resources`, `storage` | API/WebApp image, replica, opt-in memory, and storage defaults |
-| `release` | Optional release-stack identity, monotonic SemVer floor, and coordinated artifact IDs |
+| `release` | Optional release-stack identity, minimum version for the next release, and coordinated artifact IDs |
 | `pgadmin` | Optional PostgreSQL management-service defaults |
 | `cors`, `auth` | Browser-origin, authentication identity, realm policy, and verification contract |
 | `environment`, `envKeys` | Exact public runtime environment allowlist |
@@ -173,11 +173,21 @@ version line:
 }
 ```
 
-`stackId` and component IDs are safe identifiers. `versionFloor` is the stable
-`MAJOR.MINOR.PATCH` minimum accepted when the next new artifact is built and
-published; `components` must include `api` plus `web` when `services.web` is
-enabled. The floor is not a desired deployed version and does not make an
-older deployed image stale. The deployment menu derives freshness and update
+`stackId` and component IDs are safe identifiers. The compatibility field
+`versionFloor` stores the stable `MAJOR.MINOR.PATCH` minimum accepted when the
+next new artifact is built and published; operator menus call it the
+**minimum version for the next release**. This site profile is the single
+authority for that value. Source repositories store only their stack/component
+membership and discover this profile automatically in the standard sibling
+workspace layout. `RELEASE_STACK_PROFILE_PATH` can select the exact profile,
+or `RELEASE_STACK_DEPLOYMENT_ROOT` can select its Swarm repository.
+
+`components` must include `api` plus `web` when `services.web` is enabled. The
+minimum is not a desired deployed version and does not make an older deployed
+image stale. A source release equal to it continues without another prompt. A
+lower candidate is raised through the owning quick-start menu; a higher
+confirmed release atomically advances this profile before building. The
+deployment menu derives freshness and update
 choices from real registry tags, offers each repository's highest stable tag
 or their highest common stable tag, and verifies exact manual input. This
 metadata is application-neutral and `_template.json` demonstrates the contract

@@ -25,8 +25,9 @@ In particular:
 - `auth` contains Keycloak identity, selectable realm defaults, application
   roles, secret-free temporary test users, protected legacy values, and exact
   service-account client roles;
-- `release` optionally enrolls application artifacts in a shared build/publish
-  semantic-version floor; the floor is not deployment freshness;
+- `release` optionally enrolls application artifacts in one shared minimum
+  version for the next build/publication; that minimum is not deployment
+  freshness and this site profile is its single authority;
 - `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
   secrets; and
 - `capabilities` contributes optional public environment and secret mounts.
@@ -130,8 +131,8 @@ not started implicitly; a running stack is redeployed and health-checked.
 
 `menu-image-actions.sh` reads application-image capabilities from the active
 profile and saved root environment. It lets the operator choose one release
-service or all release services, but it never synthesizes a tag from the
-release floor. `scripts/registry_image_tool.py` enumerates real stable OCI
+service or all release services, but it never synthesizes a deployment tag
+from the next-release minimum. `scripts/registry_image_tool.py` enumerates real stable OCI
 registry tags; selected exact tags are resolved to digests and must declare
 `linux/amd64`. All-service mode can choose each repository's own highest tag or
 their highest common tag. `menu-image-transaction.sh` stages the public `.env`,
