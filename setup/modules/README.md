@@ -25,8 +25,8 @@ In particular:
 - `auth` contains Keycloak identity, selectable realm defaults, application
   roles, secret-free temporary test users, protected legacy values, and exact
   service-account client roles;
-- `release` optionally enrolls application artifacts in a shared monotonic
-  semantic-version floor;
+- `release` optionally enrolls application artifacts in a shared build/publish
+  semantic-version floor; the floor is not deployment freshness;
 - `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
   secrets; and
 - `capabilities` contributes optional public environment and secret mounts.
@@ -111,7 +111,8 @@ services are errors; a running database-management UI is deliberately a
 warning because it expands the active administration surface. The same box
 shows pending cleanup only for Keycloak users recorded as created by bootstrap.
 
-`menu-shortcuts.sh` defines a cross-repository letter contract: `b` bootstrap,
+`menu-shortcuts.sh` defines a cross-repository letter contract: `a` image
+audit/security, `b` bootstrap,
 `d` deploy, `g` advanced logging, `h` health, `i` images, `l` logs, `p`
 database admin, `r` refresh, `s` secrets, `u` update, and `q` exit. Dynamic
 numeric entries remain compatibility choices, but capabilities must not change
@@ -129,13 +130,24 @@ not started implicitly; a running stack is redeployed and health-checked.
 
 `menu-image-actions.sh` reads application-image capabilities from the active
 profile and saved root environment. It lets the operator choose one release
-service or all release services, while `semantic-version.sh` provides the one
-shared stable-SemVer comparison and bump dialogue. `menu-image-transaction.sh`
-stages the public `.env`, rebuilds through `scripts/build-site-stack.sh`, and
-calls the common deploy/health boundary after a single Enter-default
-confirmation. Pre-deployment failures restore the old `.env` and generated
-stack. Infrastructure images remain digest-pinned profile data and are shown
-in the overview rather than rewritten by this action.
+service or all release services, but it never synthesizes a tag from the
+release floor. `scripts/registry_image_tool.py` enumerates real stable OCI
+registry tags; selected exact tags are resolved to digests and must declare
+`linux/amd64`. All-service mode can choose each repository's own highest tag or
+their highest common tag. `menu-image-transaction.sh` stages the public `.env`,
+rebuilds through `scripts/build-site-stack.sh`, and calls the common
+deploy/health boundary after a single Enter-default confirmation.
+Pre-deployment failures restore the old `.env` and generated stack.
+
+`menu-image-audit.sh` owns the shared `a` submenu and ignored public-evidence
+cache. `menu-image-audit-profile.sh` converts profile capabilities and live
+Swarm digest references into application and infrastructure records. Registry
+checks compare application SemVer tags and explicit infrastructure channels;
+security checks prefer Docker Scout and fall back to Trivy for fixable
+HIGH/CRITICAL CVEs. Docker Scout base recommendations are a separate on-demand
+operation because they can be slower and require image provenance. The menu
+overview reads cached results only and never performs network/scanner work on
+redraw.
 
 ### `data-dirs.sh`
 

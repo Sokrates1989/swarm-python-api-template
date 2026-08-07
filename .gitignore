@@ -7,6 +7,8 @@ swarm-stack.yml
 .setup-complete
 generated/
 build/
+.image-audit-cache.json
+.image-audit-cache.json.tmp
 
 # ==============================================================================
 # Data directories (host-mounted volumes created on the server)

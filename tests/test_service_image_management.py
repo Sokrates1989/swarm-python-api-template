@@ -3,9 +3,9 @@ Module: test_service_image_management.py
 
 Description:
     Protects profile persistence, all-service overview rendering, shared
-    semantic-version selection, and the targeted operations-menu image update
-    workflow. Native Bash tests use isolated temporary files and stub runtime
-    mutation functions, so they never contact Docker Swarm.
+    registry-backed image selection, and the targeted operations-menu image
+    update workflow. Native Bash tests use isolated temporary files and stub
+    registry/runtime functions, so they never contact Docker or Swarm.
 
 Dependencies:
     - Python standard library.
@@ -48,6 +48,9 @@ IMAGE_ACTIONS = (
 IMAGE_TRANSACTION = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu-image-transaction.sh"
 )
+IMAGE_AUDIT = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-image-audit.sh"
+)
 SEMANTIC_VERSION = (
     REPOSITORY_ROOT / "setup" / "modules" / "semantic-version.sh"
 )
@@ -83,6 +86,8 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
             release["components"],
             ["api", "web", "android", "ios"],
         )
+        self.assertEqual(profile["database"]["imageTrackTag"], "16-alpine")
+        self.assertEqual(profile["services"]["redisImageTrackTag"], "7-alpine")
 
     def test_release_coordination_rejects_unsafe_or_incomplete_values(
         self,
@@ -106,11 +111,17 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         duplicate_component["release"]["components"].append("web")
         missing_web = copy.deepcopy(source_profile)
         missing_web["release"]["components"].remove("web")
+        missing_database_track = copy.deepcopy(source_profile)
+        del missing_database_track["database"]["imageTrackTag"]
         cases = (
             (invalid_floor, "release.versionFloor"),
             (invalid_policy, "release.versionPolicy"),
             (duplicate_component, "release.components must contain unique"),
             (missing_web, "release.components omits managed services: web"),
+            (
+                missing_database_track,
+                "database.image and database.imageTrackTag must be declared together",
+            ),
         )
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -206,6 +217,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
                 MENU_OVERVIEW,
                 IMAGE_ACTIONS,
                 IMAGE_TRANSACTION,
+                IMAGE_AUDIT,
                 SEMANTIC_VERSION,
             )
         ).lower()
@@ -213,7 +225,8 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertNotIn("felix", source)
         self.assertIn("app_requires_web", source)
         self.assertIn("app_primary_service", source)
-        self.assertIn("app_release_version_policy", source)
+        self.assertIn("app_release_version_floor", source)
+        self.assertIn("registry_stable_tags", source)
 
     def test_image_action_reuses_shared_deploy_and_health_boundary(self) -> None:
         """Require render, preconfirmed deploy, and health-result handling.
@@ -244,6 +257,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
 
         source = MENU_SHORTCUTS.read_text(encoding="utf-8")
         expected = {
+            "audit-images": "a",
             "bootstrap": "b",
             "deploy": "d",
             "logging": "g",
@@ -260,6 +274,25 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         for action, key in expected.items():
             with self.subTest(action=action):
                 self.assertIn(f'{action}) echo "{key}"', source)
+
+    def test_deployment_choices_are_registry_backed_not_floor_generated(
+        self,
+    ) -> None:
+        """Keep build policy separate from deployed-image freshness.
+
+        Returns:
+            Nothing.
+        """
+
+        actions = IMAGE_ACTIONS.read_text(encoding="utf-8")
+        overview = MENU_OVERVIEW.read_text(encoding="utf-8")
+
+        self.assertIn("registry_stable_tags", actions)
+        self.assertIn("registry_verify_tag", actions)
+        self.assertIn("highest published stable version", actions)
+        self.assertNotIn("select_semantic_version", actions)
+        self.assertNotIn("below the", overview.lower())
+        self.assertIn("next minimum", overview)
 
     def test_quick_runtime_actions_reuse_the_deployment_transaction(
         self,
@@ -286,25 +319,6 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
 )
 class ServiceImageManagementBashTests(unittest.TestCase):
     """Exercise shared Bash helpers without external runtime effects."""
-
-    def test_semantic_version_picker_defaults_to_catch_up_floor(self) -> None:
-        """Make Enter align a lagging component to the current stack floor.
-
-        Returns:
-            Nothing.
-        """
-
-        script = f"""
-source {bash_quote(PROFILE_PROMPTS)}
-source {bash_quote(SEMANTIC_VERSION)}
-select_semantic_version 1.0.6 'Application image version' floor
-printf 'SELECTED=%s\n' "$SELECTED_SEMANTIC_VERSION"
-"""
-        completed = run_bash(script, input_text="\n")
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("1) Use the current stack floor (1.0.6)", completed.stdout)
-        self.assertIn("SELECTED=1.0.6", completed.stdout)
 
     def test_boxed_overview_lists_every_managed_service(self) -> None:
         """Render API, WebApp, Redis, PostgreSQL, and pgAdmin together.
@@ -408,8 +422,8 @@ printf 'width=%s\n' "$(_calc_display_width "$colorized")"
         self.assertIn("\x1b[31m[ERROR] unhealthy\x1b[0m", completed.stdout)
         self.assertIn("width=17", completed.stdout)
 
-    def test_all_service_scope_assigns_one_stack_aware_version(self) -> None:
-        """Apply one selected version to API and WebApp assignments.
+    def test_all_service_scope_uses_each_repository_highest_version(self) -> None:
+        """Apply each image repository's real highest stable version.
 
         Returns:
             Nothing.
@@ -418,20 +432,26 @@ printf 'width=%s\n' "$(_calc_display_width "$colorized")"
         script = f"""
 source {bash_quote(PROFILE_PROMPTS)}
 source {bash_quote(IMAGE_ACTIONS)}
+registry_stable_tags() {{
+    case "$1" in
+        registry/backend) printf '%s\n' 1.0.7 0.1.2 ;;
+        registry/web) printf '%s\n' 1.0.8 1.0.6 ;;
+    esac
+}}
+registry_verify_tag() {{ printf '{{"digest":"sha256:test","platformVerified":true}}\n'; }}
 records=(
   'primary|Backend API|api|IMAGE_NAME|IMAGE_VERSION|registry/backend|0.1.2'
   'web|WebApp|web|WEB_IMAGE_NAME|WEB_IMAGE_VERSION|registry/web|1.0.6'
 )
 _select_release_image_scope "${{records[@]}}"
-floor="$(_managed_release_version_floor "${{records[@]}}")"
-_prepare_release_image_updates "$floor"
+_prepare_release_image_updates
 printf '%s\n' "${{IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}}"
 """
         completed = run_bash(script, input_text="3\n\n\n\n")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("IMAGE_VERSION=1.0.6", completed.stdout)
-        self.assertIn("WEB_IMAGE_VERSION=1.0.6", completed.stdout)
+        self.assertIn("IMAGE_VERSION=1.0.7", completed.stdout)
+        self.assertIn("WEB_IMAGE_VERSION=1.0.8", completed.stdout)
 
     def test_web_only_update_renders_deploys_and_verifies(self) -> None:
         """Update only WebApp through one automatic accepted deployment.
@@ -467,6 +487,8 @@ printf '%s\n' "${{IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}}"
 source {bash_quote(PROFILE_PROMPTS)}
 source {bash_quote(IMAGE_ACTIONS)}
 PROJECT_ROOT={bash_quote(root)}
+registry_stable_tags() {{ printf '%s\n' 1.0.6 1.0.5; }}
+registry_verify_tag() {{ printf '{{"digest":"sha256:test","platformVerified":true}}\n'; }}
 prompt_yes_no() {{ return 0; }}
 load_root_env() {{
     DEPLOYMENT_PROFILE_ID=example

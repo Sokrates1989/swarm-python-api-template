@@ -143,6 +143,7 @@ Stable operator letters match the Figma Website Swarm repository:
 
 | Key | Stable action |
 |-----|---------------|
+| `a` | Audit registry image updates and image security |
 | `b` | Bootstrap or update the configured Keycloak realm |
 | `d` | Deploy the configured stack |
 | `g` | Toggle advanced application logging |
@@ -173,9 +174,15 @@ deploy, health, and rollback boundary as image updates.
 - **Check status** — health check the running stack.
 - **View logs** — select and tail any discovered stack service.
 - **Change service images** — reuse the saved deployment profile, choose one
-  application service or all application services, select a stack-aware
-  semantic version, then render, deploy, and run health acceptance as one
-  confirmed action. Digest-pinned infrastructure images remain profile-owned.
+  application service or all application services, and select only versions
+  proven to exist in each registry repository. Multi-service updates can use
+  each repository's highest stable SemVer or the highest common published
+  SemVer. Exact free text is accepted only after digest and `linux/amd64`
+  verification. The action then renders, deploys, and runs health acceptance.
+- **Audit image updates and security** — refresh cached application-tag and
+  tracked infrastructure-digest evidence, scan active images for fixable
+  HIGH/CRITICAL vulnerabilities with Docker Scout or Trivy, and request Docker
+  Scout base-image refresh/update recommendations for application images.
 - **Change replicas** — reopen the same setup dialogue for replica counts.
 - **Toggle advanced logging** — switch between INFO diagnostics and
   WARNING/ERROR-only logging without enabling sensitive debug channels.
@@ -185,6 +192,13 @@ deploy, health, and rollback boundary as image updates.
 - **Rebuild swarm stack** — regenerate `swarm-stack.yml` from compose modules.
 - **Inspect artifacts** — display `.env` and stack file status.
 - **CI/CD helper** — GitHub Actions workflow setup.
+
+Public Docker Hub tag enumeration needs no login. When a private registry does
+not expose its tag catalog anonymously, exact version input remains available
+and manifest verification falls back to the operator's normal Docker
+credentials. The overview never makes network calls: it shows the ignored
+cache, and registry/security timestamps become stale independently after 24
+hours by default.
 
 ## Directory Structure
 
@@ -207,7 +221,9 @@ setup/
     menu-overview.sh               ← live/configured all-service inventory
     menu-image-actions.sh          ← targeted image/version dialogue
     menu-image-transaction.sh      ← render/deploy/health transaction boundary
-    semantic-version.sh            ← shared SemVer compare/bump chooser
+    menu-image-audit.sh            ← registry/security audit submenu
+    menu-image-audit-profile.sh    ← site-profile audit record adapter
+    semantic-version.sh            ← shared stable SemVer primitives
     menu-configuration-actions.sh  ← shared reconfiguration and reload
     menu-restore-actions.sh        ← validated restore and immediate render
     config-builder.sh              ← compose-module rendering utilities
@@ -227,6 +243,7 @@ setup/
   templates/
     secrets.env.template           ← Docker secrets template
 scripts/
+  registry_image_tool.py           ← OCI tag/digest/platform audit + cache
   site_profile.py                  ← shared schema-5 config/render adapter
   executable_profile_*.py          ← reusable config/runtime validators
   executable_stack_renderer.py     ← reusable full-stack renderer
@@ -320,12 +337,21 @@ change either default to another safe absolute host path.
 
 The root `.env` also persists `DEPLOYMENT_PROFILE_ID`. Subsequent setup and
 management actions reuse that exact profile instead of asking the operator to
-select the installation identity again. When a profile declares
-`release.versionPolicy: monotonic-floor`, the image menu uses the greatest of
-the declared floor and currently configured application-service versions as
-the next component's baseline. A component that does not need a new artifact
-remains untouched; whenever it is updated later, its selected version cannot
-fall below the stack baseline.
+select the installation identity again. A profile's
+`release.versionPolicy: monotonic-floor` is a build/publish rule: it is the
+minimum version allowed for the next newly produced artifact. It is not a
+deployed-state target, and deployed components below it are not stale merely
+because of the floor. Deployment freshness comes only from registry evidence.
+The image menu therefore never invents patch/minor/major tags; it offers real
+published stable tags and verifies every chosen tag before deployment.
+
+Schema-5 infrastructure remains digest-pinned. Each pin has an explicit audit
+channel such as `database.imageTrackTag: 16-alpine` or
+`services.redisImageTrackTag: 7-alpine`. The `a` audit compares that one tag's
+current registry digest with the deployed/profile pin. It reports a refresh
+but never rewrites the profile, auto-upgrades a stateful service, or crosses a
+database major version. Cached results appear in the overview; cache status is
+never derived from the release floor.
 
 There is no schema version 4 in this repository. Version 5.0 was introduced as
 the strict executable full-stack contract and deliberately uses a new major

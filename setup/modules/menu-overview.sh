@@ -502,6 +502,9 @@ show_deployment_overview() {
     local stack_status=""
     local logging_status=""
     local database_admin_status=""
+    local image_audit_status=""
+    local image_audit_level=""
+    local image_audit_text=""
 
     if _stack_running "$stack_name"; then
         if _stack_services_healthy "$stack_name"; then
@@ -514,6 +517,11 @@ show_deployment_overview() {
     fi
     logging_status="$(_advanced_logging_overview_text)"
     database_admin_status="$(_database_admin_overview_text)"
+    if declare -F image_audit_overview_status >/dev/null 2>&1; then
+        image_audit_status="$(image_audit_overview_status)"
+        image_audit_level="${image_audit_status%%|*}"
+        image_audit_text="${image_audit_status#*|}"
+    fi
     _box_rule
     _box_line 'Deployment Overview'
     _box_rule
@@ -522,7 +530,7 @@ show_deployment_overview() {
         _box_line "Profile  : ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID}}"
     fi
     if [ -n "${APP_RELEASE_STACK_ID:-}" ]; then
-        _box_line "Release  : ${APP_RELEASE_STACK_ID} (floor ${APP_RELEASE_VERSION_FLOOR})"
+        _box_line "Release  : ${APP_RELEASE_STACK_ID} (next minimum ${APP_RELEASE_VERSION_FLOOR})"
     fi
     _box_line "Proxy    : ${PROXY_TYPE:-none}"
     _box_line "DB Type  : ${DB_TYPE:-none}"
@@ -537,6 +545,9 @@ show_deployment_overview() {
     fi
     if [ -n "$database_admin_status" ]; then
         _box_line "DB Admin : ${database_admin_status}"
+    fi
+    if [ -n "$image_audit_text" ]; then
+        _box_line "Images   : $(_menu_colorize "$image_audit_level" "$image_audit_text")"
     fi
     _print_boxed_service_overview "$stack_name"
     if [ -n "$(_bootstrap_user_cleanup_text)" ]; then

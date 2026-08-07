@@ -356,11 +356,17 @@ load_app_config() {
     APP_DB_DEFAULT_NAME="$(_jq_or_default "$config_file" '.environment.DB_NAME' "$APP_ID")"
     APP_DB_DEFAULT_USER="$(_jq_or_default "$config_file" '.environment.DB_USER' "$APP_ID")"
     APP_DB_PROMPT_IDENTITY="$(_jq_or_default "$config_file" '((.environment.DB_NAME? != null) or (.environment.DB_USER? != null))' "false")"
+    APP_DB_IMAGE="$(_jq_or_default "$config_file" '.database.image' "")"
+    APP_DB_IMAGE_TRACK_TAG="$(_jq_or_default "$config_file" '.database.imageTrackTag' "")"
+    APP_PGADMIN_IMAGE="$(_jq_or_default "$config_file" '.database.pgadminImage' "")"
+    APP_PGADMIN_IMAGE_TRACK_TAG="$(_jq_or_default "$config_file" '.database.pgadminImageTrackTag' "")"
 
     # Service requirements
     APP_REQUIRES_REDIS="$(_jq_or_default "$config_file" '.services.redis' "true")"
     APP_REQUIRES_DATABASE="$(_jq_or_default "$config_file" '.services.database' "true")"
     APP_REQUIRES_WEB="$(_jq_or_default "$config_file" '.services.web' "false")"
+    APP_REDIS_IMAGE="$(_jq_or_default "$config_file" '.services.redisImage' "")"
+    APP_REDIS_IMAGE_TRACK_TAG="$(_jq_or_default "$config_file" '.services.redisImageTrackTag' "")"
     APP_SECRET_COUNT=0
     if site_profile_declares_secrets "$config_file"; then
         APP_SECRET_COUNT=1

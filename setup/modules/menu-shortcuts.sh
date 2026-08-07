@@ -28,6 +28,7 @@ _MENU_SHORTCUTS_LOADED=1
 #   0 for a known action; otherwise 1.
 operator_menu_shortcut_key() {
     case "$1" in
+        audit-images) echo "a" ;;
         bootstrap) echo "b" ;;
         deploy) echo "d" ;;
         logging) echo "g" ;;
@@ -59,6 +60,7 @@ resolve_operator_menu_shortcut() {
 
     normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
+        a) echo "audit-images" ;;
         b) echo "bootstrap" ;;
         d) echo "deploy" ;;
         g) echo "logging" ;;

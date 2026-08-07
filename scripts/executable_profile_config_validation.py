@@ -36,6 +36,9 @@ from executable_profile_support import (
 )
 
 
+TRACKED_IMAGE_TAG_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
+
+
 def validate_https(value: str, field: str) -> None:
     """Require one non-local absolute HTTPS URL.
 
@@ -265,18 +268,62 @@ def _validate_database(
         "database.allowedModes",
     ):
         raise ExecutableProfileError("database.defaultMode must be allowed.")
-    for field in ("image", "pgadminImage"):
-        if field in database and not DIGEST_IMAGE_PATTERN.fullmatch(
-            text(database[field], f"database.{field}")
-        ):
-            raise ExecutableProfileError(
-                f"database.{field} must be digest-pinned."
-            )
-    if "redisImage" in services and not DIGEST_IMAGE_PATTERN.fullmatch(
-        text(services["redisImage"], "services.redisImage")
+    _validate_tracked_image(database, "image", "imageTrackTag", "database")
+    _validate_tracked_image(
+        database,
+        "pgadminImage",
+        "pgadminImageTrackTag",
+        "database",
+    )
+    _validate_tracked_image(
+        services,
+        "redisImage",
+        "redisImageTrackTag",
+        "services",
+    )
+
+
+def _validate_tracked_image(
+    container: Mapping[str, object],
+    image_field: str,
+    track_field: str,
+    parent_field: str,
+) -> None:
+    """Validate a digest pin and its explicit safe update channel.
+
+    The tag is audit metadata only. Runtime rendering continues to use the
+    immutable digest, so checking for a refresh can never silently move a
+    stateful service or cross a database major version.
+
+    Args:
+        container: Database or service mapping.
+        image_field: Digest-pinned image field name.
+        track_field: Registry tag used solely for update comparison.
+        parent_field: Diagnostic parent path.
+
+    Raises:
+        ExecutableProfileError: If pin and channel are incomplete or unsafe.
+    """
+
+    has_image = image_field in container
+    has_track = track_field in container
+    if has_image != has_track:
+        raise ExecutableProfileError(
+            f"{parent_field}.{image_field} and {parent_field}.{track_field} "
+            "must be declared together."
+        )
+    if not has_image:
+        return
+    if not DIGEST_IMAGE_PATTERN.fullmatch(
+        text(container[image_field], f"{parent_field}.{image_field}")
     ):
         raise ExecutableProfileError(
-            "services.redisImage must be digest-pinned."
+            f"{parent_field}.{image_field} must be digest-pinned."
+        )
+    tag = text(container[track_field], f"{parent_field}.{track_field}")
+    if not TRACKED_IMAGE_TAG_PATTERN.fullmatch(tag):
+        raise ExecutableProfileError(
+            f"{parent_field}.{track_field} must be one exact registry tag."
         )
 
 

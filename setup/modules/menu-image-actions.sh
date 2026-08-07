@@ -84,42 +84,10 @@ _managed_release_image_records() {
 }
 
 # ------------------------------------------------------------------------------
-# _managed_release_version_floor
-# ------------------------------------------------------------------------------
-# Resolves the greatest current release-image version and any optional
-# profile-declared coordinated floor. Unchanged lower-version components may
-# remain deployed, but their next selected version starts from this maximum.
-#
-# Arguments:
-#   All arguments are managed image records.
-#
-# Output:
-#   Greatest valid stable semantic version.
-#
-# Returns:
-#   0 when a semantic baseline exists; otherwise 1.
-# ------------------------------------------------------------------------------
-_managed_release_version_floor() {
-    local records=("$@")
-    local versions=()
-    local record=""
-    local version=""
-
-    if [ -n "${APP_RELEASE_VERSION_FLOOR:-}" ]; then
-        versions+=("$APP_RELEASE_VERSION_FLOOR")
-    fi
-    for record in "${records[@]}"; do
-        version="${record##*|}"
-        versions+=("$version")
-    done
-    highest_semantic_version "${versions[@]}"
-}
-
-# ------------------------------------------------------------------------------
 # _select_release_image_scope
 # ------------------------------------------------------------------------------
-# Asks which profile-managed image to update, including a same-version all
-# option when more than one application image exists.
+# Asks which profile-managed image to update, including an all-services option
+# when more than one application image exists.
 #
 # Arguments:
 #   All arguments are managed image records.
@@ -143,7 +111,7 @@ _select_release_image_scope() {
         choices+=("record-${index}|${label} only (${repository}:${version})")
     done
     if [ "${#records[@]}" -gt 1 ]; then
-        choices+=("all|All listed application services (one shared version)")
+        choices+=("all|All listed application services")
     fi
     choices+=("cancel|Back without changes")
     prompt_deployment_choice \
@@ -164,63 +132,304 @@ _select_release_image_scope() {
 }
 
 # ------------------------------------------------------------------------------
-# _select_release_image_version
+# _load_published_stable_tags
 # ------------------------------------------------------------------------------
-# Selects one version shared by the chosen services. Semantic profiles use the
-# stack-wide floor helper; legacy non-SemVer tags retain an exact-tag prompt.
+# Loads real stable registry tags into a caller-owned array.
 #
 # Arguments:
-#   $1 - Semantic stack floor or empty text.
-#   $2 - Existing selected-service version fallback.
+#   $1 - Docker repository without tag.
+#   $2 - Target array variable name.
 #
 # Returns:
-#   0 after setting IMAGE_UPDATE_SELECTED_VERSION; otherwise 1.
+#   0 when at least one tag is available; otherwise 1.
 # ------------------------------------------------------------------------------
-_select_release_image_version() {
-    local floor="$1"
-    local fallback="$2"
-    local default_action='patch'
-    local comparison=''
+_load_published_stable_tags() {
+    local repository="$1"
+    local target_name="$2"
+    local output=""
+    local -n target="$target_name"
 
-    if semantic_version_is_valid "$floor"; then
-        if semantic_version_is_valid "$fallback"; then
-            comparison="$(compare_semantic_versions "$fallback" "$floor")" ||
-                return 1
-            if [ "$comparison" = '-1' ]; then
-                default_action='floor'
-            fi
-        fi
-        select_semantic_version \
-            "$floor" \
-            'Application image version' \
-            "$default_action" ||
-            return 1
-        IMAGE_UPDATE_SELECTED_VERSION="$SELECTED_SEMANTIC_VERSION"
+    output="$(registry_stable_tags "$repository")" || {
+        echo "[ERROR] Could not enumerate published tags for ${repository}." >&2
+        echo "        Exact-tag verification may still work with Docker credentials." >&2
+        return 1
+    }
+    target=()
+    if [ -n "$output" ]; then
+        mapfile -t target <<< "$output"
+    fi
+    if [ "${#target[@]}" -eq 0 ]; then
+        echo "[ERROR] ${repository} has no published stable MAJOR.MINOR.PATCH tags." >&2
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# _release_tag_is_not_older
+# ------------------------------------------------------------------------------
+# Prevents the update helper from acting as an implicit rollback mechanism.
+#
+# Arguments:
+#   $1 - Candidate stable version.
+#   $2 - Current version.
+#
+# Returns:
+#   0 when candidate is equal/newer or current is non-SemVer; otherwise 1.
+# ------------------------------------------------------------------------------
+_release_tag_is_not_older() {
+    local candidate="$1"
+    local current="$2"
+    local comparison=""
+
+    if ! semantic_version_is_valid "$candidate"; then
+        return 1
+    fi
+    if ! semantic_version_is_valid "$current"; then
         return 0
     fi
-    echo ""
-    echo "The current image tag has no stable semantic-version baseline."
-    echo "Enter an exact tag; future MAJOR.MINOR.PATCH values enable bump choices."
-    prompt_deployment_value \
-        IMAGE_UPDATE_SELECTED_VERSION \
-        'Application image version' \
-        "$fallback" \
-        'tag'
+    comparison="$(compare_semantic_versions "$candidate" "$current")" ||
+        return 1
+    [ "$comparison" != '-1' ]
+}
+
+# ------------------------------------------------------------------------------
+# _verify_release_tag
+# ------------------------------------------------------------------------------
+# Verifies existence, immutable digest, and linux/amd64 support for one chosen
+# application image before any configuration mutation.
+#
+# Arguments:
+#   $1 - Operator-facing label.
+#   $2 - Repository.
+#   $3 - Exact tag.
+#
+# Returns:
+#   0 with evidence appended to IMAGE_UPDATE_VERIFICATION_EVIDENCE; otherwise 1.
+# ------------------------------------------------------------------------------
+_verify_release_tag() {
+    local label="$1"
+    local repository="$2"
+    local tag="$3"
+    local evidence=""
+
+    evidence="$(registry_verify_tag "$repository" "$tag")" || {
+        echo "[ERROR] ${label} image is not deployable as selected:"
+        echo "        ${repository}:${tag}"
+        echo "        The tag must exist and declare linux/amd64 support."
+        return 1
+    }
+    IMAGE_UPDATE_VERIFICATION_EVIDENCE+=("${label}|${evidence}")
+    echo "[OK] Verified ${label}: ${repository}:${tag}"
+}
+
+# ------------------------------------------------------------------------------
+# _select_one_published_tag
+# ------------------------------------------------------------------------------
+# Offers only registry-returned versions plus one exact verified SemVer entry.
+#
+# Arguments:
+#   $1 - Label.
+#   $2 - Repository.
+#   $3 - Current version.
+#   $4 - Target variable name.
+#
+# Returns:
+#   0 after selection; otherwise 1 on cancellation or unavailable evidence.
+# ------------------------------------------------------------------------------
+_select_one_published_tag() {
+    local label="$1"
+    local repository="$2"
+    local current="$3"
+    local target_name="$4"
+    local tags=()
+    local available=()
+    local choices=()
+    local tag=""
+    local selection=""
+    local exact=""
+    local count=0
+    local default_selection='exact'
+
+    _load_published_stable_tags "$repository" tags || tags=()
+    for tag in "${tags[@]}"; do
+        _release_tag_is_not_older "$tag" "$current" || continue
+        available+=("$tag")
+        choices+=("tag-${count}|${tag}")
+        [ "$count" -ne 0 ] || default_selection='tag-0'
+        count=$((count + 1))
+        [ "$count" -ge 20 ] && break
+    done
+    choices+=("exact|Enter an exact published semantic version")
+    choices+=("cancel|Cancel")
+    prompt_deployment_choice \
+        selection \
+        "${label} published image version" \
+        "$default_selection" \
+        "${choices[@]}"
+    case "$selection" in
+        tag-*)
+            printf -v "$target_name" '%s' "${available[${selection#tag-}]}"
+            ;;
+        exact)
+            prompt_deployment_value exact 'Exact published version' "$current" semver
+            if ! _release_tag_is_not_older "$exact" "$current"; then
+                echo "[ERROR] ${exact} is older than ${current}; use rollback instead."
+                return 1
+            fi
+            printf -v "$target_name" '%s' "$exact"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
+# _highest_common_published_tag
+# ------------------------------------------------------------------------------
+# Finds the greatest stable tag present in every selected repository without
+# downgrading any selected service.
+#
+# Output:
+#   Highest common tag, or no output when none is safe.
+# ------------------------------------------------------------------------------
+_highest_common_published_tag() {
+    local repository=""
+    local current=""
+    local tags=()
+    local common_tags=()
+    local tag=""
+    local index=0
+    local repository_count="${#IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"
+    declare -A occurrences=()
+
+    for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
+        repository="${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}"
+        current="${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}"
+        _load_published_stable_tags "$repository" tags || return 1
+        for tag in "${tags[@]}"; do
+            _release_tag_is_not_older "$tag" "$current" || continue
+            occurrences[$tag]=$(( ${occurrences[$tag]:-0} + 1 ))
+        done
+    done
+    for tag in "${!occurrences[@]}"; do
+        [ "${occurrences[$tag]}" -eq "$repository_count" ] || continue
+        common_tags+=("$tag")
+    done
+    highest_semantic_version "${common_tags[@]}"
+}
+
+# ------------------------------------------------------------------------------
+# _select_release_image_versions
+# ------------------------------------------------------------------------------
+# Chooses registry-proven versions for one or multiple selected services.
+# Multiple-service mode can independently use each repository's highest tag or
+# use their highest common tag; neither path invents a future version.
+#
+# Returns:
+#   0 after populating IMAGE_UPDATE_SELECTED_VERSIONS; otherwise 1.
+# ------------------------------------------------------------------------------
+_select_release_image_versions() {
+    local count="${#IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"
+    local choices=()
+    local selection=""
+    local tags=()
+    local highest=""
+    local common=""
+    local exact=""
+    local index=0
+    local label=""
+    local all_enumerated=true
+    local default_strategy='highest'
+
+    IMAGE_UPDATE_SELECTED_VERSIONS=()
+    if [ "$count" -eq 1 ]; then
+        _select_one_published_tag \
+            "${IMAGE_UPDATE_SELECTED_LABELS[0]}" \
+            "${IMAGE_UPDATE_SELECTED_REPOSITORIES[0]}" \
+            "${IMAGE_UPDATE_SELECTED_CURRENTS[0]}" \
+            highest || return 1
+        IMAGE_UPDATE_SELECTED_VERSIONS+=("$highest")
+        return 0
+    fi
+    for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
+        if ! _load_published_stable_tags \
+            "${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}" tags; then
+            all_enumerated=false
+        fi
+    done
+    if [ "$all_enumerated" = true ]; then
+        common="$(_highest_common_published_tag)" || common=""
+        choices+=("highest|Update each service to its own highest published stable version")
+        if [ -n "$common" ]; then
+            choices+=("common|Use highest common published stable version (${common})")
+        fi
+    else
+        default_strategy='individual'
+    fi
+    choices+=("individual|Select a published version for each service")
+    choices+=("exact|Enter one exact version and verify it in every repository")
+    choices+=("cancel|Cancel")
+    prompt_deployment_choice \
+        selection \
+        'Registry-backed version strategy' \
+        "$default_strategy" \
+        "${choices[@]}"
+    case "$selection" in
+        highest)
+            for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
+                _load_published_stable_tags \
+                    "${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}" tags || return 1
+                highest="${tags[0]}"
+                if _release_tag_is_not_older \
+                    "$highest" "${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}"; then
+                    IMAGE_UPDATE_SELECTED_VERSIONS+=("$highest")
+                else
+                    IMAGE_UPDATE_SELECTED_VERSIONS+=(
+                        "${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}"
+                    )
+                fi
+            done
+            ;;
+        common)
+            for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
+                IMAGE_UPDATE_SELECTED_VERSIONS+=("$common")
+            done
+            ;;
+        individual)
+            for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
+                label="${IMAGE_UPDATE_SELECTED_LABELS[$index]}"
+                _select_one_published_tag \
+                    "$label" \
+                    "${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}" \
+                    "${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}" \
+                    highest || return 1
+                IMAGE_UPDATE_SELECTED_VERSIONS+=("$highest")
+            done
+            ;;
+        exact)
+            prompt_deployment_value exact 'Exact shared published version' '' semver
+            for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
+                if ! _release_tag_is_not_older \
+                    "$exact" "${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}"; then
+                    echo "[ERROR] ${exact} would downgrade ${IMAGE_UPDATE_SELECTED_LABELS[$index]}."
+                    return 1
+                fi
+                IMAGE_UPDATE_SELECTED_VERSIONS+=("$exact")
+            done
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 # ------------------------------------------------------------------------------
 # _prepare_release_image_updates
 # ------------------------------------------------------------------------------
-# Collects repositories and one coordinated version for the selected records.
-#
-# Arguments:
-#   $1 - Semantic stack floor or empty text.
+# Collects repositories, selects only published versions, verifies every exact
+# reference, and prepares the public environment transaction.
 #
 # Returns:
 #   0 after populating IMAGE_UPDATE_ENV_ASSIGNMENTS; otherwise 1.
 # ------------------------------------------------------------------------------
 _prepare_release_image_updates() {
-    local floor="$1"
     local record=""
     local label=""
     local repository_key=""
@@ -228,28 +437,35 @@ _prepare_release_image_updates() {
     local repository=""
     local current_version=""
     local selected_repository=""
-    local first_version=""
-    local repositories=()
     local index=0
 
+    IMAGE_UPDATE_SELECTED_REPOSITORIES=()
+    IMAGE_UPDATE_SELECTED_CURRENTS=()
+    IMAGE_UPDATE_SELECTED_LABELS=()
     for record in "${IMAGE_UPDATE_SELECTED_RECORDS[@]}"; do
         IFS='|' read -r _ label _ repository_key version_key repository current_version <<< "$record"
-        [ -n "$first_version" ] || first_version="$current_version"
         prompt_deployment_value \
             selected_repository \
             "${label} image repository" \
             "$repository" \
             'image'
-        repositories+=("$selected_repository")
+        IMAGE_UPDATE_SELECTED_REPOSITORIES+=("$selected_repository")
+        IMAGE_UPDATE_SELECTED_CURRENTS+=("$current_version")
+        IMAGE_UPDATE_SELECTED_LABELS+=("$label")
     done
-    _select_release_image_version "$floor" "$first_version" || return 1
+    _select_release_image_versions || return 1
     IMAGE_UPDATE_ENV_ASSIGNMENTS=()
+    IMAGE_UPDATE_VERIFICATION_EVIDENCE=()
     for index in "${!IMAGE_UPDATE_SELECTED_RECORDS[@]}"; do
         record="${IMAGE_UPDATE_SELECTED_RECORDS[$index]}"
-        IFS='|' read -r _ _ _ repository_key version_key _ _ <<< "$record"
+        IFS='|' read -r _ label _ repository_key version_key _ _ <<< "$record"
+        _verify_release_tag \
+            "$label" \
+            "${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}" \
+            "${IMAGE_UPDATE_SELECTED_VERSIONS[$index]}" || return 1
         IMAGE_UPDATE_ENV_ASSIGNMENTS+=(
-            "${repository_key}=${repositories[$index]}"
-            "${version_key}=${IMAGE_UPDATE_SELECTED_VERSION}"
+            "${repository_key}=${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}"
+            "${version_key}=${IMAGE_UPDATE_SELECTED_VERSIONS[$index]}"
         )
     done
 }
@@ -267,6 +483,7 @@ _show_release_image_update_plan() {
     local version=""
     local index=0
     local selected_repository=""
+    local selected_version=""
 
     echo ""
     echo "Service image update plan"
@@ -277,8 +494,9 @@ _show_release_image_update_plan() {
         record="${IMAGE_UPDATE_SELECTED_RECORDS[$index]}"
         IFS='|' read -r _ label _ _ _ repository version <<< "$record"
         selected_repository="${IMAGE_UPDATE_ENV_ASSIGNMENTS[$((index * 2))]#*=}"
+        selected_version="${IMAGE_UPDATE_SELECTED_VERSIONS[$index]}"
         echo "  - ${label}: ${repository}:${version}"
-        echo "               -> ${selected_repository}:${IMAGE_UPDATE_SELECTED_VERSION}"
+        echo "               -> ${selected_repository}:${selected_version}"
     done
     echo ""
     echo "The shared renderer, Swarm deployment, and health acceptance run next."
@@ -288,14 +506,13 @@ _show_release_image_update_plan() {
 # manage_service_images
 # ------------------------------------------------------------------------------
 # Runs the complete active-profile image selection, version, confirmation,
-# render, deployment, and health workflow used by operations-menu option 10.
+# render, deployment, and health workflow used by the stable ``i`` shortcut.
 #
 # Returns:
 #   0 after success or a no-op; 1 on cancellation or failure.
 # ------------------------------------------------------------------------------
 manage_service_images() {
     local records=()
-    local version_floor=""
     local transaction_directory=""
     local apply_status=0
 
@@ -309,24 +526,15 @@ manage_service_images() {
     echo "Change service image configuration"
     echo "=================================="
     echo "Active profile: ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-unknown}}"
-    echo "Infrastructure images remain profile-pinned; every application image"
-    echo "listed below comes from the same shared site-config capability model."
+    echo "Application choices come from real registry tags and are verified for"
+    echo "linux/amd64 before configuration changes. Infrastructure pins are"
+    echo "reviewed separately through the image-audit menu (shortcut a)."
     _select_release_image_scope "${records[@]}" || return 1
-    if [ -n "${APP_RELEASE_VERSION_POLICY:-}" ] &&
-        [ "$APP_RELEASE_VERSION_POLICY" != "monotonic-floor" ]; then
-        echo "[ERROR] Unsupported profile release.versionPolicy:"
-        echo "        ${APP_RELEASE_VERSION_POLICY}"
-        return 1
+    if [ -n "${APP_RELEASE_VERSION_FLOOR:-}" ]; then
+        echo "Next new-artifact minimum: ${APP_RELEASE_VERSION_FLOOR}"
+        echo "This build/publish policy is informational here; it is not deployment drift."
     fi
-    if [ -n "${APP_RELEASE_VERSION_FLOOR:-}" ] &&
-        ! semantic_version_is_valid "$APP_RELEASE_VERSION_FLOOR"; then
-        echo "[ERROR] Profile release.versionFloor is not stable SemVer:"
-        echo "        ${APP_RELEASE_VERSION_FLOOR}"
-        return 1
-    fi
-    version_floor="$(_managed_release_version_floor "${records[@]}")" ||
-        version_floor=""
-    _prepare_release_image_updates "$version_floor" || return 1
+    _prepare_release_image_updates || return 1
     _show_release_image_update_plan
     if ! prompt_yes_no \
         'Apply these image values, deploy, and run health checks?' \

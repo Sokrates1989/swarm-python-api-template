@@ -13,8 +13,8 @@ Felix differs only through profile data:
 - WebApp host `felix-app.fe-wi.com`;
 - API host `api.felix-app.fe-wi.com`;
 - optional WebApp service enabled with image
-  `sokrates1989/flutter-felix-web:1.0.6`;
-- backend image `sokrates1989/python-api-felix:0.1.2` (immutable release
+  `sokrates1989/flutter-felix-web:1.0.8`;
+- backend image `sokrates1989/python-api-felix:1.0.8` (immutable release
   default; never `latest`);
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
@@ -23,7 +23,7 @@ Felix differs only through profile data:
   settings, application roles, and temporary test identities; and
 - exact Docker secret identifiers and file mounts.
 
-Felix is enrolled in release stack `felix` with the monotonic floor `1.0.6`
+Felix is enrolled in release stack `felix` with the next-artifact floor `1.0.8`
 and component catalog `api`, `web`, `android`, and `ios`. The catalog is
 coordination metadata; this Swarm profile directly manages only the declared
 API and WebApp services.
@@ -54,14 +54,20 @@ stack without modifying production code.
 
 ## Coordinated service versions
 
-The shared image menu compares the API and WebApp versions in the installed
-root `.env` with `release.versionFloor`. The greatest value is the release
-baseline. An API-only or WebApp-only fix changes only that selected service;
-when another component is updated later, the menu starts it at no less than
-the current baseline. Selecting both services applies one version to both.
-After the one displayed confirmation, the shared renderer rebuilds the stack,
-Docker Swarm updates it, and the normal health acceptance verifies the result.
-No Felix-specific menu or deployment branch implements this behavior.
+`release.versionFloor` constrains the next newly built/published Felix
+artifact; it does not declare that every deployed component must already have
+that version. The shared image menu queries both Docker repositories and offers
+only tags that really exist. Selecting both services can advance each to its
+own highest stable tag or use their highest common published tag. Exact text is
+accepted only after digest and `linux/amd64` verification. After the displayed
+confirmation, the shared renderer rebuilds the stack, Docker Swarm updates it,
+and normal health acceptance verifies the result. No Felix-specific branch
+implements this behavior.
+
+PostgreSQL, Redis, and pgAdmin stay digest-pinned. Their adjacent track tags
+(`16-alpine`, `7-alpine`, and `latest`) let the shared `a` audit report whether
+the pinned digest differs from the selected registry channel without applying
+an infrastructure update or inferring a database major upgrade.
 
 ## Keycloak and secrets
 

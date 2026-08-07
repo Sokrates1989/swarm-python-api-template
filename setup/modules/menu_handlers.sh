@@ -69,6 +69,12 @@ if [ -f "${MENU_HANDLERS_DIR}/menu-image-actions.sh" ]; then
     source "${MENU_HANDLERS_DIR}/menu-image-actions.sh"
 fi
 
+# Source read-only registry freshness and image-security operations.
+if [ -f "${MENU_HANDLERS_DIR}/menu-image-audit-profile.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-image-audit-profile.sh"
+fi
+
 # Source targeted profile-driven logging and database-management toggles.
 if [ -f "${MENU_HANDLERS_DIR}/menu-runtime-actions.sh" ]; then
     # shellcheck source=/dev/null
@@ -226,6 +232,7 @@ show_main_menu() {
 
         echo "$(_menu_heading 'Management:')"
         echo "  $(operator_menu_shortcut_key images)) Change service image configuration"
+        echo "  $(operator_menu_shortcut_key audit-images)) Audit image updates and security"
         echo "  ${MENU_SCALE}) Change replica configuration"
         if profile_supports_advanced_logging; then
             echo "  $(operator_menu_shortcut_key logging)) Toggle advanced logging ($(advanced_logging_status_label))"
@@ -271,6 +278,7 @@ show_main_menu() {
         shortcut_action="$(resolve_operator_menu_shortcut "$choice")" ||
             shortcut_action=""
         case "$shortcut_action" in
+            audit-images) choice="__audit_images" ;;
             bootstrap)
                 choice="${MENU_KEYCLOAK_BOOTSTRAP:-__unsupported_bootstrap}"
                 ;;
@@ -316,6 +324,9 @@ show_main_menu() {
         fi
 
         case "$choice" in
+        __audit_images)
+            run_image_audit_menu
+            ;;
         ${MENU_DEPLOY})
             echo "[DEPLOY] Deploying to Docker Swarm..."
             echo ""

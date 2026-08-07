@@ -237,7 +237,7 @@ _apply_release_image_update() {
         "always" \
         "${IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}" || status=$?
     if [ "$status" -eq 0 ]; then
-        echo "     Version: ${IMAGE_UPDATE_SELECTED_VERSION}"
+        echo "     Registry-proven service versions are recorded in the public .env."
     fi
     return "$status"
 }

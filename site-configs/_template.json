@@ -57,7 +57,9 @@
       "external"
     ],
     "image": "postgres@sha256:79c06d285ed9186efbbc45c73413b3c3510c3c94ffede2f25d1e523f74d07f28",
+    "imageTrackTag": "16-alpine",
     "pgadminImage": "dpage/pgadmin4@sha256:cefc4cc6b7d9d71a9e81e76fb9d7e14038ab5661b539a190eea1b63fa612589a",
+    "pgadminImageTrackTag": "latest",
     "pgadminSecret": "EXAMPLE_APP_PGADMIN_PASSWORD"
   },
   "services": {
@@ -65,7 +67,8 @@
     "api": true,
     "redis": true,
     "database": true,
-    "redisImage": "redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+    "redisImage": "redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+    "redisImageTrackTag": "7-alpine"
   },
   "image": {
     "name": "your-username/python-api-example-app",

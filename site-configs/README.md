@@ -69,7 +69,7 @@ Version 5.0 owns these main objects:
 | `renderer` | Strict executable adapter selection |
 | `stack` | Default stack name, family, role, and primary service |
 | `exposure`, `routing` | Allowed public/direct exposure and safe routing defaults |
-| `database`, `services` | Database contract and exact service topology |
+| `database`, `services` | Database contract, exact service topology, digest pins, and audit track tags |
 | `image`, `web`, `resources`, `storage` | API/WebApp image, replica, opt-in memory, and storage defaults |
 | `release` | Optional release-stack identity, monotonic SemVer floor, and coordinated artifact IDs |
 | `pgadmin` | Optional PostgreSQL management-service defaults |
@@ -173,19 +173,25 @@ version line:
 }
 ```
 
-`stackId` and component IDs are safe identifiers. `versionFloor` is a stable
-`MAJOR.MINOR.PATCH` baseline, and `components` must include `api` plus `web`
-when `services.web` is enabled. The shared image-management menu computes the
-active baseline as the highest of this floor and every currently configured
-application-service version. Updating one service never forces an unchanged
-service to redeploy at a new version; the next update of any lagging service
-must select the current baseline or a higher patch/minor/major version. This
+`stackId` and component IDs are safe identifiers. `versionFloor` is the stable
+`MAJOR.MINOR.PATCH` minimum accepted when the next new artifact is built and
+published; `components` must include `api` plus `web` when `services.web` is
+enabled. The floor is not a desired deployed version and does not make an
+older deployed image stale. The deployment menu derives freshness and update
+choices from real registry tags, offers each repository's highest stable tag
+or their highest common stable tag, and verifies exact manual input. This
 metadata is application-neutral and `_template.json` demonstrates the contract
 for new stacks.
 
 Release image tags must be semantic versions. Infrastructure images must be
-registry-digest pinned. Secret values, passwords, tokens, and private keys are
-forbidden in site configs and root `.env`.
+registry-digest pinned and paired with an explicit comparison channel:
+`database.imageTrackTag`, `database.pgadminImageTrackTag`, or
+`services.redisImageTrackTag` when the corresponding image exists. A channel
+is one exact safe tag such as `16-alpine`, `7-alpine`, or `latest`; it is audit
+metadata and never changes the rendered digest. This prevents an update check
+from guessing a tag or crossing a stateful service's major line. Secret values,
+passwords, tokens, and private keys are forbidden in site configs and root
+`.env`.
 
 For `auth.provider=keycloak`, schema 5 also requires:
 
