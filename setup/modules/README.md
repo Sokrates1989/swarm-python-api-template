@@ -149,6 +149,21 @@ operation because they can be slower and require image provenance. The menu
 overview reads cached results only and never performs network/scanner work on
 redraw.
 
+`menu-infrastructure-images.sh` extends that submenu with a detailed version
+inventory and controlled refresh transaction. Its reusable backup, scanner,
+and broad-major-channel gates live in `infrastructure-image-safety.sh`.
+`scripts/infrastructure_image_tool.py`
+matches live/configured exact digests to recent published tag aliases and
+resolves the profile track to a `repository@sha256` target. Numeric tracks keep
+their declared major prefix and OS/image family. A refresh scans the exact
+target, requires a PostgreSQL backup checkpoint when applicable, writes only a
+root `.env` override, and delegates deployment to the existing adapter
+transaction. A broad `latest` management channel requires an extra warning.
+Exact-target ignores are stored in the public cache and expire on digest
+change; CVE evidence is independent. No generic automatic database-backup
+action exists until a profile declares a real backup provider and verification
+contract.
+
 ### `data-dirs.sh`
 
 Creates only the persistent directories required by the selected stack family

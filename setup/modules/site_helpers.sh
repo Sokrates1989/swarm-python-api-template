@@ -647,6 +647,9 @@ _load_executable_env_fields() {
     export DB_PORT="$(_root_env_value "$env_file" DB_PORT)"
     export DB_NAME="$(_root_env_value "$env_file" DB_NAME)"
     export DB_USER="$(_root_env_value "$env_file" DB_USER)"
+    export POSTGRES_IMAGE="$(_root_env_value "$env_file" POSTGRES_IMAGE)"
+    export REDIS_IMAGE="$(_root_env_value "$env_file" REDIS_IMAGE)"
+    export PGADMIN_IMAGE="$(_root_env_value "$env_file" PGADMIN_IMAGE)"
     export PGADMIN_ENABLED="$(_root_env_value "$env_file" PGADMIN_ENABLED)"
     export PGADMIN_DOMAIN="$(_root_env_value "$env_file" PGADMIN_DOMAIN)"
     export PGADMIN_URL="$PGADMIN_DOMAIN"
@@ -716,6 +719,16 @@ load_root_env() {
             return 1
         fi
         load_app_config "$project_root" "$profile_id" || return 1
+        if [ -n "${POSTGRES_IMAGE:-}" ]; then
+            APP_DB_IMAGE="$POSTGRES_IMAGE"
+        fi
+        if [ -n "${REDIS_IMAGE:-}" ]; then
+            APP_REDIS_IMAGE="$REDIS_IMAGE"
+        fi
+        if [ -n "${PGADMIN_IMAGE:-}" ]; then
+            APP_PGADMIN_IMAGE="$PGADMIN_IMAGE"
+        fi
+        export APP_DB_IMAGE APP_REDIS_IMAGE APP_PGADMIN_IMAGE
     fi
     return 0
 }

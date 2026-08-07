@@ -11,6 +11,7 @@
 # Dependencies:
 #   - menu-image-actions.sh for managed application records.
 #   - menu-image-audit.sh for the shared operator workflow.
+#   - menu-image-transaction.sh for verified public override deployment.
 # ==============================================================================
 
 # Guard against multiple sourcing.
@@ -21,6 +22,7 @@ _MENU_IMAGE_AUDIT_PROFILE_LOADED=1
 
 _MENU_IMAGE_AUDIT_PROFILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_MENU_IMAGE_AUDIT_PROFILE_DIR}/menu-image-audit.sh"
+source "${_MENU_IMAGE_AUDIT_PROFILE_DIR}/menu-image-transaction.sh"
 
 # ------------------------------------------------------------------------------
 # _live_service_image_reference
@@ -153,4 +155,86 @@ _operator_image_security_references() {
         current="$(_audit_infrastructure_reference pgadmin "$APP_PGADMIN_IMAGE")"
         printf '%s\n' "$current"
     fi
+}
+
+# ------------------------------------------------------------------------------
+# _operator_infrastructure_image_records
+# ------------------------------------------------------------------------------
+# Emits profile-driven infrastructure maintenance records. Exact image values
+# may come from a per-deployment override, while compatibility tracks remain
+# controlled by the selected reusable site profile.
+# ------------------------------------------------------------------------------
+_operator_infrastructure_image_records() {
+    local current=""
+
+    if [ "${DB_MODE:-local}" = 'local' ] &&
+        [ "${APP_REQUIRES_DATABASE:-true}" = 'true' ] &&
+        [ -n "${APP_DB_IMAGE:-}" ]; then
+        current="$(_audit_infrastructure_reference postgres "$APP_DB_IMAGE")"
+        printf 'postgres|PostgreSQL|postgres|POSTGRES_IMAGE|%s|%s|database|%s\n' \
+            "$current" \
+            "${APP_DB_IMAGE_TRACK_TAG:-}" \
+            'https://www.postgresql.org/docs/current/upgrading.html'
+    fi
+    if [ "${APP_REQUIRES_REDIS:-false}" = 'true' ] &&
+        [ -n "${APP_REDIS_IMAGE:-}" ]; then
+        current="$(_audit_infrastructure_reference redis "$APP_REDIS_IMAGE")"
+        printf 'redis|Redis|redis|REDIS_IMAGE|%s|%s|cache|%s\n' \
+            "$current" \
+            "${APP_REDIS_IMAGE_TRACK_TAG:-}" \
+            'https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/'
+    fi
+    if [ -n "${APP_PGADMIN_IMAGE:-}" ]; then
+        current="$(_audit_infrastructure_reference pgadmin "$APP_PGADMIN_IMAGE")"
+        printf 'pgadmin|pgAdmin|pgadmin|PGADMIN_IMAGE|%s|%s|management-ui|%s\n' \
+            "$current" \
+            "${APP_PGADMIN_IMAGE_TRACK_TAG:-}" \
+            'https://www.pgadmin.org/docs/pgadmin4/latest/release_notes.html'
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# _operator_apply_infrastructure_image_update
+# ------------------------------------------------------------------------------
+# Applies one verified exact infrastructure image through the same protected
+# public-environment, renderer, deploy, health, and rollback boundary used by
+# application image and runtime quick actions.
+#
+# Arguments:
+#   $1 - Stable infrastructure identifier.
+#   $2 - Operator-facing label.
+#   $3 - Allowed public exact-image key.
+#   $4 - Registry-verified repository@sha256 reference.
+#
+# Returns:
+#   Shared transaction status.
+# ------------------------------------------------------------------------------
+_operator_apply_infrastructure_image_update() {
+    local identifier="$1"
+    local label="$2"
+    local environment_key="$3"
+    local target_reference="$4"
+    local transaction_directory=""
+    local status=0
+
+    case "$identifier:$environment_key" in
+        postgres:POSTGRES_IMAGE|redis:REDIS_IMAGE|pgadmin:PGADMIN_IMAGE) ;;
+        *)
+            echo "[ERROR] Unsupported infrastructure image assignment."
+            return 1
+            ;;
+    esac
+    if ! [[ "$target_reference" =~ ^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$ ]]; then
+        echo "[ERROR] Infrastructure target must be an immutable image digest."
+        return 1
+    fi
+    transaction_directory="$(mktemp -d \
+        "${PROJECT_ROOT}/.infrastructure-image-update.XXXXXX")" || return 1
+    _apply_profile_environment_update \
+        "$transaction_directory" \
+        "${label} compatible image refresh" \
+        "always" \
+        "${environment_key}=${target_reference}" || status=$?
+    _clean_release_image_transaction "$transaction_directory"
+    return "$status"
 }

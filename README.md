@@ -190,6 +190,10 @@ deploy, health, and rollback boundary as image updates.
   neither scanner is installed, the menu prints the official Debian/Ubuntu
   installation and verification commands. Trivy can perform the vulnerability
   scan; Docker Scout is additionally required for base-image recommendations.
+  Its **Infrastructure versions and updates** submenu identifies deployed
+  PostgreSQL, Redis, and pgAdmin releases from their exact registry digests,
+  lists recent real versions inside the configured track, and can apply one
+  registry-proven immutable refresh through normal deployment acceptance.
 - **Change replicas** — reopen the same setup dialogue for replica counts.
 - **Toggle advanced logging** — switch between INFO diagnostics and
   WARNING/ERROR-only logging without enabling sensitive debug channels.
@@ -230,6 +234,8 @@ setup/
     menu-image-transaction.sh      ← render/deploy/health transaction boundary
     menu-image-audit.sh            ← registry/security audit submenu
     menu-image-audit-profile.sh    ← site-profile audit record adapter
+    menu-infrastructure-images.sh  ← infrastructure version/update dialogue
+    infrastructure-image-safety.sh ← backup, scanner, and major-track gates
     semantic-version.sh            ← shared stable SemVer primitives
     menu-configuration-actions.sh  ← shared reconfiguration and reload
     menu-restore-actions.sh        ← validated restore and immediate render
@@ -251,6 +257,9 @@ setup/
     secrets.env.template           ← Docker secrets template
 scripts/
   registry_image_tool.py           ← OCI tag/digest/platform audit + cache
+  infrastructure_image_policy.py   ← compatible tracks + exact-digest ignores
+  infrastructure_image_metadata.py ← immutable OCI product-version fallback
+  infrastructure_image_tool.py     ← infrastructure inventory/update evidence
   terminal_status.py               ← TTY-aware Python status colors
   site_profile.py                  ← shared schema-5 config/render adapter
   executable_profile_*.py          ← reusable config/runtime validators
@@ -356,10 +365,39 @@ published stable tags and verifies every chosen tag before deployment.
 Schema-5 infrastructure remains digest-pinned. Each pin has an explicit audit
 channel such as `database.imageTrackTag: 16-alpine` or
 `services.redisImageTrackTag: 7-alpine`. The `a` audit compares that one tag's
-current registry digest with the deployed/profile pin. It reports a refresh
-but never rewrites the profile, auto-upgrades a stateful service, or crosses a
-database major version. Cached results appear in the overview; cache status is
-never derived from the release floor.
+current registry digest with the deployed/profile pin. Choose **Infrastructure
+versions and updates** to see the exact deployed/configured reference, inferred
+release aliases, track target, target digest, recent compatible published tags,
+and official upgrade documentation. A selected refresh is written to root
+`.env` as a per-deployment immutable override and uses the same render, deploy,
+health, and rollback transaction as application image changes; tracked profile
+defaults remain unchanged.
+
+Numeric tracks lock both major-version prefix and image family. Consequently,
+`16-alpine` never proposes PostgreSQL 17 or a Debian-family variant, and
+`7-alpine` never proposes Redis 8. PostgreSQL refreshes require an explicit
+recent restore-tested-backup checkpoint. The repository does not claim that a
+filesystem copy is a verified database backup and does not manufacture one;
+automatic backup creation needs a separately configured backup-provider hook.
+The broad pgAdmin `latest` channel receives an extra major-version warning.
+Major PostgreSQL/Redis migrations remain deliberate migration procedures, not
+image substitutions.
+
+Before deployment, the exact target is scanned with Docker Scout or Trivy.
+Missing scanner evidence, scanner failure, or fixable HIGH/CRITICAL findings
+requires explicit operator acceptance. An update reminder may be ignored with
+a public reason, but only for that exact target digest; a newer registry digest
+automatically restores the reminder, and vulnerability findings are never
+hidden. Cached results appear in the overview; cache status is never derived
+from the release floor. Use the submenu's `h` action for the same policy and
+official links at the terminal.
+
+Official references: [PostgreSQL upgrading](https://www.postgresql.org/docs/current/upgrading.html),
+[PostgreSQL logical backups](https://www.postgresql.org/docs/current/backup-dump.html),
+[Postgres image tags](https://hub.docker.com/_/postgres),
+[Redis version management](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/),
+[Redis upgrades](https://redis.io/docs/latest/operate/oss_and_stack/install/upgrade/),
+and [pgAdmin release notes](https://www.pgadmin.org/docs/pgadmin4/latest/release_notes.html).
 
 There is no schema version 4 in this repository. Version 5.0 was introduced as
 the strict executable full-stack contract and deliberately uses a new major

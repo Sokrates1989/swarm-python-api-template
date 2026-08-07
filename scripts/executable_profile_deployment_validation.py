@@ -34,6 +34,7 @@ from executable_profile_keycloak_validation import (
     THEME_PATTERN,
 )
 from executable_profile_support import (
+    DIGEST_IMAGE_PATTERN,
     IMAGE_PATTERN,
     MEMORY_PATTERN,
     NAME_PATTERN,
@@ -56,6 +57,46 @@ SMTP_HOST_PATTERN = re.compile(
     r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}"
     r"[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 )
+
+
+def _validate_infrastructure_images(
+    data: Mapping[str, object], values: Mapping[str, str]
+) -> None:
+    """Validate per-deployment immutable infrastructure image overrides.
+
+    Overrides may refresh a profile-owned repository to a new exact digest but
+    cannot silently switch vendors or compatibility channels. Empty values are
+    accepted only for pre-upgrade environments and fall back to profile pins.
+
+    Args:
+        data: Validated executable site profile.
+        values: Parsed root deployment environment.
+
+    Raises:
+        ExecutableProfileError: If an override is mutable, malformed, or uses
+            a repository different from its site-profile trust boundary.
+    """
+
+    database = mapping(data["database"], "database")
+    services = mapping(data["services"], "services")
+    expected = {
+        "POSTGRES_IMAGE": str(database.get("image", "")),
+        "REDIS_IMAGE": str(services.get("redisImage", "")),
+        "PGADMIN_IMAGE": str(database.get("pgadminImage", "")),
+    }
+    for key, profile_reference in expected.items():
+        value = values[key]
+        if not value:
+            continue
+        if DIGEST_IMAGE_PATTERN.fullmatch(value) is None:
+            raise ExecutableProfileError(
+                f".env {key} must be an immutable repository@sha256 image."
+            )
+        profile_repository = profile_reference.split("@", 1)[0]
+        if not profile_repository or value.split("@", 1)[0] != profile_repository:
+            raise ExecutableProfileError(
+                f".env {key} must stay in profile repository {profile_repository!r}."
+            )
 
 
 def _validate_keycloak_boolean_values(
@@ -698,6 +739,7 @@ def validate_deployment(
             ".env ADVANCED_LOGGING_ENABLED must be true or false."
         )
     _validate_operator_identity(data, values)
+    _validate_infrastructure_images(data, values)
     _validate_keycloak_deployment(data, values)
     _validate_counts_and_resources(values)
     _validate_data_root(values)

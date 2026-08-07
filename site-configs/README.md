@@ -188,10 +188,22 @@ registry-digest pinned and paired with an explicit comparison channel:
 `database.imageTrackTag`, `database.pgadminImageTrackTag`, or
 `services.redisImageTrackTag` when the corresponding image exists. A channel
 is one exact safe tag such as `16-alpine`, `7-alpine`, or `latest`; it is audit
-metadata and never changes the rendered digest. This prevents an update check
-from guessing a tag or crossing a stateful service's major line. Secret values,
-passwords, tokens, and private keys are forbidden in site configs and root
-`.env`.
+metadata and never changes the tracked profile digest. Numeric tracks constrain
+both the numeric prefix and the image-family suffix: `16-alpine` can select
+stable PostgreSQL 16.x Alpine tags but not PostgreSQL 17 or Bookworm, while
+`7-alpine` stays on Redis 7.x Alpine. The operator menu resolves a selected
+track target to `repository@sha256`, stores that public per-deployment override
+in root `.env`, and leaves the reusable profile unchanged. Empty override keys
+remain backward-compatible and fall back to the profile pins.
+
+An exact target digest may be snoozed in the ignored audit cache. The snooze is
+public operational metadata, expires automatically when the channel digest
+changes, and never suppresses vulnerability evidence. PostgreSQL updates also
+cross a verified-backup checkpoint; database major migrations are outside the
+image-refresh contract. A broad stateless-tool channel such as pgAdmin
+`latest` requires separate operator acceptance because it can cross a major
+version. Secret values, passwords, tokens, and private keys are forbidden in
+site configs and root `.env`.
 
 For `auth.provider=keycloak`, schema 5 also requires:
 

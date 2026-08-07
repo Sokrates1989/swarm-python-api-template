@@ -210,6 +210,51 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertNotIn("memory:", stack)
         validate_rendered_stack(stack, profile)
 
+    def test_infrastructure_digest_overrides_render_without_profile_mutation(
+        self,
+    ) -> None:
+        """Allow same-repository maintenance pins in the deployment environment.
+
+        Returns:
+            Nothing.
+        """
+
+        postgres = "postgres@sha256:" + "a" * 64
+        redis = "redis@sha256:" + "b" * 64
+        pgadmin = "dpage/pgadmin4@sha256:" + "c" * 64
+        profile = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "POSTGRES_IMAGE": postgres,
+                "REDIS_IMAGE": redis,
+                "PGADMIN_IMAGE": pgadmin,
+            },
+        )
+
+        stack = render_stack(profile)
+
+        self.assertIn(f'image: "{postgres}"', stack)
+        self.assertIn(f'image: "{redis}"', stack)
+        self.assertNotIn(f'image: "{pgadmin}"', stack)
+
+    def test_infrastructure_override_cannot_switch_repository(self) -> None:
+        """Keep a deployment refresh inside its site-profile trust boundary.
+
+        Returns:
+            Nothing.
+        """
+
+        with self.assertRaisesRegex(
+            ExecutableProfileError,
+            "must stay in profile repository",
+        ):
+            self._configure(
+                "felix",
+                self.felix_config,
+                {"POSTGRES_IMAGE": "attacker/postgres@sha256:" + "d" * 64},
+            )
+
     def test_memory_constraints_are_explicit_and_resettable(self) -> None:
         """Render only explicit limits and accept both reset aliases.
 

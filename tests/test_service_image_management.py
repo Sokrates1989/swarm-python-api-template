@@ -54,6 +54,15 @@ IMAGE_TRANSACTION = (
 IMAGE_AUDIT = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu-image-audit.sh"
 )
+INFRASTRUCTURE_IMAGES = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-infrastructure-images.sh"
+)
+INFRASTRUCTURE_SAFETY = (
+    REPOSITORY_ROOT / "setup" / "modules" / "infrastructure-image-safety.sh"
+)
+INFRASTRUCTURE_ADAPTER = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-image-audit-profile.sh"
+)
 SEMANTIC_VERSION = (
     REPOSITORY_ROOT / "setup" / "modules" / "semantic-version.sh"
 )
@@ -67,6 +76,29 @@ NATIVE_BASH_AVAILABLE = (
 
 class ServiceImageManagementStaticTests(unittest.TestCase):
     """Verify generic routing and persisted-profile contracts on every host."""
+
+    def test_infrastructure_updates_are_track_locked_and_transactional(self) -> None:
+        """Protect generic inventory, backup, ignore, and deploy boundaries.
+
+        Returns:
+            Nothing.
+        """
+
+        menu = INFRASTRUCTURE_IMAGES.read_text(encoding="utf-8")
+        safety = INFRASTRUCTURE_SAFETY.read_text(encoding="utf-8")
+        adapter = INFRASTRUCTURE_ADAPTER.read_text(encoding="utf-8")
+        handlers = MENU_HANDLERS.read_text(encoding="utf-8")
+
+        self.assertIn("Current versions are inferred", menu)
+        self.assertIn("PostgreSQL data-safety checkpoint", safety)
+        self.assertIn("Ignore this exact target digest", menu)
+        self.assertIn("fixable HIGH/CRITICAL", safety)
+        self.assertIn("may cross a major version", safety)
+        self.assertIn("PostgreSQL|postgres|POSTGRES_IMAGE", adapter)
+        self.assertIn("Redis|redis|REDIS_IMAGE", adapter)
+        self.assertIn("pgAdmin|pgadmin|PGADMIN_IMAGE", adapter)
+        self.assertIn("_apply_profile_environment_update", adapter)
+        self.assertIn("menu-infrastructure-images.sh", handlers)
 
     def test_release_coordination_metadata_is_generic_and_complete(self) -> None:
         """Accept one app-neutral monotonic component catalog.

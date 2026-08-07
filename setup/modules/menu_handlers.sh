@@ -75,6 +75,12 @@ if [ -f "${MENU_HANDLERS_DIR}/menu-image-audit-profile.sh" ]; then
     source "${MENU_HANDLERS_DIR}/menu-image-audit-profile.sh"
 fi
 
+# Source shared compatible infrastructure inventory and update actions.
+if [ -f "${MENU_HANDLERS_DIR}/menu-infrastructure-images.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${MENU_HANDLERS_DIR}/menu-infrastructure-images.sh"
+fi
+
 # Source targeted profile-driven logging and database-management toggles.
 if [ -f "${MENU_HANDLERS_DIR}/menu-runtime-actions.sh" ]; then
     # shellcheck source=/dev/null

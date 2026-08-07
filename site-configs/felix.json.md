@@ -181,6 +181,16 @@ pgAdmin images are digest pinned. Direct secret fields, mutable release aliases
 such as `latest`, debug logging, wildcard origins, and unresolved placeholders
 are rejected.
 
+The profile's `imageTrackTag` fields are comparison/compatibility channels,
+not runtime image references. From quick-start action `a`, the shared
+infrastructure submenu reports the deployed exact digests and real compatible
+registry tags. A selected same-track refresh becomes an immutable `*_IMAGE`
+override in the ignored root `.env`; `felix.json` remains reusable and
+unchanged. PostgreSQL requires a verified-backup checkpoint, Redis remains on
+its declared major/image family, and pgAdmin's broad `latest` channel requires
+an additional warning confirmation. Exact-digest reminder snoozes expire when
+the registry channel changes and do not hide CVE results.
+
 Use `./quick-start.sh`, select **Felix Backend and WebApp**, and follow the
 shared setup flow. It writes root `.env` and renders one
 `swarm-stack.yml`. It does not deploy until the normal deployment menu action

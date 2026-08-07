@@ -301,6 +301,88 @@ class RegistryImageToolTests(unittest.TestCase):
             "warning|[STALE] image security scan needs to be rerun",
         )
 
+    def test_exact_digest_ignore_remains_visible_in_cache_summary(self) -> None:
+        """Show snoozed maintenance without reporting an active update.
+
+        Returns:
+            Nothing.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            cache = Path(temporary_directory) / "audit.json"
+            write_cache(
+                cache,
+                {
+                    "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    "records": [{"status": "ignored"}],
+                },
+            )
+
+            summary = cache_summary(cache, 24)
+
+        self.assertEqual(
+            summary,
+            "off|[IGNORED] 1 infrastructure update reminder(s)",
+        )
+
+    def test_security_warning_takes_precedence_over_ignored_refresh(self) -> None:
+        """Prevent update snoozes from suppressing vulnerability evidence.
+
+        Returns:
+            Nothing.
+        """
+
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            cache = Path(temporary_directory) / "audit.json"
+            write_cache(
+                cache,
+                {
+                    "generatedAt": now,
+                    "records": [{"status": "ignored"}],
+                    "security": {
+                        "checkedAt": now,
+                        "status": "warning",
+                    },
+                },
+            )
+
+            summary = cache_summary(cache, 24)
+
+        self.assertEqual(
+            summary,
+            "warning|[WARN] fixable HIGH/CRITICAL vulnerabilities found",
+        )
+
+    def test_security_warning_takes_precedence_over_active_refresh(self) -> None:
+        """Keep actionable vulnerability evidence above version freshness.
+
+        Returns:
+            Nothing.
+        """
+
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            cache = Path(temporary_directory) / "audit.json"
+            write_cache(
+                cache,
+                {
+                    "generatedAt": now,
+                    "records": [{"status": "update"}],
+                    "security": {
+                        "checkedAt": now,
+                        "status": "warning",
+                    },
+                },
+            )
+
+            summary = cache_summary(cache, 24)
+
+        self.assertEqual(
+            summary,
+            "warning|[WARN] fixable HIGH/CRITICAL vulnerabilities found",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

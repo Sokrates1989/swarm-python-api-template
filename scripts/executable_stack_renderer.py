@@ -303,9 +303,10 @@ def _render_redis_service(profile: ExecutableProfile) -> list[str]:
     services = _mapping(profile.data["services"], "services")
     if services.get("redis") is not True:
         return []
+    image = profile.deployment.get("REDIS_IMAGE") or services["redisImage"]
     return [
         "  redis:",
-        f"    image: {_yaml_text(services['redisImage'])}",
+        f"    image: {_yaml_text(image)}",
         "    networks:",
         "      - backend",
         "    deploy:",
@@ -443,10 +444,11 @@ def _render_postgres_service(profile: ExecutableProfile) -> list[str]:
             f"Executable renderer does not support local {values['DB_TYPE']} yet."
         )
     database = _mapping(profile.data["database"], "database")
+    image = values.get("POSTGRES_IMAGE") or database["image"]
     secret_name, secret_target = _database_password_mount(profile)
     return [
         "  postgres:",
-        f"    image: {_yaml_text(database['image'])}",
+        f"    image: {_yaml_text(image)}",
         "    networks:",
         "      - backend",
         "    secrets:",
@@ -495,11 +497,12 @@ def _render_pgadmin_service(profile: ExecutableProfile) -> list[str]:
     if values["PGADMIN_ENABLED"] != "true":
         return []
     database = _mapping(profile.data["database"], "database")
+    image = values.get("PGADMIN_IMAGE") or database["pgadminImage"]
     secret = str(database["pgadminSecret"])
     port = 5050
     lines = [
         "  pgadmin:",
-        f"    image: {_yaml_text(database['pgadminImage'])}",
+        f"    image: {_yaml_text(image)}",
         *_service_networks(profile),
         *_direct_port(
             profile,

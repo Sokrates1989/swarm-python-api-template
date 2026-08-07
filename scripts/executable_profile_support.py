@@ -132,6 +132,9 @@ DEPLOYMENT_KEYS = (
     "DB_PORT",
     "DB_NAME",
     "DB_USER",
+    "POSTGRES_IMAGE",
+    "REDIS_IMAGE",
+    "PGADMIN_IMAGE",
     "PROXY_TYPE",
     "SSL_MODE",
     "TRAEFIK_NETWORK",
@@ -211,6 +214,9 @@ KEYCLOAK_DEPLOYMENT_KEYS = frozenset(
 # Additive generated-environment fields accepted from pre-upgrade `.env` files.
 OPTIONAL_DEPLOYMENT_DEFAULTS = {
     "ADVANCED_LOGGING_ENABLED": "true",
+    "POSTGRES_IMAGE": "",
+    "REDIS_IMAGE": "",
+    "PGADMIN_IMAGE": "",
     "KEYCLOAK_REALM_DISPLAY_NAME": "",
     "KEYCLOAK_REALM_ENABLED": "",
     "KEYCLOAK_REGISTRATION_ALLOWED": "",

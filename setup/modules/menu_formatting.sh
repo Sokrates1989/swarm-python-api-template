@@ -70,7 +70,7 @@ _menu_semantic_level_for_text() {
             printf '%s' 'ok'
             ;;
         *'[INFO]'*|*'[CHECK]'*|*'[WAIT]'*|*'ℹ️'*) printf '%s' 'info' ;;
-        *'[OFF]'*) printf '%s' 'off' ;;
+        *'[OFF]'*|*'[IGNORED]'*) printf '%s' 'off' ;;
         *) return 1 ;;
     esac
 }

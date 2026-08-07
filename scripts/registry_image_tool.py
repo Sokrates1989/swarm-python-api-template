@@ -12,6 +12,7 @@ Description:
 Dependencies:
     - Python standard library.
     - Docker Buildx only as a credential-aware exact-inspection fallback.
+    - scripts/infrastructure_image_policy.py for exact-target reminder snoozes.
     - scripts/terminal_status.py for TTY-aware semantic status output.
 """
 
@@ -31,6 +32,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from infrastructure_image_policy import apply_update_ignores
 from terminal_status import colorize_status_text
 
 
@@ -683,6 +685,7 @@ def cache_summary(path: Path, max_age_hours: int) -> str:
     if not registry_fresh:
         return "warning|[STALE] image audit is older than configured cache age"
     updates = sum(item.get("status") == "update" for item in records if isinstance(item, dict))
+    ignored = sum(item.get("status") == "ignored" for item in records if isinstance(item, dict))
     unknown = sum(item.get("status") == "unknown" for item in records if isinstance(item, dict))
     security = payload.get("security")
     security_status = security.get("status") if isinstance(security, dict) else "unknown"
@@ -691,10 +694,10 @@ def cache_summary(path: Path, max_age_hours: int) -> str:
         if isinstance(security, dict)
         else None
     )
-    if updates:
-        return f"warning|[UPDATE] {updates} registry image update(s) available"
     if security_status == "warning":
         return "warning|[WARN] fixable HIGH/CRITICAL vulnerabilities found"
+    if updates:
+        return f"warning|[UPDATE] {updates} registry image update(s) available"
     if unknown:
         return f"warning|[UNKNOWN] {unknown} image check(s) need attention"
     if security_status == "unknown" and security_fresh is True:
@@ -703,6 +706,8 @@ def cache_summary(path: Path, max_age_hours: int) -> str:
         return "warning|[UNKNOWN] image security cache is invalid"
     if security_fresh is False:
         return "warning|[STALE] image security scan needs to be rerun"
+    if ignored:
+        return f"off|[IGNORED] {ignored} infrastructure update reminder(s)"
     if security_status == "ok" and security_fresh is True:
         return "ok|[OK] registry and security evidence current"
     return "ok|[OK] registry images current; security scan not run"
@@ -746,6 +751,8 @@ def _print_audit_result(result: Mapping[str, Any]) -> None:
 
     status = str(result.get("status", "unknown")).upper()
     level = "ok" if status == "OK" else "warning"
+    if status == "IGNORED":
+        level = "off"
     if status == "ERROR":
         level = "error"
     label = result.get("label", result.get("identifier", "image"))
@@ -770,6 +777,8 @@ def _print_audit_result(result: Mapping[str, Any]) -> None:
     if result.get("error"):
         error_text = f"        [ERROR] {result['error']}"
         print(colorize_status_text(error_text, "error", sys.stdout))
+    if result.get("ignoredReason"):
+        print(f"        Reason: {result['ignoredReason']}")
 
 
 def _command_stable_tags(arguments: argparse.Namespace) -> int:
@@ -824,6 +833,11 @@ def _command_audit(arguments: argparse.Namespace) -> int:
     results = audit_records(records, arguments.platform)
     cache_path = Path(arguments.cache)
     previous = read_cache(cache_path)
+    ignored = previous.get("ignoredInfrastructureUpdates")
+    results, active_ignores = apply_update_ignores(
+        results,
+        ignored if isinstance(ignored, Mapping) else {},
+    )
     payload = {
         "schemaVersion": 1,
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -832,6 +846,8 @@ def _command_audit(arguments: argparse.Namespace) -> int:
     }
     if isinstance(previous.get("security"), dict):
         payload["security"] = previous["security"]
+    if active_ignores:
+        payload["ignoredInfrastructureUpdates"] = active_ignores
     write_cache(cache_path, payload)
     for result in results:
         _print_audit_result(result)

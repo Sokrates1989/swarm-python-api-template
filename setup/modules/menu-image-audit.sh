@@ -458,24 +458,35 @@ run_image_audit_menu() {
         echo ""
         echo "Image Updates and Security"
         echo "=========================="
-        echo "  1) Check registry versions and tracked infrastructure digests"
-        echo "  2) Scan deployed/configured images for fixable HIGH/CRITICAL CVEs"
-        echo "  3) Check application base-image refresh/update recommendations"
-        echo "  4) Run the complete image audit"
+        echo "Inventory and maintenance:"
+        echo "  1) Check registry freshness and tracked infrastructure digests"
+        echo "  2) Infrastructure versions, compatible updates, and ignores"
+        echo ""
+        echo "Security:"
+        echo "  3) Scan deployed/configured images for fixable HIGH/CRITICAL CVEs"
+        echo "  4) Check application base-image refresh/update recommendations"
+        echo "  5) Run the complete image audit"
         echo "  0) Back"
         echo ""
         if [[ -r /dev/tty ]]; then
-            read -r -p "Your choice (0-4): " choice < /dev/tty
+            read -r -p "Your choice (0-5): " choice < /dev/tty
         else
-            read -r -p "Your choice (0-4): " choice
+            read -r -p "Your choice (0-5): " choice
         fi
         case "$choice" in
             1) run_registry_image_audit || true ;;
-            2) run_image_security_scan || true ;;
-            3) run_base_image_recommendations || true ;;
-            4) run_complete_image_audit ;;
+            2)
+                if declare -F run_infrastructure_image_menu >/dev/null 2>&1; then
+                    run_infrastructure_image_menu
+                else
+                    echo "[ERROR] Infrastructure image actions are unavailable."
+                fi
+                ;;
+            3) run_image_security_scan || true ;;
+            4) run_base_image_recommendations || true ;;
+            5) run_complete_image_audit ;;
             0) return 0 ;;
-            *) echo "[WARN] Choose a value from 0 through 4." ;;
+            *) echo "[WARN] Choose a value from 0 through 5." ;;
         esac
     done
 }
