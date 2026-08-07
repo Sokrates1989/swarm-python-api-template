@@ -275,6 +275,20 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertIn(f'{action}) echo "{key}"', source)
 
+    def test_repository_update_action_uses_warning_color(self) -> None:
+        """Highlight the actionable update row as a semantic warning.
+
+        Returns:
+            Nothing.
+        """
+
+        source = MENU_HANDLERS.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'echo "  $(_menu_colorize warning "$(operator_menu_shortcut_key update))',
+            source,
+        )
+
     def test_deployment_choices_are_registry_backed_not_floor_generated(
         self,
     ) -> None:

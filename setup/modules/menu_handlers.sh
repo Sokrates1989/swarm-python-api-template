@@ -255,7 +255,7 @@ show_main_menu() {
         echo "$(_menu_heading 'Repository:')"
         if [ "$_GIT_UPDATE_STATUS" = "behind" ]; then
             echo "  ────────────────────────────────────────"
-            echo "  $(operator_menu_shortcut_key update)) ⬆️  Update deployment scripts (${_GIT_UPDATE_BEHIND_COUNT} update(s) available)"
+            echo "  $(_menu_colorize warning "$(operator_menu_shortcut_key update)) ⬆️  Update deployment scripts (${_GIT_UPDATE_BEHIND_COUNT} update(s) available)")"
             echo "  ────────────────────────────────────────"
             echo ""
         fi
