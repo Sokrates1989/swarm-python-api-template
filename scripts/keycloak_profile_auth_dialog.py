@@ -10,6 +10,7 @@ Description:
 Dependencies:
     - Python standard library.
     - scripts/keycloak_profile_client.py.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from keycloak_profile_client import (
     KeycloakIdentity,
     KeycloakProfileError,
 )
+from terminal_status import print_status
 
 
 SKIP_WORDS = {"q", "quit", "skip", "abort", "cancel"}
@@ -105,7 +107,10 @@ def authenticate_admin_until_valid(
         if password is None:
             return None
         if not password:
-            print("[WARN] The Keycloak admin password cannot be empty.")
+            print_status(
+                "[WARN] The Keycloak admin password cannot be empty.",
+                "warning",
+            )
             print("Try again, or enter q at the username prompt to skip.")
             active_default = username
             continue
@@ -119,13 +124,19 @@ def authenticate_admin_until_valid(
             )
             client.request("GET", "/admin/serverinfo")
         except KeycloakProfileError as error:
-            print(f"[WARN] Keycloak administrator verification failed: {error}")
+            print_status(
+                f"[WARN] Keycloak administrator verification failed: {error}",
+                "warning",
+            )
             print("Try again, or enter q at the username prompt to skip.")
             active_default = username
             continue
         finally:
             password = ""
-        print(f"[OK] Authenticated Keycloak administrator {username!r}.")
+        print_status(
+            f"[OK] Authenticated Keycloak administrator {username!r}.",
+            "ok",
+        )
         return client
 
 

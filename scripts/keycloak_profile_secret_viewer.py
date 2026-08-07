@@ -9,6 +9,7 @@ Description:
 
 Dependencies:
     - Python standard library.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -17,9 +18,12 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+
+from terminal_status import colorize_status_text
 
 
 class KeycloakSecretViewerError(RuntimeError):
@@ -258,14 +262,24 @@ def view_secret_temporarily(
         editor_status = launcher(_editor_command(editor, secret_path), environment)
         if editor_status != 0:
             output(
-                f"[WARN] Editor exited with status {editor_status}; "
-                "the temporary copy will still be deleted."
+                colorize_status_text(
+                    f"[WARN] Editor exited with status {editor_status}; "
+                    "the temporary copy will still be deleted.",
+                    "warning",
+                    sys.stdout,
+                )
             )
     finally:
         if previous_handlers:
             _restore_signal_handlers(previous_handlers)
         _remove_private_view(directory)
-        output("[OK] Deleted the temporary Keycloak secret file.")
+        output(
+            colorize_status_text(
+                "[OK] Deleted the temporary Keycloak secret file.",
+                "ok",
+                sys.stdout,
+            )
+        )
 
 
 def _available_editors(
@@ -355,7 +369,13 @@ def offer_temporary_secret_view(
         return
     editors = _available_editors(locator)
     if not editors:
-        output("[WARN] No supported terminal editor (nano, vim, or vi) is installed.")
+        output(
+            colorize_status_text(
+                "[WARN] No supported terminal editor (nano, vim, or vi) is installed.",
+                "warning",
+                sys.stdout,
+            )
+        )
         return
     editor = _select_editor(editors, input_reader, output)
     view_secret_temporarily(

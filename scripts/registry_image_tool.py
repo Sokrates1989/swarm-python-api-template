@@ -12,6 +12,7 @@ Description:
 Dependencies:
     - Python standard library.
     - Docker Buildx only as a credential-aware exact-inspection fallback.
+    - scripts/terminal_status.py for TTY-aware semantic status output.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from terminal_status import colorize_status_text
+
 
 SEMVER_PATTERN = re.compile(r"^(?P<major>0|[1-9][0-9]*)\."
                             r"(?P<minor>0|[1-9][0-9]*)\."
@@ -43,8 +46,6 @@ MANIFEST_ACCEPT = ", ".join(
         "application/vnd.docker.distribution.manifest.v2+json",
     )
 )
-
-
 class RegistryToolError(RuntimeError):
     """Report a safe operator-facing registry or input failure."""
 
@@ -744,20 +745,31 @@ def _print_audit_result(result: Mapping[str, Any]) -> None:
     """
 
     status = str(result.get("status", "unknown")).upper()
+    level = "ok" if status == "OK" else "warning"
+    if status == "ERROR":
+        level = "error"
     label = result.get("label", result.get("identifier", "image"))
     current = result.get("current", "unknown")
     if result.get("kind") == "application":
         target = result.get("highestStable", "unknown")
-        print(f"[{status}] {label}: {current} -> highest published {target}")
+        line = f"[{status}] {label}: {current} -> highest published {target}"
     else:
         tag = result.get("track_tag", "unknown")
         current_digest = result.get("currentDigest") or "unresolved deployed digest"
         target_digest = result.get("trackedDigest") or "unknown"
-        print(f"[{status}] {label}: track {tag}; {current_digest} -> {target_digest}")
+        line = (
+            f"[{status}] {label}: track {tag}; "
+            f"{current_digest} -> {target_digest}"
+        )
+    print(colorize_status_text(line, level, sys.stdout))
     if result.get("platformVerified") is False:
-        print("        [WARN] required platform was not declared by the resolved image")
+        warning = (
+            "        [WARN] required platform was not declared by the resolved image"
+        )
+        print(colorize_status_text(warning, "warning", sys.stdout))
     if result.get("error"):
-        print(f"        {result['error']}")
+        error_text = f"        [ERROR] {result['error']}"
+        print(colorize_status_text(error_text, "error", sys.stdout))
 
 
 def _command_stable_tags(arguments: argparse.Namespace) -> int:
@@ -890,7 +902,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(arguments.handler(arguments))
     except (RegistryToolError, OSError, subprocess.SubprocessError) as error:
-        print(f"[ERROR] {error}", file=sys.stderr)
+        message = colorize_status_text(f"[ERROR] {error}", "error", sys.stderr)
+        print(message, file=sys.stderr)
         return 1
 
 

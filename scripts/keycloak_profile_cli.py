@@ -13,6 +13,7 @@ Dependencies:
     - Python standard library.
     - Executable profile and Keycloak access-dialog, client, configuration,
       verification, and Docker-secret modules.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from keycloak_profile_realm_configuration import (
 from keycloak_profile_theme_inventory import (
     prompt_live_theme_and_localization_settings,
 )
+from terminal_status import print_status
 
 
 def _print_application_access_target(identity: KeycloakIdentity) -> None:
@@ -295,10 +297,11 @@ def _prompt_email_sender_settings(
     )
     if not enabled:
         if email_required:
-            print(
+            print_status(
                 "[WARN] Email verification or password reset is enabled, but "
                 "this run will leave realm SMTP unchanged. Configure and test "
-                "email delivery before relying on those features."
+                "email delivery before relying on those features.",
+                "warning",
             )
         return replace(current, enabled=False)
     print("Type 'none' to clear an optional sender field.")
@@ -824,10 +827,14 @@ def print_completion(
             else "tracked bootstrap users"
         )
         print("")
-        print(f"[WARN] Manual cleanup remains pending for: {listed}")
-        print(
+        print_status(
+            f"[WARN] Manual cleanup remains pending for: {listed}",
+            "warning",
+        )
+        print_status(
             "[WARN] Delete only these temporary accounts manually in "
-            "Keycloak, then acknowledge cleanup from the deployment menu."
+            "Keycloak, then acknowledge cleanup from the deployment menu.",
+            "warning",
         )
     if summary.get("dockerSecretBindingVerified") is False:
         print(
@@ -863,7 +870,10 @@ def prompt_admin_ui_verification(
         f"{identity.realm}/realm-settings"
     )
     print("")
-    print("⚠️  Please verify your realm settings in Keycloak Admin UI.")
+    print_status(
+        "⚠️  Please verify your realm settings in Keycloak Admin UI.",
+        "warning",
+    )
     print("----------------------------------------------------------")
     print(f"Open: {console}")
     print("1. Themes: verify login, account, admin, and email themes.")

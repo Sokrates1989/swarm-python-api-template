@@ -14,12 +14,13 @@ Dependencies:
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -36,10 +37,78 @@ from registry_image_tool import (  # noqa: E402
     stable_tags,
     write_cache,
 )
+from terminal_status import colorize_status_text, print_status  # noqa: E402
 
 
 class RegistryImageToolTests(unittest.TestCase):
     """Protect the read-only registry evidence model."""
+
+    def test_semantic_status_colors_require_an_interactive_terminal(self) -> None:
+        """Color statuses on a TTY while preserving redirected output.
+
+        Returns:
+            Nothing.
+        """
+
+        interactive_stream = Mock()
+        interactive_stream.isatty.return_value = True
+        redirected_stream = Mock()
+        redirected_stream.isatty.return_value = False
+
+        with patch.dict(
+            "terminal_status.os.environ",
+            {"TERM": "xterm-256color"},
+            clear=True,
+        ):
+            colored = colorize_status_text(
+                "[WARN] review",
+                "warning",
+                interactive_stream,
+            )
+            plain = colorize_status_text(
+                "[WARN] review",
+                "warning",
+                redirected_stream,
+            )
+
+        self.assertEqual(colored, "\033[33m[WARN] review\033[0m")
+        self.assertEqual(plain, "[WARN] review")
+
+    def test_no_color_disables_registry_status_ansi(self) -> None:
+        """Honor the standard operator override even on an interactive TTY.
+
+        Returns:
+            Nothing.
+        """
+
+        interactive_stream = Mock()
+        interactive_stream.isatty.return_value = True
+
+        with patch.dict(
+            "terminal_status.os.environ",
+            {"TERM": "xterm-256color", "NO_COLOR": "1"},
+            clear=True,
+        ):
+            result = colorize_status_text(
+                "[ERROR] failed",
+                "error",
+                interactive_stream,
+            )
+
+        self.assertEqual(result, "[ERROR] failed")
+
+    def test_print_status_keeps_redirected_evidence_plain(self) -> None:
+        """Write the reusable Python status helper without ANSI to a buffer.
+
+        Returns:
+            Nothing.
+        """
+
+        output = io.StringIO()
+
+        print_status("[OK] complete", "ok", stream=output)
+
+        self.assertEqual(output.getvalue(), "[OK] complete\n")
 
     def test_stable_tags_exclude_mutable_and_prerelease_names(self) -> None:
         """Sort only stable SemVer tags and never treat latest as a version.

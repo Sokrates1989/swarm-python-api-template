@@ -1,6 +1,9 @@
 #!/bin/bash
 # Debug script to check database connection configuration
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/setup/modules/menu_formatting.sh"
+
 echo "==================================="
 echo "Database Connection Debug Script"
 echo "==================================="

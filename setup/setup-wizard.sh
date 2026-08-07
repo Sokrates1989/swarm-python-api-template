@@ -31,6 +31,7 @@ cd "$PROJECT_ROOT"
 # Shared discovery, dialogue, persistence, rendering, and action modules.
 # Capability-specific modules remain adapters and never own the setup dialogue.
 #
+source "$SCRIPT_DIR/modules/menu_formatting.sh"
 source "$SCRIPT_DIR/modules/site_helpers.sh"
 source "$SCRIPT_DIR/modules/user-prompts.sh"
 source "$SCRIPT_DIR/modules/deployment-profile-prompts.sh"

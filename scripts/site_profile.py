@@ -8,6 +8,7 @@ Description:
 Dependencies:
     - scripts/executable_profile.py.
     - scripts/executable_stack_renderer.py.
+    - scripts/terminal_status.py for semantic errors.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from executable_stack_renderer import (
     validate_rendered_stack,
     write_stack,
 )
+from terminal_status import print_status
 
 
 def _parse_assignments(assignments: list[str]) -> dict[str, str]:
@@ -221,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.handler(args))
     except (ExecutableProfileError, FileExistsError, OSError) as error:
-        print(f"[ERROR] {error}", file=sys.stderr)
+        print_status(f"[ERROR] {error}", "error", stream=sys.stderr)
         return 1
 
 

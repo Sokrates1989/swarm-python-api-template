@@ -69,6 +69,67 @@ _image_audit_cache() {
 }
 
 # ------------------------------------------------------------------------------
+# _image_audit_privilege_prefix
+# ------------------------------------------------------------------------------
+# Chooses the prefix shown for Debian/Ubuntu package-management commands.
+# Root shells receive directly runnable commands; unprivileged shells receive
+# the conventional sudo prefix.
+#
+# Output:
+#   Empty text for root, otherwise "sudo ".
+# ------------------------------------------------------------------------------
+_image_audit_privilege_prefix() {
+    if [ "$(id -u)" -ne 0 ]; then
+        printf '%s' 'sudo '
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# _show_docker_scout_install_help
+# ------------------------------------------------------------------------------
+# Prints the official Docker Scout CLI-plugin installation and verification
+# steps without executing or changing the host.
+# ------------------------------------------------------------------------------
+_show_docker_scout_install_help() {
+    local privilege_prefix=""
+    local scout_installer_url="https://raw.githubusercontent.com/docker/scout-cli/main/install.sh"
+
+    privilege_prefix="$(_image_audit_privilege_prefix)"
+    echo "[INFO] Install Docker Scout (CVE scan + base-image advice):"
+    echo "       ${privilege_prefix}apt-get update"
+    echo "       ${privilege_prefix}apt-get install -y curl"
+    echo "       curl -sSfL ${scout_installer_url} | sh -s --"
+    echo "       docker scout version"
+    echo "       docker login"
+    echo "       About: https://docs.docker.com/scout/"
+    echo "       Guide: https://github.com/docker/scout-cli#cli-plugin-installation"
+}
+
+# ------------------------------------------------------------------------------
+# _show_trivy_install_help
+# ------------------------------------------------------------------------------
+# Prints Aqua Security's official Debian/Ubuntu repository installation and
+# verification steps without executing or changing the host.
+# ------------------------------------------------------------------------------
+_show_trivy_install_help() {
+    local privilege_prefix=""
+
+    privilege_prefix="$(_image_audit_privilege_prefix)"
+    echo "[INFO] Or install Trivy (CVE scan fallback only):"
+    echo "       ${privilege_prefix}apt-get install -y wget gnupg"
+    echo "       wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key |" \
+        "gpg --dearmor | ${privilege_prefix}tee /usr/share/keyrings/trivy.gpg >/dev/null"
+    echo "       echo 'deb [signed-by=/usr/share/keyrings/trivy.gpg]" \
+        "https://aquasecurity.github.io/trivy-repo/deb generic main' |" \
+        "${privilege_prefix}tee /etc/apt/sources.list.d/trivy.list >/dev/null"
+    echo "       ${privilege_prefix}apt-get update"
+    echo "       ${privilege_prefix}apt-get install -y trivy"
+    echo "       trivy --version"
+    echo "       About: https://trivy.dev/docs/latest/"
+    echo "       Guide: https://www.trivy.dev/docs/latest/getting-started/installation/"
+}
+
+# ------------------------------------------------------------------------------
 # registry_stable_tags
 # ------------------------------------------------------------------------------
 # Enumerates real stable semantic-version tags for one repository.
@@ -287,6 +348,10 @@ run_image_security_scan() {
         scanner='trivy'
     else
         echo "[WARN] Install Docker Scout or Trivy to scan image vulnerabilities."
+        echo ""
+        _show_docker_scout_install_help
+        echo ""
+        _show_trivy_install_help
         _record_security_result unknown 'No supported image scanner installed' || true
         return 1
     fi
@@ -344,6 +409,8 @@ run_base_image_recommendations() {
     if ! docker scout version >/dev/null 2>&1; then
         echo "[WARN] Docker Scout is required for base-image recommendations."
         echo "       Vulnerability scanning can still use Trivy when installed."
+        echo ""
+        _show_docker_scout_install_help
         return 1
     fi
     if ! declare -F _operator_application_image_references >/dev/null 2>&1; then

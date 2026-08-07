@@ -8,7 +8,8 @@ Description:
     state is always restored, including cancellation and errors.
 
 Dependencies:
-    - Python standard library only.
+    - Python standard library.
+    - scripts/terminal_status.py for semantic fallback feedback.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import TextIO
+
+from terminal_status import colorize_status_text
 
 
 KeyReader = Callable[[], str]
@@ -323,10 +326,8 @@ def select_many(
             sys.stdin.isatty() and display.isatty()
         )
     if not interactive:
-        print(
-            f"[INFO] {title}: non-interactive terminal; keeping defaults.",
-            file=display,
-        )
+        message = f"[INFO] {title}: non-interactive terminal; keeping defaults."
+        print(colorize_status_text(message, "info", display), file=display)
         return tuple(
             option.value for option in options if option.value in selected
         )

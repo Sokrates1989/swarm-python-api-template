@@ -36,6 +36,9 @@ from executable_profile_support import ExecutableProfileError  # noqa: E402
 SETUP_WIZARD = REPOSITORY_ROOT / "setup" / "setup-wizard.sh"
 MENU_HANDLERS = REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
 MENU_OVERVIEW = REPOSITORY_ROOT / "setup" / "modules" / "menu-overview.sh"
+MENU_FORMATTING = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu_formatting.sh"
+)
 MENU_SHORTCUTS = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu-shortcuts.sh"
 )
@@ -288,6 +291,40 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
             'echo "  $(_menu_colorize warning "$(operator_menu_shortcut_key update))',
             source,
         )
+
+    def test_all_shell_status_markers_use_shared_terminal_colors(self) -> None:
+        """Color common outcomes centrally without polluting captured output.
+
+        Returns:
+            Nothing.
+        """
+
+        source = MENU_FORMATTING.read_text(encoding="utf-8")
+
+        self.assertIn("_menu_semantic_level_for_text", source)
+        self.assertIn("echo()", source)
+        self.assertIn("_menu_colorize_stream", source)
+        self.assertIn("*'[ERROR]'*", source)
+        self.assertIn("*'[WARN]'*", source)
+        self.assertIn("*'[OK]'*", source)
+        self.assertIn('[ -t 1 ]', source)
+        self.assertIn('${NO_COLOR:-}', source)
+
+    def test_missing_image_scanners_show_official_install_steps(self) -> None:
+        """Give operators directly runnable Scout and Trivy recovery steps.
+
+        Returns:
+            Nothing.
+        """
+
+        source = IMAGE_AUDIT.read_text(encoding="utf-8")
+
+        self.assertIn("docker/scout-cli/main/install.sh", source)
+        self.assertIn("aquasecurity.github.io/trivy-repo/deb", source)
+        self.assertIn("docker scout version", source)
+        self.assertIn("trivy --version", source)
+        self.assertIn("https://docs.docker.com/scout/", source)
+        self.assertIn("https://trivy.dev/docs/latest/", source)
 
     def test_deployment_choices_are_registry_backed_not_floor_generated(
         self,

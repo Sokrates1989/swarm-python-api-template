@@ -44,6 +44,81 @@ _menu_colorize() {
     printf '%b%s%b' "$code" "$text" $'\033[0m'
 }
 
+# _menu_semantic_level_for_text
+# Maps conventional operator-status markers to their shared semantic color.
+# Error markers take precedence when a line contains more than one status.
+#
+# Arguments:
+# - $1: complete line of operator-facing text
+#
+# Output:
+# - error, warning, ok, info, or off; no output for ordinary text
+_menu_semantic_level_for_text() {
+    local text="$1"
+
+    case "$text" in
+        *'[ERROR]'*|*'[FAIL]'*|*'[FAILED]'*|*'ERROR:'*|*'Error:'*|*'❌'*)
+            printf '%s' 'error'
+            ;;
+        *'[WARN]'*|*'WARNING:'*|*'Warning:'*|*'[UPDATE]'*)
+            printf '%s' 'warning'
+            ;;
+        *'[UNKNOWN]'*|*'[STALE]'*|*'[MISSING]'*|*'⚠️'*)
+            printf '%s' 'warning'
+            ;;
+        *'[OK]'*|*'[SUCCESS]'*|*'SUCCESS:'*|*'Success:'*|*'✅'*)
+            printf '%s' 'ok'
+            ;;
+        *'[INFO]'*|*'[CHECK]'*|*'[WAIT]'*|*'ℹ️'*) printf '%s' 'info' ;;
+        *'[OFF]'*) printf '%s' 'off' ;;
+        *) return 1 ;;
+    esac
+}
+
+# echo
+# Preserves Bash's normal echo behavior while automatically colorizing complete
+# semantic status lines on an interactive terminal. Redirected files, command
+# substitutions, captured tests, NO_COLOR output, option-bearing echo calls,
+# and text already containing ANSI escapes remain byte-for-byte plain.
+#
+# Arguments:
+# - all arguments accepted by Bash's echo builtin
+#
+# Returns:
+# - the Bash echo builtin's status
+echo() {
+    local level=""
+    local text="$*"
+
+    if [ "$#" -gt 0 ] && [[ "${1:-}" != -* ]] && [ -t 1 ] &&
+        [ "${_MENU_COLOR_ENABLED:-false}" = "true" ] &&
+        [ -z "${NO_COLOR:-}" ] && [[ "$text" != *$'\033['* ]]; then
+        level="$(_menu_semantic_level_for_text "$text")" || level=""
+        if [ -n "$level" ]; then
+            builtin echo "$(_menu_colorize "$level" "$text")"
+            return $?
+        fi
+    fi
+    builtin echo "$@"
+}
+
+# _menu_colorize_stream
+# Re-emits a subprocess stream through the semantic echo formatter. Place this
+# after a plain-text tee when logs must remain free of ANSI escape sequences.
+#
+# Input:
+# - newline-delimited operator output on stdin
+#
+# Output:
+# - identical lines, colorized only when the final destination is a TTY
+_menu_colorize_stream() {
+    local line=""
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        echo "$line"
+    done
+}
+
 # _menu_heading
 # Renders a menu section heading using the shared informational color.
 #

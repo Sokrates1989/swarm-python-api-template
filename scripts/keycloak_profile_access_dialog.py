@@ -13,6 +13,7 @@ Dependencies:
     - Executable-profile validation constants.
     - Keycloak application-access models.
     - scripts/terminal_multiselect.py.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from keycloak_profile_application_access import (
 )
 from keycloak_profile_client import KeycloakIdentity
 from terminal_multiselect import MultiselectOption, select_many
+from terminal_status import print_status
 
 
 PromptBoolean = Callable[[str, bool], bool]
@@ -400,7 +402,10 @@ def prompt_application_access(
     )
     users = (*declared, *manual)
     if any(user.selected_for_bootstrap for user in users):
-        print("[WARN] Once you enter production mode, delete bootstrap users.")
+        print_status(
+            "[WARN] Once you enter production mode, delete bootstrap users.",
+            "warning",
+        )
         print("Passwords are requested later only when live state requires one.")
     return roles, users
 

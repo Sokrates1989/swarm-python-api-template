@@ -11,6 +11,7 @@ Description:
 Dependencies:
     - Python standard library.
     - Executable profile model and deployment validation modules.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from pathlib import Path
 from executable_profile import ExecutableProfile, load_executable_profile
 from executable_profile_deployment_validation import validate_deployment
 from executable_profile_support import ExecutableProfileError, NAME_PATTERN
+from terminal_status import print_status
 
 
 CLEANUP_PENDING_KEY = "KEYCLOAK_BOOTSTRAP_USERS_CLEANUP_PENDING"
@@ -309,16 +311,23 @@ def main(argv: list[str] | None = None) -> int:
         profile = load_executable_profile(args.root)
         prior = acknowledge_bootstrap_user_cleanup(profile)
         if not prior.pending:
-            print("[INFO] No bootstrap-created user cleanup was pending.")
+            print_status(
+                "[INFO] No bootstrap-created user cleanup was pending.",
+                "info",
+            )
             return 0
-        print(
+        print_status(
             "[OK] Recorded manual cleanup acknowledgement for: "
-            + ", ".join(prior.usernames)
+            + ", ".join(prior.usernames),
+            "ok",
         )
-        print("[INFO] No Keycloak account was queried, changed, or deleted.")
+        print_status(
+            "[INFO] No Keycloak account was queried, changed, or deleted.",
+            "info",
+        )
         return 0
     except (ExecutableProfileError, OSError) as error:
-        print(f"[ERROR] {error}", file=sys.stderr)
+        print_status(f"[ERROR] {error}", "error", stream=sys.stderr)
         return 1
 
 

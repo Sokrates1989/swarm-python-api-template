@@ -27,7 +27,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 ENV_FILE="${PROJECT_ROOT}/.env"
 
-# Source config-builder module
+# Source operator formatting before any diagnostics, then the renderer module.
+source "${PROJECT_ROOT}/setup/modules/menu_formatting.sh"
 source "${PROJECT_ROOT}/setup/modules/config-builder.sh"
 
 # Verify .env exists

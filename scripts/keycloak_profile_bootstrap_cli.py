@@ -10,6 +10,7 @@ Description:
 Dependencies:
     - Python standard library.
     - Executable profile and Keycloak bootstrap/CLI modules.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ from keycloak_profile_secret_viewer import (
     KeycloakSecretViewerError,
     offer_temporary_secret_view,
 )
+from terminal_status import print_status
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -161,27 +163,31 @@ def _review_bootstrap_configuration(
     profile, changed = persist_keycloak_values(profile, selected_values)
     persisted_identity = load_keycloak_identity(profile) if changed else identity
     if changed:
-        print(
+        print_status(
             "\n[OK] Saved Keycloak deployment values to "
-            f"{profile.root / '.env'}"
+            f"{profile.root / '.env'}",
+            "ok",
         )
-        print(
+        print_status(
             "[OK] Rebuilt generated stack at "
-            f"{profile.root / 'swarm-stack.yml'}"
+            f"{profile.root / 'swarm-stack.yml'}",
+            "ok",
         )
-        print(
+        print_status(
             "[WARN] WebApp/mobile artifacts must be built with this "
-            "realm and client identity."
+            "realm and client identity.",
+            "warning",
         )
         if (
             persisted_identity.realm != prior_identity.realm
             or persisted_identity.backend_client_id
             != prior_identity.backend_client_id
         ):
-            print(
+            print_status(
                 "[WARN] An existing Docker client secret belongs to the prior "
                 "realm/backend client and requires explicit rotation with the "
-                "stack stopped."
+                "stack stopped.",
+                "warning",
             )
     identity = selected_values.apply_access_selection(persisted_identity)
     client.identity = identity
@@ -269,10 +275,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         if client is None:
             print("")
-            print("[INFO] Keycloak bootstrap was skipped before configuration.")
-            print(
+            print_status(
+                "[INFO] Keycloak bootstrap was skipped before configuration.",
+                "info",
+            )
+            print_status(
                 "[INFO] Run 'Bootstrap / update Keycloak realm' later to "
-                "complete it."
+                "complete it.",
+                "info",
             )
             return 0
         if args.debug is None:
@@ -325,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\nKeycloak bootstrap cancelled; no further changes were applied.")
         return 130
     except KeycloakProfileError as error:
-        print(f"[ERROR] {error}", file=sys.stderr)
+        print_status(f"[ERROR] {error}", "error", stream=sys.stderr)
         print_keycloak_failure_diagnostics(error, phase)
         return 1
     except (
@@ -336,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         KeycloakSecretViewerError,
         OSError,
     ) as error:
-        print(f"[ERROR] {error}", file=sys.stderr)
+        print_status(f"[ERROR] {error}", "error", stream=sys.stderr)
         return 1
 
 

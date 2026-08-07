@@ -18,6 +18,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Keep direct initialization output consistent with the operator menu.
+source "${PROJECT_ROOT}/setup/modules/menu_formatting.sh"
+
 ENV_FILE="${PROJECT_ROOT}/.env"
 
 if [ ! -f "$ENV_FILE" ]; then

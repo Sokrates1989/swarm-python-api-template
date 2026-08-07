@@ -11,6 +11,7 @@ Description:
 Dependencies:
     - Python standard library.
     - scripts/keycloak_profile_client.py.
+    - scripts/terminal_status.py for semantic operator feedback.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from keycloak_profile_realm_configuration import (
     KeycloakThemeSettings,
 )
 from terminal_multiselect import MultiselectOption, select_many
+from terminal_status import print_status
 
 
 THEME_TYPES = ("login", "account", "admin", "email")
@@ -193,9 +195,10 @@ def _prompt_theme_choice(
         current_note = " (current)" if name == current else ""
         print(f"  {index}) {name} - {description}{current_note}")
     if default_index is None:
-        print(
+        print_status(
             f"[WARN] Current selection {current!r} is not installed; "
-            "choose an available value."
+            "choose an available value.",
+            "warning",
         )
     while True:
         default_hint = f" [{default_index}]" if default_index else ""

@@ -23,6 +23,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source modules
 # ===========================================================================
 
+source "${PROJECT_ROOT}/setup/modules/menu_formatting.sh"
 source "${PROJECT_ROOT}/setup/modules/site_helpers.sh"
 source "${PROJECT_ROOT}/setup/modules/secret-manager.sh"
 source "${PROJECT_ROOT}/setup/modules/health-check.sh"

@@ -136,8 +136,12 @@ The Felix hand-off is documented in
 
 Interactive terminals use semantic colors while preserving explicit `[OK]`,
 `[WARN]`, `[ERROR]`, and `[OFF]` labels in copied output. Set `NO_COLOR=1` to
-disable ANSI output. The boxed main-menu overview is the single startup
-inventory; it replaces the former duplicate plain-text overview.
+disable ANSI output. The shared formatter also colors conventional success,
+warning, update, missing, and error lines from every sourced operator module;
+Python-backed profile, Keycloak, and registry actions use the matching shared
+status helper. Redirected or captured output remains plain. The boxed main-menu
+overview is the single startup inventory; it replaces the former duplicate
+plain-text overview.
 
 Stable operator letters match the Figma Website Swarm repository:
 
@@ -182,7 +186,10 @@ deploy, health, and rollback boundary as image updates.
 - **Audit image updates and security** — refresh cached application-tag and
   tracked infrastructure-digest evidence, scan active images for fixable
   HIGH/CRITICAL vulnerabilities with Docker Scout or Trivy, and request Docker
-  Scout base-image refresh/update recommendations for application images.
+  Scout base-image refresh/update recommendations for application images. If
+  neither scanner is installed, the menu prints the official Debian/Ubuntu
+  installation and verification commands. Trivy can perform the vulnerability
+  scan; Docker Scout is additionally required for base-image recommendations.
 - **Change replicas** — reopen the same setup dialogue for replica counts.
 - **Toggle advanced logging** — switch between INFO diagnostics and
   WARNING/ERROR-only logging without enabling sensitive debug channels.
@@ -244,6 +251,7 @@ setup/
     secrets.env.template           ← Docker secrets template
 scripts/
   registry_image_tool.py           ← OCI tag/digest/platform audit + cache
+  terminal_status.py               ← TTY-aware Python status colors
   site_profile.py                  ← shared schema-5 config/render adapter
   executable_profile_*.py          ← reusable config/runtime validators
   executable_stack_renderer.py     ← reusable full-stack renderer

@@ -32,6 +32,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Keep direct validation output consistent with the interactive operator menu.
+source "${PROJECT_ROOT}/setup/modules/menu_formatting.sh"
+
 # ===========================================================================
 # Helpers
 # ===========================================================================
