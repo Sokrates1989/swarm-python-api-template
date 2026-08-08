@@ -252,7 +252,7 @@ _verify_release_tag() {
 # ------------------------------------------------------------------------------
 # _select_one_published_tag
 # ------------------------------------------------------------------------------
-# Offers only registry-returned versions plus one exact verified SemVer entry.
+# Uses registry-returned versions plus an exact immediately verified fallback.
 #
 # Arguments:
 #   $1 - Label.
@@ -270,43 +270,16 @@ _select_one_published_tag() {
     local target_name="$4"
     local tags=()
     local available=()
-    local choices=()
     local tag=""
-    local selection=""
-    local exact=""
-    local count=0
-    local default_selection='exact'
 
     _load_published_stable_tags "$repository" tags || tags=()
     for tag in "${tags[@]}"; do
         _release_tag_is_not_older "$tag" "$current" || continue
         available+=("$tag")
-        choices+=("tag-${count}|${tag}")
-        [ "$count" -ne 0 ] || default_selection='tag-0'
-        count=$((count + 1))
-        [ "$count" -ge 20 ] && break
+        [ "${#available[@]}" -ge 20 ] && break
     done
-    choices+=("exact|Enter an exact published semantic version")
-    choices+=("cancel|Cancel")
-    prompt_deployment_choice \
-        selection \
-        "${label} published image version" \
-        "$default_selection" \
-        "${choices[@]}"
-    case "$selection" in
-        tag-*)
-            printf -v "$target_name" '%s' "${available[${selection#tag-}]}"
-            ;;
-        exact)
-            prompt_deployment_value exact 'Exact published version' "$current" semver
-            if ! _release_tag_is_not_older "$exact" "$current"; then
-                echo "[ERROR] ${exact} is older than ${current}; use rollback instead."
-                return 1
-            fi
-            printf -v "$target_name" '%s' "$exact"
-            ;;
-        *) return 1 ;;
-    esac
+    select_published_semver \
+        "$target_name" "$label" "$repository" "$current" "${available[@]}"
 }
 
 # ------------------------------------------------------------------------------
@@ -365,7 +338,7 @@ _select_release_image_versions() {
     local index=0
     local label=""
     local all_enumerated=true
-    local default_strategy='highest'
+    local default_strategy='k'
 
     IMAGE_UPDATE_SELECTED_VERSIONS=()
     if [ "$count" -eq 1 ]; then
@@ -385,23 +358,29 @@ _select_release_image_versions() {
     done
     if [ "$all_enumerated" = true ]; then
         common="$(_highest_common_published_tag)" || common=""
-        choices+=("highest|Update each service to its own highest published stable version")
+        choices+=("h|Update each service to its own highest published stable version")
         if [ -n "$common" ]; then
-            choices+=("common|Use highest common published stable version (${common})")
+            choices+=("c|Use highest common published stable version (${common})")
         fi
-    else
-        default_strategy='individual'
     fi
-    choices+=("individual|Select a published version for each service")
-    choices+=("exact|Enter one exact version and verify it in every repository")
-    choices+=("cancel|Cancel")
+    choices=("k|Keep every service at its current version" "${choices[@]}")
+    choices+=("i|Select a published version for each service")
+    choices+=("e|Enter one exact version and verify it in every repository")
+    choices+=("q|Cancel")
     prompt_deployment_choice \
         selection \
         'Registry-backed version strategy' \
         "$default_strategy" \
         "${choices[@]}"
     case "$selection" in
-        highest)
+        k)
+            for index in "${!IMAGE_UPDATE_SELECTED_CURRENTS[@]}"; do
+                IMAGE_UPDATE_SELECTED_VERSIONS+=(
+                    "${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}"
+                )
+            done
+            ;;
+        h)
             for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
                 _load_published_stable_tags \
                     "${IMAGE_UPDATE_SELECTED_REPOSITORIES[$index]}" tags || return 1
@@ -416,12 +395,12 @@ _select_release_image_versions() {
                 fi
             done
             ;;
-        common)
+        c)
             for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
                 IMAGE_UPDATE_SELECTED_VERSIONS+=("$common")
             done
             ;;
-        individual)
+        i)
             for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
                 label="${IMAGE_UPDATE_SELECTED_LABELS[$index]}"
                 _select_one_published_tag \
@@ -432,7 +411,7 @@ _select_release_image_versions() {
                 IMAGE_UPDATE_SELECTED_VERSIONS+=("$highest")
             done
             ;;
-        exact)
+        e)
             prompt_deployment_value exact 'Exact shared published version' '' semver
             for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
                 if ! _release_tag_is_not_older \

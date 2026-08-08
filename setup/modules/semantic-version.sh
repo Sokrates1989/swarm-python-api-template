@@ -107,6 +107,159 @@ highest_semantic_version() {
 }
 
 # ------------------------------------------------------------------------------
+# increment_semantic_version
+# ------------------------------------------------------------------------------
+# Computes one strict next semantic version for menu presentation only.
+# Deployment callers must still prove the resulting tag exists in a registry.
+#
+# Arguments:
+#   $1 - Current stable semantic version.
+#   $2 - patch, minor, or major.
+#
+# Output:
+#   Incremented stable semantic version.
+#
+# Returns:
+#   0 after a valid increment; otherwise 1.
+# ------------------------------------------------------------------------------
+increment_semantic_version() {
+    local current="$1"
+    local level="$2"
+    local parts=()
+
+    semantic_version_is_valid "$current" || return 1
+    IFS='.' read -r -a parts <<< "$current"
+    case "$level" in
+        patch) parts[2]=$((parts[2] + 1)) ;;
+        minor) parts[1]=$((parts[1] + 1)); parts[2]=0 ;;
+        major) parts[0]=$((parts[0] + 1)); parts[1]=0; parts[2]=0 ;;
+        *) return 1 ;;
+    esac
+    printf '%s.%s.%s' "${parts[0]}" "${parts[1]}" "${parts[2]}"
+}
+
+# ------------------------------------------------------------------------------
+# semantic_version_is_listed
+# ------------------------------------------------------------------------------
+# Checks whether one exact semantic version occurs in a provided registry list.
+#
+# Arguments:
+#   $1 - Exact version to find.
+#   Remaining arguments - Published semantic versions.
+#
+# Returns:
+#   0 when present; otherwise 1.
+# ------------------------------------------------------------------------------
+semantic_version_is_listed() {
+    local expected="$1"
+    local candidate=""
+    shift
+
+    for candidate in "$@"; do
+        [ "$candidate" = "$expected" ] && return 0
+    done
+    return 1
+}
+
+# ------------------------------------------------------------------------------
+# select_published_semver
+# ------------------------------------------------------------------------------
+# Renders the canonical keep/patch/feature/major/exact menu. Computed choices
+# must come from registry discovery. An exact fallback is accepted only after
+# immediate registry/platform verification succeeds.
+#
+# Arguments:
+#   $1 - Target variable name.
+#   $2 - Human-readable service label.
+#   $3 - Docker repository without a tag.
+#   $4 - Current stable semantic version.
+#   Remaining arguments - Published versions that are safe for this service.
+#
+# Returns:
+#   0 after assigning a published version; 1 after cancellation or bad inputs.
+# ------------------------------------------------------------------------------
+select_published_semver() {
+    local target_name="$1"
+    local label="$2"
+    local repository="$3"
+    local current="$4"
+    shift 4
+    local published=("$@")
+    local patch=""
+    local minor=""
+    local major=""
+    local highest=""
+    local choice=""
+    local exact=""
+    local candidate=""
+    local exact_requested=false
+
+    semantic_version_is_valid "$current" || {
+        echo "[ERROR] ${label} current version is not semantic: ${current}" >&2
+        return 1
+    }
+    patch="$(increment_semantic_version "$current" patch)" || return 1
+    minor="$(increment_semantic_version "$current" minor)" || return 1
+    major="$(increment_semantic_version "$current" major)" || return 1
+    highest="$(highest_semantic_version "${published[@]}")" || highest="$current"
+
+    while true; do
+        exact_requested=false
+        echo ""
+        echo "${label} published image version options:"
+        echo "  1/k) Keep current (${current})"
+        if semantic_version_is_listed "$patch" "${published[@]}"; then
+            echo "  2/p) Patch (${current} -> ${patch})"
+        else
+            echo "  2/p) Patch (${patch}) [not published]"
+        fi
+        if semantic_version_is_listed "$minor" "${published[@]}"; then
+            echo "  3/f) Feature / Minor (${current} -> ${minor})"
+        else
+            echo "  3/f) Feature / Minor (${minor}) [not published]"
+        fi
+        if semantic_version_is_listed "$major" "${published[@]}"; then
+            echo "  4/m) Major (${current} -> ${major})"
+        else
+            echo "  4/m) Major (${major}) [not published]"
+        fi
+        echo "  5/e) Enter an exact published semantic version"
+        echo "  h) Highest published stable version (${highest})"
+        echo "  0/q) Cancel"
+        read -r -p "Your choice [1/k]: " choice
+        choice="${choice,,}"
+        case "${choice:-1}" in
+            1|k|keep|current) candidate="$current" ;;
+            2|p|patch) candidate="$patch" ;;
+            3|f|feature|minor) candidate="$minor" ;;
+            4|m|major) candidate="$major" ;;
+            5|e|exact|manual)
+                read -r -p "Exact published version: " exact
+                candidate="$exact"
+                exact_requested=true
+                ;;
+            h|highest) candidate="$highest" ;;
+            0|q|quit|cancel) return 1 ;;
+            *)
+                echo "[WARN] Use 1-5, k/p/f/m/e, h, or 0/q."
+                continue
+                ;;
+        esac
+        if semantic_version_is_listed "$candidate" "${published[@]}"; then
+            printf -v "$target_name" '%s' "$candidate"
+            return 0
+        fi
+        if [ "$exact_requested" = true ] && semantic_version_is_valid "$candidate" &&
+            [ "$(compare_semantic_versions "$candidate" "$current")" != '-1' ] &&
+            registry_verify_tag "$repository" "$candidate" >/dev/null; then
+            printf -v "$target_name" '%s' "$candidate"
+            return 0
+        fi
+        echo "[WARN] ${candidate} is not a published version for ${label}."
+    done
+}
+
+# ------------------------------------------------------------------------------
 # versioned_test_tag_is_valid
 # ------------------------------------------------------------------------------
 # Checks an exact test-channel image tag. The mutable latest-test alias is

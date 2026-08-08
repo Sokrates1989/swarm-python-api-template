@@ -409,6 +409,7 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertIn("registry_test_tags", test_channel)
         self.assertIn("registry_verify_tag", actions)
         self.assertIn("highest published stable version", actions)
+        self.assertIn("select_published_semver", actions)
         self.assertIn("Application image channel", actions)
         self.assertIn("MAJOR.MINOR.PATCH-test", test_channel)
         self.assertNotIn("select_semantic_version", actions)

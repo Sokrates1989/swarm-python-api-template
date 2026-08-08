@@ -200,8 +200,9 @@ prompt_deployment_value() {
 # ------------------------------------------------------------------------------
 # prompt_deployment_choice
 # ------------------------------------------------------------------------------
-# Renders a numbered choice menu and assigns the selected stable value. Choice
-# labels are presentation only; renderer adapters receive the stable value.
+# Renders a numbered choice menu and assigns the selected stable value. A
+# one-character stable value is also rendered and accepted as a named shortcut.
+# Choice labels are presentation only; renderer adapters receive stable values.
 #
 # Arguments:
 #   $1 - Target variable name.
@@ -210,7 +211,7 @@ prompt_deployment_value() {
 #   Remaining arguments - "stable-value|Operator-facing label" pairs.
 #
 # Returns:
-#   0 after a valid numbered answer is assigned.
+#   0 after a valid numbered or named answer is assigned.
 # ------------------------------------------------------------------------------
 prompt_deployment_choice() {
     local target_name="$1"
@@ -224,6 +225,7 @@ prompt_deployment_choice() {
     local value=""
     local display=""
     local answer=""
+    local rendered_key=""
 
     if [ "${#choices[@]}" -eq 0 ]; then
         echo "[ERROR] ${label} has no allowed choices." >&2
@@ -240,7 +242,9 @@ prompt_deployment_choice() {
         if [ "$value" = "$default_value" ]; then
             default_number=$((index + 1))
         fi
-        echo "  $((index + 1))) ${display}"
+        rendered_key="$((index + 1))"
+        [ "${#value}" -ne 1 ] || rendered_key+="/${value}"
+        echo "  ${rendered_key}) ${display}"
     done
     echo ""
 
@@ -254,7 +258,14 @@ prompt_deployment_choice() {
             printf -v "$target_name" '%s' "${pair%%|*}"
             return 0
         fi
-        echo "Invalid choice: '${answer}'. Please enter a number between 1 and ${#choices[@]}."
+        for pair in "${choices[@]}"; do
+            value="${pair%%|*}"
+            if [ "${answer,,}" = "${value,,}" ]; then
+                printf -v "$target_name" '%s' "$value"
+                return 0
+            fi
+        done
+        echo "Invalid choice: '${answer}'. Use a listed number or named key."
     done
 }
 
