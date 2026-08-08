@@ -337,33 +337,95 @@ manage_infrastructure_image_updates() {
     _review_infrastructure_update_record "$selected"
 }
 
-# manage_ignored_infrastructure_updates
-# Lists exact-digest snoozes and allows one reminder to be restored.
-manage_ignored_infrastructure_updates() {
+# _load_ignored_infrastructure_records
+# Loads exact-digest reminder snoozes without changing their state.
+#
+# Arguments:
+#   $1 - Caller-owned record array variable.
+#   $2 - Caller-owned status-message variable used when no records exist.
+_load_ignored_infrastructure_records() {
+    local records_target_name="$1"
+    local status_target_name="$2"
+    local -n records_target="$records_target_name"
+    local -n status_target="$status_target_name"
     local python_command=""
     local output=""
-    local records=()
-    local record=""
-    local identifier label digest reason
-    local choice=""
-    local index=0
 
+    records_target=()
+    status_target=""
     python_command="$(_image_audit_python)" || return 1
     output="$("$python_command" "$(_infrastructure_image_tool)" list-ignores \
         --cache "$(_image_audit_cache)")" || return 1
     if [[ "$output" != *'|'* ]]; then
-        printf '%s\n' "$output"
+        status_target="${output:-[OK] No ignored infrastructure update reminders.}"
         return 0
     fi
-    mapfile -t records <<< "$output"
+    mapfile -t records_target <<< "$output"
+}
+
+# _print_ignored_infrastructure_records
+# Renders caller-provided reminder records in a human-readable list.
+#
+# Arguments:
+#   $1 - Source record array variable.
+_print_ignored_infrastructure_records() {
+    local source_name="$1"
+    local -n source="$source_name"
+    local identifier label digest reason
+    local index=0
+
     echo ""
     echo "Ignored infrastructure reminders"
     echo "================================"
-    for index in "${!records[@]}"; do
-        IFS='|' read -r identifier label digest reason <<< "${records[$index]}"
+    for index in "${!source[@]}"; do
+        IFS='|' read -r identifier label digest reason <<< "${source[$index]}"
         echo "  $((index + 1))) ${label}: $(_short_infrastructure_digest "$digest")"
         echo "      Reason: ${reason}"
     done
+}
+
+# show_ignored_infrastructure_updates
+# Shows exact-digest reminder snoozes without offering a restore mutation.
+show_ignored_infrastructure_updates() {
+    local records=()
+    local status_message=""
+
+    _load_ignored_infrastructure_records records status_message || return 1
+    if [ "${#records[@]}" -eq 0 ]; then
+        printf '%s\n' "$status_message"
+        return 0
+    fi
+    _print_ignored_infrastructure_records records
+}
+
+# run_infrastructure_image_read_only_review
+# Runs version/update inventory and ignored-reminder review without mutations.
+#
+# Returns:
+#   0 when both checks succeed; otherwise 1 after attempting both checks.
+run_infrastructure_image_read_only_review() {
+    local status=0
+
+    show_infrastructure_image_inventory || status=1
+    show_ignored_infrastructure_updates || status=1
+    return "$status"
+}
+
+# manage_ignored_infrastructure_updates
+# Lists exact-digest snoozes and allows one reminder to be restored.
+manage_ignored_infrastructure_updates() {
+    local python_command=""
+    local records=()
+    local status_message=""
+    local identifier=""
+    local choice=""
+
+    _load_ignored_infrastructure_records records status_message || return 1
+    if [ "${#records[@]}" -eq 0 ]; then
+        printf '%s\n' "$status_message"
+        return 0
+    fi
+    _print_ignored_infrastructure_records records
     echo "  0) Back"
     _infrastructure_read "Restore which reminder [0]: " choice
     choice="${choice:-0}"
@@ -372,6 +434,7 @@ manage_ignored_infrastructure_updates() {
         return 0
     fi
     identifier="${records[$((choice - 1))]%%|*}"
+    python_command="$(_image_audit_python)" || return 1
     "$python_command" "$(_infrastructure_image_tool)" clear-ignore \
         --cache "$(_image_audit_cache)" --id "$identifier"
 }

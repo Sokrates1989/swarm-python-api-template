@@ -435,13 +435,20 @@ run_base_image_recommendations() {
 # ------------------------------------------------------------------------------
 # run_complete_image_audit
 # ------------------------------------------------------------------------------
-# Runs registry, vulnerability, and base-image checks in one explicit action.
+# Runs the read-only portions of all four menu areas in one explicit action.
+# Infrastructure update application and ignore changes remain available only
+# through their separately selected maintenance menu.
 #
 # Returns:
 #   0 after all best-effort checks have run.
 # ------------------------------------------------------------------------------
 run_complete_image_audit() {
     run_registry_image_audit || true
+    if declare -F run_infrastructure_image_read_only_review >/dev/null 2>&1; then
+        run_infrastructure_image_read_only_review || true
+    else
+        echo "[WARN] Infrastructure image review is unavailable in this deployment."
+    fi
     run_image_security_scan || true
     run_base_image_recommendations || true
 }
@@ -458,35 +465,44 @@ run_image_audit_menu() {
         echo ""
         echo "Image Updates and Security"
         echo "=========================="
-        echo "Inventory and maintenance:"
+        echo "Read-only checks:"
         echo "  1) Check registry freshness and tracked infrastructure digests"
-        echo "  2) Infrastructure versions, compatible updates, and ignores"
-        echo ""
-        echo "Security:"
+        echo "  2) Check infrastructure versions, compatible updates, and ignored reminders"
         echo "  3) Scan deployed/configured images for fixable HIGH/CRITICAL CVEs"
         echo "  4) Check application base-image refresh/update recommendations"
-        echo "  5) Run the complete image audit"
+        echo "  5) Run all checks above (1-4; read-only) [recommended]"
+        echo ""
+        echo "Maintenance (can change deployment or ignore state):"
+        echo "  m) Manage infrastructure updates and ignored reminders"
         echo "  0) Back"
         echo ""
         if [[ -r /dev/tty ]]; then
-            read -r -p "Your choice (0-5): " choice < /dev/tty
+            read -r -p "Your choice (0-5, m) [5]: " choice < /dev/tty
         else
-            read -r -p "Your choice (0-5): " choice
+            read -r -p "Your choice (0-5, m) [5]: " choice
         fi
+        choice="${choice:-5}"
         case "$choice" in
             1) run_registry_image_audit || true ;;
             2)
-                if declare -F run_infrastructure_image_menu >/dev/null 2>&1; then
-                    run_infrastructure_image_menu
+                if declare -F run_infrastructure_image_read_only_review >/dev/null 2>&1; then
+                    run_infrastructure_image_read_only_review || true
                 else
-                    echo "[ERROR] Infrastructure image actions are unavailable."
+                    echo "[ERROR] Infrastructure image review is unavailable."
                 fi
                 ;;
             3) run_image_security_scan || true ;;
             4) run_base_image_recommendations || true ;;
             5) run_complete_image_audit ;;
+            m|M)
+                if declare -F run_infrastructure_image_menu >/dev/null 2>&1; then
+                    run_infrastructure_image_menu
+                else
+                    echo "[ERROR] Infrastructure image maintenance is unavailable."
+                fi
+                ;;
             0) return 0 ;;
-            *) echo "[WARN] Choose a value from 0 through 5." ;;
+            *) echo "[WARN] Choose a value from 0 through 5, or m." ;;
         esac
     done
 }

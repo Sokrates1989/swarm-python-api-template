@@ -100,6 +100,37 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertIn("_apply_profile_environment_update", adapter)
         self.assertIn("menu-infrastructure-images.sh", handlers)
 
+    def test_complete_audit_defaults_to_every_read_only_check(self) -> None:
+        """Keep Enter safe, comprehensive, and distinct from maintenance.
+
+        Returns:
+            Nothing.
+        """
+
+        audit = IMAGE_AUDIT.read_text(encoding="utf-8")
+        infrastructure = INFRASTRUCTURE_IMAGES.read_text(encoding="utf-8")
+        complete_start = audit.index("run_complete_image_audit()")
+        complete_end = audit.index("# run_image_audit_menu", complete_start)
+        complete = audit[complete_start:complete_end]
+
+        self.assertIn("Read-only checks:", audit)
+        self.assertIn("Run all checks above (1-4; read-only)", audit)
+        self.assertIn("Maintenance (can change deployment or ignore state):", audit)
+        self.assertIn("Your choice (0-5, m) [5]:", audit)
+        self.assertIn('choice="${choice:-5}"', audit)
+        self.assertIn("2) Check infrastructure versions", audit)
+        self.assertIn("m) Manage infrastructure updates", audit)
+        for function_name in (
+            "run_registry_image_audit",
+            "run_infrastructure_image_read_only_review",
+            "run_image_security_scan",
+            "run_base_image_recommendations",
+        ):
+            self.assertIn(function_name, complete)
+        self.assertNotIn("run_infrastructure_image_menu", complete)
+        self.assertIn("show_infrastructure_image_inventory", infrastructure)
+        self.assertIn("show_ignored_infrastructure_updates", infrastructure)
+
     def test_release_coordination_metadata_is_generic_and_complete(self) -> None:
         """Accept one app-neutral monotonic component catalog.
 
