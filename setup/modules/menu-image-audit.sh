@@ -150,6 +150,27 @@ registry_stable_tags() {
 }
 
 # ------------------------------------------------------------------------------
+# registry_test_tags
+# ------------------------------------------------------------------------------
+# Enumerates real versioned test tags for one repository while excluding the
+# mutable latest-test alias and every nonconforming prerelease.
+#
+# Arguments:
+#   $1 - Docker repository without tag.
+#
+# Output:
+#   Descending MAJOR.MINOR.PATCH-test tags, one per line.
+# ------------------------------------------------------------------------------
+registry_test_tags() {
+    local repository="$1"
+    local python_command=""
+
+    python_command="$(_image_audit_python)" || return 1
+    "$python_command" "$(_image_audit_tool)" test-tags \
+        --repository "$repository"
+}
+
+# ------------------------------------------------------------------------------
 # registry_verify_tag
 # ------------------------------------------------------------------------------
 # Verifies that one exact tag exists and declares linux/amd64 support.

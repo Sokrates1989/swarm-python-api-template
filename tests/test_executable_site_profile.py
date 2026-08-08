@@ -210,6 +210,45 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertNotIn("memory:", stack)
         validate_rendered_stack(stack, profile)
 
+    def test_deployment_environment_accepts_only_exact_versioned_test_tags(
+        self,
+    ) -> None:
+        """Allow test checkouts while rejecting mutable registry aliases.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "IMAGE_VERSION": "1.0.9-test",
+                "WEB_IMAGE_VERSION": "1.1.0-test",
+            },
+        )
+
+        self.assertEqual(
+            profile.image_reference,
+            "sokrates1989/python-api-felix:1.0.9-test",
+        )
+        self.assertEqual(
+            profile.web_image_reference,
+            "sokrates1989/flutter-felix-web:1.1.0-test",
+        )
+
+        self._write_config("felix", self.felix_config)
+        with self.assertRaisesRegex(
+            ExecutableProfileError,
+            "mutable latest aliases are forbidden",
+        ):
+            write_deployment_env(
+                self.root,
+                "felix",
+                {"WEB_IMAGE_VERSION": "latest-test"},
+                force=True,
+            )
+
     def test_infrastructure_digest_overrides_render_without_profile_mutation(
         self,
     ) -> None:

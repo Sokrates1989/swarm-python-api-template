@@ -48,6 +48,9 @@ MENU_RUNTIME_ACTIONS = (
 IMAGE_ACTIONS = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu-image-actions.sh"
 )
+TEST_IMAGE_CHANNEL = (
+    REPOSITORY_ROOT / "setup" / "modules" / "menu-image-test-channel.sh"
+)
 IMAGE_TRANSACTION = (
     REPOSITORY_ROOT / "setup" / "modules" / "menu-image-transaction.sh"
 )
@@ -399,11 +402,15 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         """
 
         actions = IMAGE_ACTIONS.read_text(encoding="utf-8")
+        test_channel = TEST_IMAGE_CHANNEL.read_text(encoding="utf-8")
         overview = MENU_OVERVIEW.read_text(encoding="utf-8")
 
         self.assertIn("registry_stable_tags", actions)
+        self.assertIn("registry_test_tags", test_channel)
         self.assertIn("registry_verify_tag", actions)
         self.assertIn("highest published stable version", actions)
+        self.assertIn("Application image channel", actions)
+        self.assertIn("MAJOR.MINOR.PATCH-test", test_channel)
         self.assertNotIn("select_semantic_version", actions)
         self.assertNotIn("below the", overview.lower())
         self.assertIn("minimum for next release", overview)
@@ -567,6 +574,38 @@ printf '%s\n' "${{IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}}"
         self.assertIn("IMAGE_VERSION=1.0.7", completed.stdout)
         self.assertIn("WEB_IMAGE_VERSION=1.0.8", completed.stdout)
 
+    def test_test_channel_uses_each_repository_highest_exact_test_tag(self) -> None:
+        """Select versioned test tags and never persist latest-test.
+
+        Returns:
+            Nothing.
+        """
+
+        script = f"""
+source {bash_quote(PROFILE_PROMPTS)}
+source {bash_quote(IMAGE_ACTIONS)}
+registry_test_tags() {{
+    case "$1" in
+        registry/backend) printf '%s\n' 1.0.9-test 1.0.8-test ;;
+        registry/web) printf '%s\n' 1.1.0-test 1.0.8-test ;;
+    esac
+}}
+registry_verify_tag() {{ printf '{{"digest":"sha256:test","platformVerified":true}}\n'; }}
+IMAGE_UPDATE_CHANNEL=test
+IMAGE_UPDATE_SELECTED_RECORDS=(
+  'primary|Backend API|api|IMAGE_NAME|IMAGE_VERSION|registry/backend|1.0.8'
+  'web|WebApp|web|WEB_IMAGE_NAME|WEB_IMAGE_VERSION|registry/web|1.0.8'
+)
+_prepare_release_image_updates
+printf '%s\n' "${{IMAGE_UPDATE_ENV_ASSIGNMENTS[@]}}"
+"""
+        completed = run_bash(script, input_text="\n\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("IMAGE_VERSION=1.0.9-test", completed.stdout)
+        self.assertIn("WEB_IMAGE_VERSION=1.1.0-test", completed.stdout)
+        self.assertNotIn("IMAGE_VERSION=latest-test", completed.stdout)
+
     def test_web_only_update_renders_deploys_and_verifies(self) -> None:
         """Update only WebApp through one automatic accepted deployment.
 
@@ -629,7 +668,7 @@ manage_service_images
 """
             completed = run_bash(
                 script,
-                input_text="2\n\n\n\n",
+                input_text="1\n2\n\n\n\n",
             )
             updated = environment.read_text(encoding="utf-8")
 

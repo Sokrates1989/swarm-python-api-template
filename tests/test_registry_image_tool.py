@@ -35,6 +35,7 @@ from registry_image_tool import (  # noqa: E402
     cache_summary,
     normalize_repository,
     stable_tags,
+    versioned_test_tags,
     write_cache,
 )
 from terminal_status import colorize_status_text, print_status  # noqa: E402
@@ -127,6 +128,29 @@ class RegistryImageToolTests(unittest.TestCase):
         ]
 
         self.assertEqual(stable_tags(values), ["1.0.10", "1.0.7", "0.9.9"])
+
+    def test_versioned_test_tags_exclude_aliases_and_other_prereleases(
+        self,
+    ) -> None:
+        """Sort only exact test-channel tags and exclude latest-test.
+
+        Returns:
+            Nothing.
+        """
+
+        values = [
+            "latest-test",
+            "1.0.7-test",
+            "1.0.10-test",
+            "1.1.0-rc.1",
+            "1.0.10",
+            "v2.0.0-test",
+        ]
+
+        self.assertEqual(
+            versioned_test_tags(values),
+            ["1.0.10-test", "1.0.7-test"],
+        )
 
     def test_docker_hub_repository_normalization_uses_library_namespace(
         self,

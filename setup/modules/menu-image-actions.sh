@@ -25,6 +25,7 @@ _MENU_IMAGE_ACTIONS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_MENU_IMAGE_ACTIONS_DIR}/semantic-version.sh"
 source "${_MENU_IMAGE_ACTIONS_DIR}/deployment-environment-format.sh"
 source "${_MENU_IMAGE_ACTIONS_DIR}/menu-image-transaction.sh"
+source "${_MENU_IMAGE_ACTIONS_DIR}/menu-image-test-channel.sh"
 
 # ------------------------------------------------------------------------------
 # _primary_release_image_label
@@ -81,6 +82,32 @@ _managed_release_image_records() {
             "$WEB_IMAGE_NAME" \
             "${WEB_IMAGE_VERSION:-latest}"
     fi
+}
+
+# ------------------------------------------------------------------------------
+# _select_image_update_channel
+# ------------------------------------------------------------------------------
+# Require an explicit stable/test choice before service scope or registry tag
+# selection. This prevents a production checkout from following test aliases by
+# accident while allowing a separate test checkout to opt in deliberately.
+#
+# Returns:
+#   0 after setting IMAGE_UPDATE_CHANNEL; otherwise 1 on Back.
+# ------------------------------------------------------------------------------
+_select_image_update_channel() {
+    local selection=""
+
+    prompt_deployment_choice \
+        selection \
+        'Application image channel' \
+        'stable' \
+        'stable|Stable release images (unsuffixed MAJOR.MINOR.PATCH tags)' \
+        'test|Newest test images (exact MAJOR.MINOR.PATCH-test tags)' \
+        'cancel|Back without changes'
+    case "$selection" in
+        stable|test) IMAGE_UPDATE_CHANNEL="$selection" ;;
+        *) return 1 ;;
+    esac
 }
 
 # ------------------------------------------------------------------------------
@@ -453,7 +480,11 @@ _prepare_release_image_updates() {
         IMAGE_UPDATE_SELECTED_CURRENTS+=("$current_version")
         IMAGE_UPDATE_SELECTED_LABELS+=("$label")
     done
-    _select_release_image_versions || return 1
+    if [ "${IMAGE_UPDATE_CHANNEL:-stable}" = "test" ]; then
+        _select_highest_test_image_versions || return 1
+    else
+        _select_release_image_versions || return 1
+    fi
     IMAGE_UPDATE_ENV_ASSIGNMENTS=()
     IMAGE_UPDATE_VERIFICATION_EVIDENCE=()
     for index in "${!IMAGE_UPDATE_SELECTED_RECORDS[@]}"; do
@@ -490,6 +521,11 @@ _show_release_image_update_plan() {
     echo "-------------------------"
     echo "Profile: ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-unknown}}"
     echo "Stack:   ${STACK_NAME}"
+    if [ "${IMAGE_UPDATE_CHANNEL:-stable}" = "test" ]; then
+        echo "Channel: test (exact versioned tags; latest-test is never deployed)"
+    else
+        echo "Channel: stable (unsuffixed tags only)"
+    fi
     for index in "${!IMAGE_UPDATE_SELECTED_RECORDS[@]}"; do
         record="${IMAGE_UPDATE_SELECTED_RECORDS[$index]}"
         IFS='|' read -r _ label _ _ _ repository version <<< "$record"
@@ -505,8 +541,8 @@ _show_release_image_update_plan() {
 # ------------------------------------------------------------------------------
 # manage_service_images
 # ------------------------------------------------------------------------------
-# Runs the complete active-profile image selection, version, confirmation,
-# render, deployment, and health workflow used by the stable ``i`` shortcut.
+# Runs the complete active-profile channel, image, confirmation, render,
+# deployment, and health workflow used by the ``i`` shortcut.
 #
 # Returns:
 #   0 after success or a no-op; 1 on cancellation or failure.
@@ -526,11 +562,15 @@ manage_service_images() {
     echo "Change service image configuration"
     echo "=================================="
     echo "Active profile: ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-unknown}}"
-    echo "Application choices come from real registry tags and are verified for"
-    echo "linux/amd64 before configuration changes. Infrastructure pins are"
+    echo "Stable and test channels are separate. Test mode installs each selected"
+    echo "service's newest exact MAJOR.MINOR.PATCH-test tag; latest-test is never"
+    echo "deployment evidence. Every choice is verified for linux/amd64 before"
+    echo "configuration changes. Infrastructure pins are"
     echo "reviewed separately through the image-audit menu (shortcut a)."
+    _select_image_update_channel || return 1
     _select_release_image_scope "${records[@]}" || return 1
-    if [ -n "${APP_RELEASE_VERSION_FLOOR:-}" ]; then
+    if [ "${IMAGE_UPDATE_CHANNEL}" = "stable" ] &&
+        [ -n "${APP_RELEASE_VERSION_FLOOR:-}" ]; then
         echo "Next new-artifact minimum: ${APP_RELEASE_VERSION_FLOOR}"
         echo "This build/publish policy is informational here; it is not deployment drift."
     fi

@@ -3,8 +3,9 @@
 # semantic-version.sh - Shared stable semantic-version helpers
 # ==============================================================================
 #
-# Validates, compares, and resolves stable MAJOR.MINOR.PATCH versions. Registry
-# discovery owns deployment choices; this module never invents an image tag.
+# Validates, compares, and resolves stable MAJOR.MINOR.PATCH versions and exact
+# MAJOR.MINOR.PATCH-test deployment tags. Registry discovery owns deployment
+# choices; this module never invents an unpublished image tag.
 # ==============================================================================
 
 # Guard against multiple sourcing.
@@ -103,4 +104,82 @@ highest_semantic_version() {
     done
     [ -n "$highest" ] || return 1
     printf '%s' "$highest"
+}
+
+# ------------------------------------------------------------------------------
+# versioned_test_tag_is_valid
+# ------------------------------------------------------------------------------
+# Checks an exact test-channel image tag. The mutable latest-test alias is
+# deliberately not a deployable version.
+#
+# Arguments:
+#   $1 - Candidate image tag.
+#
+# Returns:
+#   0 for strict MAJOR.MINOR.PATCH-test syntax; otherwise 1.
+# ------------------------------------------------------------------------------
+versioned_test_tag_is_valid() {
+    local tag="$1"
+
+    [[ "$tag" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-test$ ]]
+}
+
+# ------------------------------------------------------------------------------
+# versioned_test_tag_base
+# ------------------------------------------------------------------------------
+# Removes the fixed test suffix after validating the exact tag.
+#
+# Arguments:
+#   $1 - Candidate MAJOR.MINOR.PATCH-test tag.
+#
+# Output:
+#   Stable semantic base version.
+#
+# Returns:
+#   0 when valid; otherwise 1.
+# ------------------------------------------------------------------------------
+versioned_test_tag_base() {
+    local tag="$1"
+
+    versioned_test_tag_is_valid "$tag" || return 1
+    printf '%s' "${tag%-test}"
+}
+
+# ------------------------------------------------------------------------------
+# highest_versioned_test_tag
+# ------------------------------------------------------------------------------
+# Resolves the greatest exact versioned test tag by comparing its numeric base.
+#
+# Arguments:
+#   All arguments are candidate registry tags.
+#
+# Output:
+#   Greatest MAJOR.MINOR.PATCH-test tag.
+#
+# Returns:
+#   0 when at least one valid tag exists; otherwise 1.
+# ------------------------------------------------------------------------------
+highest_versioned_test_tag() {
+    local highest_tag=""
+    local highest_base=""
+    local candidate=""
+    local candidate_base=""
+    local comparison=""
+
+    for candidate in "$@"; do
+        candidate_base="$(versioned_test_tag_base "$candidate")" || continue
+        if [ -z "$highest_tag" ]; then
+            highest_tag="$candidate"
+            highest_base="$candidate_base"
+            continue
+        fi
+        comparison="$(compare_semantic_versions "$candidate_base" "$highest_base")" ||
+            return 1
+        if [ "$comparison" = "1" ]; then
+            highest_tag="$candidate"
+            highest_base="$candidate_base"
+        fi
+    done
+    [ -n "$highest_tag" ] || return 1
+    printf '%s' "$highest_tag"
 }

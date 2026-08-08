@@ -130,12 +130,15 @@ transaction described below. A stopped stack is validated and rendered but
 not started implicitly; a running stack is redeployed and health-checked.
 
 `menu-image-actions.sh` reads application-image capabilities from the active
-profile and saved root environment. It lets the operator choose one release
-service or all release services, but it never synthesizes a deployment tag
-from the next-release minimum. `scripts/registry_image_tool.py` enumerates real stable OCI
-registry tags; selected exact tags are resolved to digests and must declare
-`linux/amd64`. All-service mode can choose each repository's own highest tag or
-their highest common tag. `menu-image-transaction.sh` stages the public `.env`,
+profile and saved root environment. It first separates stable release images
+from test profile images, then lets the operator choose one service or all
+services. It never synthesizes a deployment tag from the next-release minimum.
+`scripts/registry_image_tool.py` enumerates real stable OCI tags and strict
+`MAJOR.MINOR.PATCH-test` tags. `menu-image-test-channel.sh` selects the highest
+exact test tag for each chosen repository and excludes `latest-test`. Selected
+exact tags are resolved to digests and must declare `linux/amd64`. Stable
+all-service mode can choose each repository's own highest tag or their highest
+common tag. `menu-image-transaction.sh` stages the public `.env`,
 rebuilds through `scripts/build-site-stack.sh`, and calls the common
 deploy/health boundary after a single Enter-default confirmation.
 Pre-deployment failures restore the old `.env` and generated stack.

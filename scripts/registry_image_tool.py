@@ -3,8 +3,9 @@ Module: registry_image_tool.py
 
 Description:
     Provides registry-backed Docker image discovery for the Swarm operator
-    menus. Stable application tags are enumerated through the OCI Distribution
-    API, exact selections are resolved to immutable digests and verified for a
+    menus. Stable and exact versioned-test application tags are enumerated
+    through the OCI Distribution API, exact selections are resolved to
+    immutable digests and verified for a
     requested platform, and tracked infrastructure tags are compared with
     deployed or profile-pinned digests. The module also owns the small ignored
     cache used by menu overviews; it never mutates deployment configuration.
@@ -39,6 +40,11 @@ from terminal_status import colorize_status_text
 SEMVER_PATTERN = re.compile(r"^(?P<major>0|[1-9][0-9]*)\."
                             r"(?P<minor>0|[1-9][0-9]*)\."
                             r"(?P<patch>0|[1-9][0-9]*)$")
+TEST_SEMVER_PATTERN = re.compile(
+    r"^(?P<major>0|[1-9][0-9]*)\."
+    r"(?P<minor>0|[1-9][0-9]*)\."
+    r"(?P<patch>0|[1-9][0-9]*)-test$"
+)
 DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 MANIFEST_ACCEPT = ", ".join(
     (
@@ -143,6 +149,42 @@ def stable_tags(values: Iterable[str]) -> list[str]:
 
     unique = {value for value in values if semver_key(value) is not None}
     return sorted(unique, key=lambda value: (semver_key(value), value), reverse=True)
+
+
+def test_semver_key(value: str) -> tuple[int, int, int] | None:
+    """Parse one exact versioned test tag.
+
+    Args:
+        value: Candidate ``MAJOR.MINOR.PATCH-test`` tag.
+
+    Returns:
+        Numeric base-version tuple, or ``None`` for aliases, stable tags, and
+        other prerelease names.
+    """
+
+    match = TEST_SEMVER_PATTERN.fullmatch(value)
+    if match is None:
+        return None
+    return tuple(int(match.group(name)) for name in ("major", "minor", "patch"))
+
+
+def versioned_test_tags(values: Iterable[str]) -> list[str]:
+    """Return exact versioned test tags in descending numeric order.
+
+    Args:
+        values: Registry tag strings.
+
+    Returns:
+        Deduplicated ``MAJOR.MINOR.PATCH-test`` tags. Mutable aliases such as
+        ``latest-test`` are always excluded.
+    """
+
+    unique = {value for value in values if test_semver_key(value) is not None}
+    return sorted(
+        unique,
+        key=lambda value: (test_semver_key(value), value),
+        reverse=True,
+    )
 
 
 def normalize_repository(value: str) -> RepositoryLocation:
@@ -488,6 +530,23 @@ def enumerate_stable_tags(repository: str) -> list[str]:
     return stable_tags(DistributionClient(location).tags())
 
 
+def enumerate_test_tags(repository: str) -> list[str]:
+    """Enumerate exact versioned test tags for one repository.
+
+    Args:
+        repository: Docker repository without a tag.
+
+    Returns:
+        ``MAJOR.MINOR.PATCH-test`` tags from highest to lowest.
+
+    Raises:
+        RegistryToolError: If public tag enumeration is unavailable.
+    """
+
+    location = normalize_repository(repository)
+    return versioned_test_tags(DistributionClient(location).tags())
+
+
 def parse_record(value: str) -> AuditRecord:
     """Parse one shell-safe pipe-delimited audit record.
 
@@ -796,6 +855,21 @@ def _command_stable_tags(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _command_test_tags(arguments: argparse.Namespace) -> int:
+    """Execute the versioned test-tags CLI command.
+
+    Args:
+        arguments: Parsed command arguments.
+
+    Returns:
+        Process exit status.
+    """
+
+    for tag in enumerate_test_tags(arguments.repository):
+        print(tag)
+    return 0
+
+
 def _command_verify(arguments: argparse.Namespace) -> int:
     """Execute exact tag/digest/platform verification.
 
@@ -867,6 +941,10 @@ def build_parser() -> argparse.ArgumentParser:
     tags_parser = commands.add_parser("stable-tags")
     tags_parser.add_argument("--repository", required=True)
     tags_parser.set_defaults(handler=_command_stable_tags)
+
+    test_tags_parser = commands.add_parser("test-tags")
+    test_tags_parser.add_argument("--repository", required=True)
+    test_tags_parser.set_defaults(handler=_command_test_tags)
 
     verify_parser = commands.add_parser("verify")
     verify_parser.add_argument("--repository", required=True)

@@ -193,6 +193,14 @@ or their highest common stable tag, and verifies exact manual input. This
 metadata is application-neutral and `_template.json` demonstrates the contract
 for new stacks.
 
+The deployment-instance root `.env` may select either an unsuffixed stable
+`MAJOR.MINOR.PATCH` application image or an exact
+`MAJOR.MINOR.PATCH-test` image. The tracked site-profile defaults and release
+minimum remain stable SemVer only. The shared `i` menu keeps these channels
+separate: test mode resolves the independently highest versioned test tag for
+the chosen services, verifies its digest/platform, and never persists
+`latest-test`.
+
 Release image tags must be semantic versions. Infrastructure images must be
 registry-digest pinned and paired with an explicit comparison channel:
 `database.imageTrackTag`, `database.pgadminImageTrackTag`, or

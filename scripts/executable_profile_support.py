@@ -26,6 +26,10 @@ NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 SEMVER_PATTERN = re.compile(
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
 )
+TEST_IMAGE_VERSION_PATTERN = re.compile(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)-test"
+)
 IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9._/-]*")
 DIGEST_IMAGE_PATTERN = re.compile(
     r"[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}"
@@ -663,6 +667,7 @@ __all__ = [
     "OPERATIONAL_DEPLOYMENT_KEYS",
     "SECRET_PATTERN",
     "SEMVER_PATTERN",
+    "TEST_IMAGE_VERSION_PATTERN",
     "config_path",
     "fixed_deployment_values",
     "immutable_deployment_values",

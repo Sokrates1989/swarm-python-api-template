@@ -39,6 +39,7 @@ from executable_profile_support import (
     MEMORY_PATTERN,
     NAME_PATTERN,
     SEMVER_PATTERN,
+    TEST_IMAGE_VERSION_PATTERN,
     ExecutableProfileError,
     KEYCLOAK_EMAIL_SENDER_ENV_KEYS,
     KEYCLOAK_LOCALIZATION_ENV_KEYS,
@@ -726,9 +727,14 @@ def validate_deployment(
                 f".env {key} must match site-config value {expected!r}."
             )
     for key in ("IMAGE_VERSION", "WEB_IMAGE_VERSION"):
-        if values[key] and not SEMVER_PATTERN.fullmatch(values[key]):
+        value = values[key]
+        if value and not (
+            SEMVER_PATTERN.fullmatch(value)
+            or TEST_IMAGE_VERSION_PATTERN.fullmatch(value)
+        ):
             raise ExecutableProfileError(
-                f".env {key} must be semantic version."
+                f".env {key} must be MAJOR.MINOR.PATCH or "
+                "MAJOR.MINOR.PATCH-test; mutable latest aliases are forbidden."
             )
     if values["PGADMIN_ENABLED"] not in {"true", "false"}:
         raise ExecutableProfileError(

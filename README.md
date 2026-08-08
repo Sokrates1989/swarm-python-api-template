@@ -360,7 +360,14 @@ minimum version allowed for the next newly produced artifact. It is not a
 deployed-state target, and deployed components below it are not stale merely
 because of the floor. Deployment freshness comes only from registry evidence.
 The image menu therefore never invents patch/minor/major tags; it offers real
-published stable tags and verifies every chosen tag before deployment.
+published stable tags and verifies every chosen tag before deployment. Its
+first submenu separates stable and test channels. Stable mode cannot see
+prerelease tags. Test mode installs each selected service's highest real
+`MAJOR.MINOR.PATCH-test` tag, records that exact tag in this checkout's `.env`,
+and uses the same render, deploy, health, and rollback transaction. The mutable
+`latest-test` alias is excluded from discovery and is never deployment evidence.
+This lets `/swarm/prod/<app>` remain stable while `/swarm/test/<app>` opts into
+test images without an app-specific branch.
 
 Schema-5 infrastructure remains digest-pinned. Each pin has an explicit audit
 channel such as `database.imageTrackTag: 16-alpine` or
