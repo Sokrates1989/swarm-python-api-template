@@ -86,13 +86,15 @@ through `WEB_PUSH_VAPID_PUBLIC_KEY_FILE` and
 `WEB_PUSH_DISPATCH_ENABLED=true` and uses the tracked
 `mailto:operations@fe-wi.com` VAPID subject.
 
-Create one P-256 VAPID key pair using a trusted Web Push tool such as
-`npx web-push generate-vapid-keys`. Put the URL-safe public and private values
-into the two exact-name Docker secrets through the shared profile secret
-workflow; never write either value to `.env` or commit it. Both values must
-come from the same generated pair. Re-rendering the stack after the secrets
-exist includes the mounts automatically. Deploying remains an explicit
-operator action.
+Run `./quick-start.sh` and select the dedicated Web Push VAPID setup action,
+or open `s) Manage Docker secrets` and select the VAPID key-pair action. The
+shared helper uses the host's `openssl` and `python3` to generate one P-256
+pair, then creates the exact-name public and private Docker secrets without
+displaying either value. Selecting either VAPID secret through the individual
+secret editor redirects to the same paired workflow so mismatched keys cannot
+be entered accidentally. Never write either value to `.env` or commit it.
+Re-rendering the stack after the secrets exist includes the mounts
+automatically. Deploying remains an explicit operator action.
 
 Browser activation is still user-controlled. The authenticated Felix PWA asks
 for notification permission, subscribes the active service worker with the

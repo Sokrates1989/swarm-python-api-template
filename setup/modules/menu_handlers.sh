@@ -140,6 +140,12 @@ show_main_menu() {
             MENU_SETUP_SECRETS=$MENU_NEXT
             MENU_NEXT=$((MENU_NEXT+1))
         fi
+        local MENU_VAPID_SETUP=""
+        if declare -F profile_supports_vapid_secret_setup >/dev/null 2>&1 &&
+            profile_supports_vapid_secret_setup; then
+            MENU_VAPID_SETUP=$MENU_NEXT
+            MENU_NEXT=$((MENU_NEXT+1))
+        fi
         local MENU_RESTORE_ENV=$MENU_NEXT
         MENU_NEXT=$((MENU_NEXT+1))
         local MENU_RESTORE_SECRETS="__disabled_restore_secrets"
@@ -213,6 +219,9 @@ show_main_menu() {
         echo "  ${MENU_SETUP_WIZARD}) Re-run setup wizard"
         if _profile_requires_secrets; then
             echo "  $(operator_menu_shortcut_key secrets)) Manage Docker secrets"
+        fi
+        if [ -n "$MENU_VAPID_SETUP" ]; then
+            echo "  ${MENU_VAPID_SETUP}) Generate or replace Web Push VAPID secrets"
         fi
         echo "  ${MENU_RESTORE_ENV}) Quick restore from saved .env"
         if [ "$MENU_RESTORE_SECRETS" != "__disabled_restore_secrets" ]; then
@@ -318,6 +327,14 @@ show_main_menu() {
             [ "$choice" = "$MENU_KEYCLOAK_BOOTSTRAP" ]; then
             if ! run_profile_keycloak_bootstrap; then
                 echo "[ERROR] Keycloak bootstrap did not complete."
+            fi
+            read -r -p "Press Enter to continue..."
+            continue
+        fi
+        if [ -n "$MENU_VAPID_SETUP" ] &&
+            [ "$choice" = "$MENU_VAPID_SETUP" ]; then
+            if ! run_profile_vapid_secret_setup; then
+                echo "[ERROR] Web Push VAPID setup did not complete."
             fi
             read -r -p "Press Enter to continue..."
             continue

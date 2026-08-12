@@ -105,7 +105,8 @@ verify_required_docker_secrets() {
     fi
     if [ "$missing_count" -gt 0 ]; then
         echo "[ERROR] ${missing_count} required Docker secret(s) are missing."
-        echo "        Open the secret menu or Keycloak bootstrap, then retry."
+        echo "        Open the secret menu and use its matching setup action,"
+        echo "        or use a dedicated setup action in the main menu."
         return 1
     fi
     echo "[OK] All ${secret_count} required Docker secret(s) exist."
@@ -257,6 +258,9 @@ _profile_secrets_use_exact_names() {
 
 # Batch file import is a separate profile-policy adapter.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/profile-secret-file-workflow.sh"
+
+# VAPID keys are generated and stored only as a matched profile-driven pair.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vapid-secrets.sh"
 
 # _profile_required_secret_names
 # Lists every active required secret declared by the selected site profile.
@@ -451,6 +455,11 @@ _create_profile_editor_secret() {
         echo "       profile-driven Keycloak bootstrap; manual entry is disabled."
         return 1
     fi
+    if _profile_secret_is_vapid "$secret_name"; then
+        echo "[INFO] VAPID keys must be generated and replaced as one pair."
+        run_profile_vapid_secret_setup
+        return $?
+    fi
     editor="$(_secret_editor)" || {
         echo "[ERROR] Install nano, vim, or vi for protected secret entry."
         return 1
@@ -526,20 +535,30 @@ _create_selected_profile_secret() {
 _manage_profile_docker_secrets() {
     local choice=""
     local keycloak_available="false"
+    local vapid_available="false"
     local next_choice=3
     local template_choice=""
+    local vapid_choice=""
     local keycloak_bootstrap_choice=""
     local keycloak_rotation_choice=""
     local list_choice=""
     local max_choice=""
     local keycloak_status=0
+    local vapid_status=0
 
     if declare -F profile_supports_keycloak_bootstrap >/dev/null 2>&1 &&
         profile_supports_keycloak_bootstrap; then
         keycloak_available="true"
     fi
+    if profile_supports_vapid_secret_setup; then
+        vapid_available="true"
+    fi
     if profile_supports_secret_file_workflow; then
         template_choice="$next_choice"
+        next_choice=$((next_choice + 1))
+    fi
+    if [ "$vapid_available" = "true" ]; then
+        vapid_choice="$next_choice"
         next_choice=$((next_choice + 1))
     fi
     if [ "$keycloak_available" = "true" ]; then
@@ -559,6 +578,9 @@ _manage_profile_docker_secrets() {
         if [ -n "$template_choice" ]; then
             echo "  ${template_choice}) Create all editable secrets from temporary secrets.env"
         fi
+        if [ -n "$vapid_choice" ]; then
+            echo "  ${vapid_choice}) Generate or replace the Web Push VAPID key pair"
+        fi
         if [ -n "$keycloak_bootstrap_choice" ]; then
             echo "  ${keycloak_bootstrap_choice}) Bootstrap/update Keycloak and create a missing client secret"
             echo "  ${keycloak_rotation_choice}) Rotate the Keycloak client Docker secret"
@@ -567,6 +589,9 @@ _manage_profile_docker_secrets() {
         echo "  0) Back"
         read -r -p "Secret choice (0-${max_choice}): " choice
         if [ "$choice" = "0" ]; then
+            if [ "$vapid_status" -ne 0 ]; then
+                return "$vapid_status"
+            fi
             return "$keycloak_status"
         elif [ "$choice" = "1" ]; then
             _create_selected_profile_secret required || true
@@ -576,6 +601,14 @@ _manage_profile_docker_secrets() {
             [ "$choice" = "$template_choice" ]; then
             create_profile_secrets_from_env_file \
                 "${PROJECT_ROOT}/secrets.env" || true
+        elif [ -n "$vapid_choice" ] &&
+            [ "$choice" = "$vapid_choice" ]; then
+            if run_profile_vapid_secret_setup; then
+                vapid_status=0
+            else
+                vapid_status=$?
+                echo "[ERROR] Web Push VAPID setup did not complete."
+            fi
         elif [ -n "$keycloak_bootstrap_choice" ] &&
             [ "$choice" = "$keycloak_bootstrap_choice" ]; then
             if run_profile_keycloak_bootstrap; then

@@ -29,7 +29,7 @@ In particular:
   version for the next build/publication; that minimum is not deployment
   freshness and this site profile is its single authority;
 - `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
-  secrets; and
+  secrets, including profile-discovered paired VAPID setup; and
 - `capabilities` contributes optional public environment and secret mounts.
 
 Felix therefore uses no special module. Its WebApp is simply
@@ -274,6 +274,16 @@ proves the confidential-client secret in Keycloak, stages a recovery Docker
 secret, and then replaces the exact declared Docker secret. Replacement
 failures retain and name the recovery object without printing its value.
 
+### `vapid-secrets.sh`
+
+Exposes Web Push key setup only when an exact-name profile has enabled secret
+mounts for both `WEB_PUSH_VAPID_PUBLIC_KEY_FILE` and
+`WEB_PUSH_VAPID_PRIVATE_KEY_FILE`. It generates one P-256 pair with the host's
+`openssl` and `python3`, validates its URL-safe encoding, and creates both
+Docker secrets from protected temporary files without logging key values.
+Existing pair members are replaced together after the same running-stack
+safety gate used by other immutable Docker-secret changes.
+
 ### `docker-secrets-menu.sh`
 
 Profiles with `secretsConfig.prefixed=false` use exact declared required,
@@ -282,7 +292,8 @@ manually importable secret receives a temporary `secrets.env` action. Shared
 templates are generated from `secretsConfig.valueHelp`; a declared specialized
 `secretsConfig.template` remains available for structured value shapes.
 Keycloak client secrets cannot be entered manually; that action routes to the
-shared Keycloak bootstrap.
+shared Keycloak bootstrap. VAPID pair members likewise route to the paired
+generator instead of accepting independent values.
 
 Profiles that keep `secretsConfig.prefixed=true` use the historical prefix
 adapter. Secret routing is profile-policy-driven, never schema-, renderer-, or
