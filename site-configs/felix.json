@@ -299,8 +299,12 @@
     "LOG_RESPONSE_BODY",
     "AI_CHAT_DEBUG_ENABLED",
     "AI_CHAT_DEBUG_INCLUDE_PROMPTS",
+    "WEB_PUSH_VAPID_SUBJECT",
+    "WEB_PUSH_DISPATCH_ENABLED",
     "DB_PASSWORD_FILE",
-    "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
+    "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE",
+    "WEB_PUSH_VAPID_PUBLIC_KEY_FILE",
+    "WEB_PUSH_VAPID_PRIVATE_KEY_FILE"
   ],
   "secrets": [
     "FELIX_DB_PASSWORD",
@@ -339,7 +343,7 @@
       ]
     },
     "webPush": {
-      "enabled": false,
+      "enabled": true,
       "environment": {
         "WEB_PUSH_VAPID_SUBJECT": "mailto:operations@fe-wi.com",
         "WEB_PUSH_DISPATCH_ENABLED": "true"

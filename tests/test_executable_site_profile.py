@@ -210,6 +210,39 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertNotIn("memory:", stack)
         validate_rendered_stack(stack, profile)
 
+    def test_felix_web_push_is_enabled_with_file_backed_vapid_keys(self) -> None:
+        """Render the complete Felix Web Push runtime contract by default.
+
+        Returns:
+            Nothing.
+        """
+
+        profile = self._configure("felix", self.felix_config)
+        stack = render_stack(profile)
+
+        self.assertEqual(
+            profile.environment["WEB_PUSH_VAPID_SUBJECT"],
+            "mailto:operations@fe-wi.com",
+        )
+        self.assertEqual(
+            profile.environment["WEB_PUSH_DISPATCH_ENABLED"],
+            "true",
+        )
+        mounts = {mount.env_key: mount for mount in profile.secret_mounts}
+        self.assertEqual(
+            mounts["WEB_PUSH_VAPID_PUBLIC_KEY_FILE"].target,
+            "/run/secrets/FELIX_WEB_PUSH_VAPID_PUBLIC_KEY",
+        )
+        self.assertEqual(
+            mounts["WEB_PUSH_VAPID_PRIVATE_KEY_FILE"].target,
+            "/run/secrets/FELIX_WEB_PUSH_VAPID_PRIVATE_KEY",
+        )
+        self.assertIn('source: "FELIX_WEB_PUSH_VAPID_PUBLIC_KEY"', stack)
+        self.assertIn('source: "FELIX_WEB_PUSH_VAPID_PRIVATE_KEY"', stack)
+        self.assertNotIn("WEB_PUSH_VAPID_PUBLIC_KEY:", stack)
+        self.assertNotIn("WEB_PUSH_VAPID_PRIVATE_KEY:", stack)
+        validate_rendered_stack(stack, profile)
+
     def test_deployment_environment_accepts_only_exact_versioned_test_tags(
         self,
     ) -> None:

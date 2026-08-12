@@ -18,6 +18,7 @@ Felix differs only through profile data:
   default; never `latest`);
 - Redis and local/external PostgreSQL;
 - optional pgAdmin;
+- VAPID-backed Web Push with durable scheduled dispatch;
 - Keycloak realm/client defaults `felix`, `felix-frontend`, and
   `felix-backend`, with protected legacy identity, selectable realm
   settings, application roles, and temporary test identities; and
@@ -72,6 +73,33 @@ PostgreSQL, Redis, and pgAdmin stay digest-pinned. Their adjacent track tags
 (`16-alpine`, `7-alpine`, and `latest`) let the shared `a` audit report whether
 the pinned digest differs from the selected registry channel without applying
 an infrastructure update or inferring a database major upgrade.
+
+## Web Push
+
+The Felix profile enables its `webPush` capability because the shipped Flutter
+PWA, Felix API, and API worker already implement the full browser subscription
+and scheduled-delivery path. The shared renderer therefore mounts the matching
+`FELIX_WEB_PUSH_VAPID_PUBLIC_KEY` and
+`FELIX_WEB_PUSH_VAPID_PRIVATE_KEY` Docker secrets and supplies their file paths
+through `WEB_PUSH_VAPID_PUBLIC_KEY_FILE` and
+`WEB_PUSH_VAPID_PRIVATE_KEY_FILE`. It also enables durable dispatch with
+`WEB_PUSH_DISPATCH_ENABLED=true` and uses the tracked
+`mailto:operations@fe-wi.com` VAPID subject.
+
+Create one P-256 VAPID key pair using a trusted Web Push tool such as
+`npx web-push generate-vapid-keys`. Put the URL-safe public and private values
+into the two exact-name Docker secrets through the shared profile secret
+workflow; never write either value to `.env` or commit it. Both values must
+come from the same generated pair. Re-rendering the stack after the secrets
+exist includes the mounts automatically. Deploying remains an explicit
+operator action.
+
+Browser activation is still user-controlled. The authenticated Felix PWA asks
+for notification permission, subscribes the active service worker with the
+public key, stores the browser subscription through the API, and projects the
+user's rolling reminder schedule. HTTPS, browser permission, an active browser
+subscription, both Docker secrets, and a running dispatch worker are all
+required for closed-app delivery.
 
 ## Keycloak and secrets
 
