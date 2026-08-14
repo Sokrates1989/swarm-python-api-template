@@ -150,10 +150,10 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
 
         self.assertEqual(release["stackId"], "felix")
         self.assertEqual(release["versionPolicy"], "monotonic-floor")
-        self.assertEqual(release["versionFloor"], "1.0.8")
+        self.assertEqual(release["versionFloor"], "1.0.15")
         self.assertEqual(
             release["components"],
-            ["api", "web", "android", "ios"],
+            ["api", "web", "android", "ios", "legacy-webapp"],
         )
         self.assertEqual(profile["database"]["imageTrackTag"], "16-alpine")
         self.assertEqual(profile["services"]["redisImageTrackTag"], "7-alpine")

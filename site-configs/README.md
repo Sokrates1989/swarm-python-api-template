@@ -169,7 +169,7 @@ version line:
   "stackId": "example-app",
   "versionPolicy": "monotonic-floor",
   "versionFloor": "1.0.0",
-  "components": ["api", "web", "android", "ios"]
+  "components": ["api", "web", "android", "ios", "legacy-webapp"]
 }
 ```
 
@@ -185,9 +185,11 @@ or `RELEASE_STACK_DEPLOYMENT_ROOT` can select its Swarm repository.
 `components` must include `api` plus `web` when `services.web` is enabled. The
 minimum is not a desired deployed version and does not make an older deployed
 image stale. A source release equal to it continues without another prompt. A
-lower candidate is raised through the owning quick-start menu; a higher
-confirmed release atomically advances this profile before building. The
-deployment menu derives freshness and update
+lower candidate is raised through the owning quick-start menu. Guided keep,
+patch, minor, and major choices for both stable and `-test` artifacts start at
+this minimum; a higher confirmed build or publication atomically advances this
+profile before building. An image-only exact override may be lower without
+lowering the minimum. The deployment menu derives freshness and update
 choices from real registry tags, offers each repository's highest stable tag
 or their highest common stable tag, and verifies exact manual input. This
 metadata is application-neutral and `_template.json` demonstrates the contract

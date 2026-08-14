@@ -26,9 +26,11 @@ Felix differs only through profile data:
 
 Felix is enrolled in release stack `felix` with the minimum for its next
 component release declared in `release.versionFloor` and component catalog
-`api`, `web`, `android`, and `ios`. This deployment profile is the single
-authority for that minimum; the Flutter and API repositories retain only their
-own component membership. The catalog is
+`api`, `web`, `android`, `ios`, and `legacy-webapp`. The latter identifies the
+separately published Figma-wrapper image and does not make it a service managed
+by this stack. This deployment profile is the single authority for that
+minimum; the Flutter, API, and website repositories retain only their own
+component membership. The catalog is
 coordination metadata; this Swarm profile directly manages only the declared
 API and WebApp services.
 
@@ -58,10 +60,12 @@ stack without modifying production code.
 
 ## Coordinated service versions
 
-The compatibility field `release.versionFloor` stores the minimum version for
-the next newly built/published Felix artifact; it does not declare that every
-deployed component must already have
-that version. The shared image menu queries both Docker repositories and offers
+The compatibility field `release.versionFloor` is currently `1.0.15` and
+stores the minimum version for the next newly built/published Felix artifact;
+it does not declare that every deployed component must already have that
+version. Guided source-repository menus derive keep, patch, minor, and major
+choices from this value for both stable and `-test` artifacts. The shared
+deployment image menu queries both Docker repositories and offers
 only tags that really exist. Selecting both services can advance each to its
 own highest stable tag or use their highest common published tag. Exact text is
 accepted only after digest and `linux/amd64` verification. After the displayed

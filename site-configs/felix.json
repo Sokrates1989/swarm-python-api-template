@@ -18,12 +18,13 @@
   "release": {
     "stackId": "felix",
     "versionPolicy": "monotonic-floor",
-    "versionFloor": "1.0.8",
+    "versionFloor": "1.0.15",
     "components": [
       "api",
       "web",
       "android",
-      "ios"
+      "ios",
+      "legacy-webapp"
     ]
   },
   "exposure": {
