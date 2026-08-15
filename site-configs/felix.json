@@ -19,6 +19,11 @@
     "stackId": "felix",
     "versionPolicy": "monotonic-floor",
     "versionFloor": "1.0.15",
+    "componentVersionFloors": {
+      "android": "1.1.0",
+      "ios": "1.1.0",
+      "web": "1.1.1"
+    },
     "components": [
       "api",
       "web",

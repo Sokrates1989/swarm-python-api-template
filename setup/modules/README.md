@@ -25,9 +25,10 @@ In particular:
 - `auth` contains Keycloak identity, selectable realm defaults, application
   roles, secret-free temporary test users, protected legacy values, and exact
   service-account client roles;
-- `release` optionally enrolls application artifacts in one shared minimum
-  version for the next build/publication; that minimum is not deployment
-  freshness and this site profile is its single authority;
+- `release` optionally enrolls application artifacts in independently
+  advancing component minimums for their next build/publication; those
+  minimums are not deployment freshness and this site profile is their single
+  authority;
 - `secrets`, `optionalSecrets`, and `secretMounts` control exact Docker
   secrets, including profile-discovered paired VAPID setup; and
 - `capabilities` contributes optional public environment and secret mounts.

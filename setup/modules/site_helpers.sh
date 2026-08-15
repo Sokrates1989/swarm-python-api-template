@@ -55,7 +55,7 @@
 #   APP_RENDERER_TYPE, APP_RENDERER_STRICT, APP_RENDERER_API_TEMPLATE,
 #   APP_RENDERER_FOOTER_TEMPLATE, APP_REQUIRES_WEB,
 #   APP_RELEASE_STACK_ID, APP_RELEASE_VERSION_POLICY,
-#   APP_RELEASE_VERSION_FLOOR
+#   APP_RELEASE_VERSION_FLOOR, APP_RELEASE_COMPONENT_VERSION_FLOORS
 #
 # Exported Globals (set by load_root_env):
 #   STACK_NAME, DB_TYPE, DB_MODE, PROXY_TYPE, IMAGE_NAME, IMAGE_VERSION,
@@ -383,6 +383,15 @@ load_app_config() {
     APP_RELEASE_STACK_ID="$(_jq_or_default "$config_file" '.release.stackId' "")"
     APP_RELEASE_VERSION_POLICY="$(_jq_or_default "$config_file" '.release.versionPolicy' "")"
     APP_RELEASE_VERSION_FLOOR="$(_jq_or_default "$config_file" '.release.versionFloor' "")"
+    APP_RELEASE_COMPONENT_VERSION_FLOORS="$(
+        jq -r '
+          (.release.componentVersionFloors // {})
+          | to_entries
+          | sort_by(.key)
+          | map("\(.key)=\(.value)")
+          | join(", ")
+        ' "$config_file" 2>/dev/null
+    )"
 
     # Resource defaults
     APP_DEFAULT_REPLICAS="$(_jq_or_default "$config_file" '.resources.defaultReplicas' "1")"

@@ -3,10 +3,10 @@ Module: executable_profile_release_validation.py
 
 Description:
     Validates optional site-profile metadata that enrolls independently
-    published API, Web, Android, and iOS artifacts in one monotonic semantic-
-    version stack. The Swarm profile owns the public minimum for the next
-    release and the managed component IDs; source repositories remain
-    responsible for publication proof.
+    published API, Web, Android, and iOS artifacts in one coordinated semantic-
+    version stack. The Swarm profile owns each component's minimum for its next
+    release, plus a compatibility fallback and the managed component IDs;
+    source repositories remain responsible for publication proof.
 
 Dependencies:
     - scripts/executable_profile_support.py.
@@ -80,6 +80,27 @@ def validate_release_coordination(
         )
     if any(not NAME_PATTERN.fullmatch(component) for component in components):
         raise ExecutableProfileError("release.components contains unsafe IDs.")
+    if "componentVersionFloors" in release:
+        component_floors = mapping(
+            release["componentVersionFloors"],
+            "release.componentVersionFloors",
+        )
+        unknown = sorted(set(component_floors).difference(components))
+        if unknown:
+            raise ExecutableProfileError(
+                "release.componentVersionFloors contains unknown components: "
+                + ", ".join(unknown)
+            )
+        for component_id, raw_floor in component_floors.items():
+            floor = text(
+                raw_floor,
+                f"release.componentVersionFloors.{component_id}",
+            )
+            if not SEMVER_PATTERN.fullmatch(floor):
+                raise ExecutableProfileError(
+                    f"release.componentVersionFloors.{component_id} must be "
+                    "stable semantic version."
+                )
     required = {"api"}
     if services.get("web") is True:
         required.add("web")

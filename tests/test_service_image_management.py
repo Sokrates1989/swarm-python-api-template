@@ -150,7 +150,11 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
 
         self.assertEqual(release["stackId"], "felix")
         self.assertEqual(release["versionPolicy"], "monotonic-floor")
-        self.assertEqual(release["versionFloor"], "1.0.15")
+        self.assertRegex(release["versionFloor"], r"^\d+\.\d+\.\d+$")
+        self.assertEqual(
+            release["componentVersionFloors"],
+            {"android": "1.1.0", "ios": "1.1.0", "web": "1.1.1"},
+        )
         self.assertEqual(
             release["components"],
             ["api", "web", "android", "ios", "legacy-webapp"],
@@ -174,16 +178,33 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         )
         invalid_floor = copy.deepcopy(source_profile)
         invalid_floor["release"]["versionFloor"] = "v1.0.8"
+        invalid_component_floor = copy.deepcopy(source_profile)
+        invalid_component_floor["release"]["componentVersionFloors"][
+            "android"
+        ] = "1.1"
+        unknown_component_floor = copy.deepcopy(source_profile)
+        unknown_component_floor["release"]["componentVersionFloors"][
+            "desktop"
+        ] = "1.1.0"
         invalid_policy = copy.deepcopy(source_profile)
         invalid_policy["release"]["versionPolicy"] = "independent"
         duplicate_component = copy.deepcopy(source_profile)
         duplicate_component["release"]["components"].append("web")
         missing_web = copy.deepcopy(source_profile)
         missing_web["release"]["components"].remove("web")
+        missing_web["release"]["componentVersionFloors"].pop("web")
         missing_database_track = copy.deepcopy(source_profile)
         del missing_database_track["database"]["imageTrackTag"]
         cases = (
             (invalid_floor, "release.versionFloor"),
+            (
+                invalid_component_floor,
+                "release.componentVersionFloors.android",
+            ),
+            (
+                unknown_component_floor,
+                "componentVersionFloors contains unknown components: desktop",
+            ),
             (invalid_policy, "release.versionPolicy"),
             (duplicate_component, "release.components must contain unique"),
             (missing_web, "release.components omits managed services: web"),

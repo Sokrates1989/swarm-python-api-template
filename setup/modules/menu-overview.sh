@@ -530,7 +530,11 @@ show_deployment_overview() {
         _box_line "Profile  : ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID}}"
     fi
     if [ -n "${APP_RELEASE_STACK_ID:-}" ]; then
-        _box_line "Release  : ${APP_RELEASE_STACK_ID} (minimum for next release ${APP_RELEASE_VERSION_FLOOR})"
+        if [ -n "${APP_RELEASE_COMPONENT_VERSION_FLOORS:-}" ]; then
+            _box_line "Release  : ${APP_RELEASE_STACK_ID} (component minimum for next release: ${APP_RELEASE_COMPONENT_VERSION_FLOORS})"
+        else
+            _box_line "Release  : ${APP_RELEASE_STACK_ID} (minimum for next release: ${APP_RELEASE_VERSION_FLOOR})"
+        fi
     fi
     _box_line "Proxy    : ${PROXY_TYPE:-none}"
     _box_line "DB Type  : ${DB_TYPE:-none}"

@@ -117,6 +117,12 @@ class ExecutableProfile:
                     "stackId": release["stackId"],
                     "versionPolicy": release["versionPolicy"],
                     "versionFloor": release["versionFloor"],
+                    "componentVersionFloors": dict(
+                        mapping(
+                            release.get("componentVersionFloors", {}),
+                            "release.componentVersionFloors",
+                        )
+                    ),
                     "components": list(release["components"]),
                 }
                 if release

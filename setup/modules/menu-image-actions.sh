@@ -550,7 +550,12 @@ manage_service_images() {
     _select_release_image_scope "${records[@]}" || return 1
     if [ "${IMAGE_UPDATE_CHANNEL}" = "stable" ] &&
         [ -n "${APP_RELEASE_VERSION_FLOOR:-}" ]; then
-        echo "Next new-artifact minimum: ${APP_RELEASE_VERSION_FLOOR}"
+        if [ -n "${APP_RELEASE_COMPONENT_VERSION_FLOORS:-}" ]; then
+            echo "Next component minimums: ${APP_RELEASE_COMPONENT_VERSION_FLOORS}"
+            echo "Compatibility fallback: ${APP_RELEASE_VERSION_FLOOR}"
+        else
+            echo "Next new-artifact minimum: ${APP_RELEASE_VERSION_FLOOR}"
+        fi
         echo "This build/publish policy is informational here; it is not deployment drift."
     fi
     _prepare_release_image_updates || return 1
