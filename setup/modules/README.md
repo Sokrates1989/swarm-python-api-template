@@ -134,6 +134,10 @@ not started implicitly; a running stack is redeployed and health-checked.
 profile and saved root environment. It first separates stable release images
 from test profile images, then lets the operator choose one service or all
 services. It never synthesizes a deployment tag from the next-release minimum.
+The stable selector keeps rollback versions behind `r/x`, groups them by
+`MAJOR.MINOR`, and shows nine entries before each cumulative ten-entry `m`
+expansion. Enter selects `h` when a highest non-rollback release is available.
+`OPERATOR_MENU_LOCALE=de` selects its German catalog; English is the default.
 `scripts/registry_image_tool.py` enumerates real stable OCI tags and strict
 `MAJOR.MINOR.PATCH-test` tags. `menu-image-test-channel.sh` selects the highest
 exact test tag for each chosen repository and excludes `latest-test`. Selected

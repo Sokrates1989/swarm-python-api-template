@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -68,6 +69,12 @@ INFRASTRUCTURE_ADAPTER = (
 )
 SEMANTIC_VERSION = (
     REPOSITORY_ROOT / "setup" / "modules" / "semantic-version.sh"
+)
+OPERATOR_MENU_EN = (
+    REPOSITORY_ROOT / "setup" / "locales" / "operator-menu.en.sh"
+)
+OPERATOR_MENU_DE = (
+    REPOSITORY_ROOT / "setup" / "locales" / "operator-menu.de.sh"
 )
 PROFILE_PROMPTS = (
     REPOSITORY_ROOT / "setup" / "modules" / "deployment-profile-prompts.sh"
@@ -431,11 +438,42 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertIn("registry_verify_tag", actions)
         self.assertIn("highest published stable version", actions)
         self.assertIn("select_published_semver", actions)
+        versions = SEMANTIC_VERSION.read_text(encoding="utf-8")
+        self.assertIn("semver.show_rollbacks", versions)
+        self.assertIn("semver.choice_highest", versions)
+        self.assertIn("default_strategy='h'", actions)
+        selector_start = actions.index("_select_one_published_tag()")
+        selector_end = actions.index(
+            "# _highest_common_published_tag",
+            selector_start,
+        )
+        selector = actions[selector_start:selector_end]
+        self.assertNotIn("_release_tag_is_not_older", selector)
+        self.assertNotIn("-ge 20", selector)
         self.assertIn("Application image channel", actions)
         self.assertIn("MAJOR.MINOR.PATCH-test", test_channel)
         self.assertNotIn("select_semantic_version", actions)
         self.assertNotIn("below the", overview.lower())
         self.assertIn("minimum for next release", overview)
+
+    def test_operator_menu_locales_have_matching_semantic_version_keys(self) -> None:
+        """Keep English and German operator-menu catalogs synchronized.
+
+        Returns:
+            Nothing.
+        """
+
+        pattern = re.compile(r"^\s*\[([^]]+)\]=", re.MULTILINE)
+        english_keys = set(
+            pattern.findall(OPERATOR_MENU_EN.read_text(encoding="utf-8"))
+        )
+        german_keys = set(
+            pattern.findall(OPERATOR_MENU_DE.read_text(encoding="utf-8"))
+        )
+
+        self.assertEqual(english_keys, german_keys)
+        self.assertIn("semver.show_rollbacks", english_keys)
+        self.assertIn("semver.show_more", english_keys)
 
     def test_quick_runtime_actions_reuse_the_deployment_transaction(
         self,

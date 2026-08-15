@@ -181,8 +181,13 @@ deploy, health, and rollback boundary as image updates.
   application service or all application services, and select only versions
   proven to exist in each registry repository. Multi-service updates can use
   each repository's highest stable SemVer or the highest common published
-  SemVer. Exact free text is accepted only after digest and `linux/amd64`
-  verification. The action then renders, deploys, and runs health acceptance.
+  SemVer. Each service's compact selector keeps older releases behind `r/x`,
+  groups them by `MAJOR.MINOR`, and initially displays nine newest groups or
+  versions; `m` keeps those entries visible and adds ten more. The highest
+  non-rollback release is the Enter default when available. Exact free text is
+  accepted only after digest and `linux/amd64` verification. Set
+  `OPERATOR_MENU_LOCALE=de` for German selector text; English is the default.
+  The action then renders, deploys, and runs health acceptance.
 - **Audit image updates and security** — refresh cached application-tag and
   tracked infrastructure-digest evidence, scan active images for fixable
   HIGH/CRITICAL vulnerabilities with Docker Scout or Trivy, and request Docker
@@ -237,6 +242,8 @@ setup/
     menu-infrastructure-images.sh  ← infrastructure version/update dialogue
     infrastructure-image-safety.sh ← backup, scanner, and major-track gates
     semantic-version.sh            ← shared stable SemVer primitives
+    semantic-version-rollback-menu.sh ← grouped, paginated rollback browser
+    operator-menu-localization.sh  ← localized operator-menu message adapter
     menu-configuration-actions.sh  ← shared reconfiguration and reload
     menu-restore-actions.sh        ← validated restore and immediate render
     config-builder.sh              ← compose-module rendering utilities
@@ -246,6 +253,9 @@ setup/
     keycloak-bootstrap.sh          ← existing-server reconciliation adapter
     deploy-stack.sh                ← deployment and rollback
     health-check.sh                ← profile-driven deployment checks
+  locales/
+    operator-menu.en.sh            ← English operator-menu messages
+    operator-menu.de.sh            ← German operator-menu messages
   compose-modules/
     api.yml                        ← API service compose fragment
     redis.yml                      ← Redis compose fragment
@@ -365,9 +375,11 @@ below them are not stale merely because of a floor. Deployment freshness comes
 only from registry evidence.
 
 The image menu therefore never invents patch/minor/major tags; it offers real
-published stable tags and verifies every chosen tag before deployment. Its
-first submenu separates stable and test channels. Stable mode cannot see
-prerelease tags. Test mode installs each selected service's highest real
+published stable tags and verifies every chosen tag before deployment. Older
+stable versions are grouped into expandable `MAJOR.MINOR` rollback menus
+instead of filling the primary selector. Its first submenu separates stable
+and test channels. Stable mode cannot see prerelease tags. Test mode installs
+each selected service's highest real
 `MAJOR.MINOR.PATCH-test` tag, records that exact tag in this checkout's `.env`,
 and uses the same render, deploy, health, and rollback transaction. The mutable
 `latest-test` alias is excluded from discovery and is never deployment evidence.

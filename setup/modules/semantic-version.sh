@@ -14,6 +14,9 @@ if [ -n "${_SEMANTIC_VERSION_HELPERS_LOADED:-}" ]; then
 fi
 _SEMANTIC_VERSION_HELPERS_LOADED=1
 
+_SEMANTIC_VERSION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${_SEMANTIC_VERSION_DIR}/operator-menu-localization.sh"
+
 # ------------------------------------------------------------------------------
 # semantic_version_is_valid
 # ------------------------------------------------------------------------------
@@ -161,19 +164,41 @@ semantic_version_is_listed() {
     return 1
 }
 
+# Print one localized semantic-version menu message.
+_semantic_version_say() {
+    operator_menu_message "$@"
+    printf '\n'
+}
+
+# Read one semantic-version menu choice through the active prompt adapter.
+_semantic_version_prompt() {
+    local message_key="$1"
+    local target_name="$2"
+    local prompt=""
+
+    prompt="$(operator_menu_message "$message_key")" || return 1
+    if declare -F read_prompt >/dev/null 2>&1; then
+        read_prompt "$prompt" "$target_name"
+    else
+        read -r -p "$prompt" "$target_name"
+    fi
+}
+
+source "${_SEMANTIC_VERSION_DIR}/semantic-version-rollback-menu.sh"
+
 # ------------------------------------------------------------------------------
 # select_published_semver
 # ------------------------------------------------------------------------------
-# Renders the canonical keep/patch/feature/major/exact menu. Computed choices
-# must come from registry discovery. An exact fallback is accepted only after
-# immediate registry/platform verification succeeds.
+# Renders the canonical upgrade/exact menu with grouped rollback discovery.
+# Every displayed version comes from registry discovery. An exact fallback is
+# accepted only after immediate registry/platform verification succeeds.
 #
 # Arguments:
 #   $1 - Target variable name.
 #   $2 - Human-readable service label.
 #   $3 - Docker repository without a tag.
 #   $4 - Current stable semantic version.
-#   Remaining arguments - Published versions that are safe for this service.
+#   Remaining arguments - Published stable versions for this service.
 #
 # Returns:
 #   0 after assigning a published version; 1 after cancellation or bad inputs.
@@ -185,77 +210,102 @@ select_published_semver() {
     local current="$4"
     shift 4
     local published=("$@")
-    local patch=""
-    local minor=""
-    local major=""
-    local highest=""
+    local ordered=()
+    local upgrades=()
+    local rollbacks=()
+    local highest_published=""
     local choice=""
-    local exact=""
     local candidate=""
+    local default_choice='1'
+    local prompt_key='semver.choice_keep'
+    local show_highest=false
     local exact_requested=false
+    local index=0
+    local comparison=""
 
     semantic_version_is_valid "$current" || {
-        echo "[ERROR] ${label} current version is not semantic: ${current}" >&2
+        _semantic_version_say semver.invalid_current "$label" "$current" >&2
         return 1
     }
-    patch="$(increment_semantic_version "$current" patch)" || return 1
-    minor="$(increment_semantic_version "$current" minor)" || return 1
-    major="$(increment_semantic_version "$current" major)" || return 1
-    highest="$(highest_semantic_version "${published[@]}")" || highest="$current"
-
+    mapfile -t ordered < <(sort_semantic_versions_desc "${published[@]}")
+    highest_published="$(highest_semantic_version "${ordered[@]}")" ||
+        highest_published=""
+    for candidate in "${ordered[@]}"; do
+        comparison="$(compare_semantic_versions "$candidate" "$current")"
+        case "$comparison" in
+            1) upgrades+=("$candidate") ;;
+            -1) rollbacks+=("$candidate") ;;
+        esac
+    done
+    if [ -n "$highest_published" ] &&
+        [ "$(compare_semantic_versions "$highest_published" "$current")" != '-1' ]; then
+        show_highest=true
+        default_choice='h'
+        prompt_key='semver.choice_highest'
+    fi
     while true; do
         exact_requested=false
+        candidate=""
         echo ""
-        echo "${label} published image version options:"
-        echo "  1/k) Keep current (${current})"
-        if semantic_version_is_listed "$patch" "${published[@]}"; then
-            echo "  2/p) Patch (${current} -> ${patch})"
-        else
-            echo "  2/p) Patch (${patch}) [not published]"
-        fi
-        if semantic_version_is_listed "$minor" "${published[@]}"; then
-            echo "  3/f) Feature / Minor (${current} -> ${minor})"
-        else
-            echo "  3/f) Feature / Minor (${minor}) [not published]"
-        fi
-        if semantic_version_is_listed "$major" "${published[@]}"; then
-            echo "  4/m) Major (${current} -> ${major})"
-        else
-            echo "  4/m) Major (${major}) [not published]"
-        fi
-        echo "  5/e) Enter an exact published semantic version"
-        echo "  h) Highest published stable version (${highest})"
-        echo "  0/q) Cancel"
-        read -r -p "Your choice [1/k]: " choice
+        _semantic_version_say semver.options_header "$label"
+        _semantic_version_say semver.keep_current "$current"
+        for index in "${!upgrades[@]}"; do
+            echo "  $((index + 2))) ${upgrades[$index]}"
+        done
+        [ "${#rollbacks[@]}" -eq 0 ] ||
+            _semantic_version_say semver.show_rollbacks
+        _semantic_version_say semver.exact
+        [ "$show_highest" = false ] ||
+            _semantic_version_say semver.highest "$highest_published"
+        _semantic_version_say semver.cancel
+        _semantic_version_prompt "$prompt_key" choice
         choice="${choice,,}"
-        case "${choice:-1}" in
+        case "${choice:-$default_choice}" in
             1|k|keep|current) candidate="$current" ;;
-            2|p|patch) candidate="$patch" ;;
-            3|f|feature|minor) candidate="$minor" ;;
-            4|m|major) candidate="$major" ;;
-            5|e|exact|manual)
-                read -r -p "Exact published version: " exact
-                candidate="$exact"
-                exact_requested=true
-                ;;
-            h|highest) candidate="$highest" ;;
-            0|q|quit|cancel) return 1 ;;
-            *)
-                echo "[WARN] Use 1-5, k/p/f/m/e, h, or 0/q."
+            r|x|rollback|rollbacks)
+                if [ "${#rollbacks[@]}" -gt 0 ] &&
+                    select_published_rollback_semver \
+                        candidate "$label" "${rollbacks[@]}"; then
+                    printf -v "$target_name" '%s' "$candidate"
+                    return 0
+                fi
                 continue
                 ;;
+            e|exact|manual)
+                _semantic_version_prompt semver.exact_prompt candidate
+                exact_requested=true
+                ;;
+            h|highest)
+                if [ "$show_highest" = true ]; then
+                    candidate="$highest_published"
+                else
+                    _semantic_version_say semver.invalid_main
+                    continue
+                fi
+                ;;
+            0|q|quit|cancel) return 1 ;;
+            *)
+                if [[ "$choice" =~ ^[0-9]+$ ]] &&
+                    [ "$choice" -ge 2 ] &&
+                    [ "$choice" -le "$((${#upgrades[@]} + 1))" ]; then
+                    candidate="${upgrades[$((choice - 2))]}"
+                else
+                    _semantic_version_say semver.invalid_main
+                    continue
+                fi
+                ;;
         esac
-        if semantic_version_is_listed "$candidate" "${published[@]}"; then
+        if [ "$candidate" = "$current" ] ||
+            semantic_version_is_listed "$candidate" "${published[@]}"; then
             printf -v "$target_name" '%s' "$candidate"
             return 0
         fi
         if [ "$exact_requested" = true ] && semantic_version_is_valid "$candidate" &&
-            [ "$(compare_semantic_versions "$candidate" "$current")" != '-1' ] &&
             registry_verify_tag "$repository" "$candidate" >/dev/null; then
             printf -v "$target_name" '%s' "$candidate"
             return 0
         fi
-        echo "[WARN] ${candidate} is not a published version for ${label}."
+        _semantic_version_say semver.not_published "$candidate" "$label"
     done
 }
 

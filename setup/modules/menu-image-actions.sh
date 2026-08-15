@@ -274,9 +274,7 @@ _select_one_published_tag() {
 
     _load_published_stable_tags "$repository" tags || tags=()
     for tag in "${tags[@]}"; do
-        _release_tag_is_not_older "$tag" "$current" || continue
         available+=("$tag")
-        [ "${#available[@]}" -ge 20 ] && break
     done
     select_published_semver \
         "$target_name" "$label" "$repository" "$current" "${available[@]}"
@@ -358,6 +356,7 @@ _select_release_image_versions() {
     done
     if [ "$all_enumerated" = true ]; then
         common="$(_highest_common_published_tag)" || common=""
+        default_strategy='h'
         choices+=("h|Update each service to its own highest published stable version")
         if [ -n "$common" ]; then
             choices+=("c|Use highest common published stable version (${common})")
