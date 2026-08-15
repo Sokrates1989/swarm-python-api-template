@@ -108,7 +108,9 @@ _deployment_value_is_valid() {
             [[ "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]
             ;;
         tag)
-            [[ "$value" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]
+            [[ "$value" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]] &&
+                [ "${value,,}" != "latest" ] &&
+                [ "${value,,}" != "latest-test" ]
             ;;
         semver)
             [[ "$value" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]

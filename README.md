@@ -178,15 +178,19 @@ deploy, health, and rollback boundary as image updates.
 - **Check status** — health check the running stack.
 - **View logs** — select and tail any discovered stack service.
 - **Change service images** — reuse the saved deployment profile, choose one
-  application service or all application services, and select only versions
-  proven to exist in each registry repository. Multi-service updates can use
+  application service or all application services, and select only tags proven
+  to exist in each registry repository. Multi-service updates can use
   each repository's highest stable SemVer or the highest common published
   SemVer. Each service's compact selector keeps older releases behind `r/x`,
   groups them by `MAJOR.MINOR`, and initially displays nine newest groups or
   versions; `m` keeps those entries visible and adds ten more. The highest
-  non-rollback release is the Enter default when available. Exact free text is
-  accepted only after digest and `linux/amd64` verification. Set
-  `OPERATOR_MENU_LOCALE=de` for German selector text; English is the default.
+  non-rollback release is the Enter default when available. A current
+  `MAJOR.MINOR.PATCH-test` tag is compared through its stable SemVer base.
+  Other current custom tags skip upgrade/rollback classification without
+  blocking the menu. Exact clean, `-test`, and custom Docker tags are accepted
+  only after digest and `linux/amd64` verification; mutable `latest` aliases
+  remain forbidden. Set `OPERATOR_MENU_LOCALE=de` for German selector text;
+  English is the default.
   The action then renders, deploys, and runs health acceptance.
 - **Audit image updates and security** — refresh cached application-tag and
   tracked infrastructure-digest evidence, scan active images for fixable

@@ -30,6 +30,7 @@ TEST_IMAGE_VERSION_PATTERN = re.compile(
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)-test"
 )
+IMAGE_TAG_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
 IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9._/-]*")
 DIGEST_IMAGE_PATTERN = re.compile(
     r"[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}"
@@ -657,6 +658,7 @@ __all__ = [
     "ExecutableProfileError",
     "FALSE_DEBUG_KEYS",
     "IMAGE_PATTERN",
+    "IMAGE_TAG_PATTERN",
     "KEYCLOAK_DEPLOYMENT_KEYS",
     "KEYCLOAK_EMAIL_SENDER_ENV_KEYS",
     "KEYCLOAK_LOCALIZATION_ENV_KEYS",

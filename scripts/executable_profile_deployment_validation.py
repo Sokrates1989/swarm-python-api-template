@@ -36,10 +36,9 @@ from executable_profile_keycloak_validation import (
 from executable_profile_support import (
     DIGEST_IMAGE_PATTERN,
     IMAGE_PATTERN,
+    IMAGE_TAG_PATTERN,
     MEMORY_PATTERN,
     NAME_PATTERN,
-    SEMVER_PATTERN,
-    TEST_IMAGE_VERSION_PATTERN,
     ExecutableProfileError,
     KEYCLOAK_EMAIL_SENDER_ENV_KEYS,
     KEYCLOAK_LOCALIZATION_ENV_KEYS,
@@ -728,13 +727,13 @@ def validate_deployment(
             )
     for key in ("IMAGE_VERSION", "WEB_IMAGE_VERSION"):
         value = values[key]
-        if value and not (
-            SEMVER_PATTERN.fullmatch(value)
-            or TEST_IMAGE_VERSION_PATTERN.fullmatch(value)
+        if value and (
+            not IMAGE_TAG_PATTERN.fullmatch(value)
+            or value.lower() in {"latest", "latest-test"}
         ):
             raise ExecutableProfileError(
-                f".env {key} must be MAJOR.MINOR.PATCH or "
-                "MAJOR.MINOR.PATCH-test; mutable latest aliases are forbidden."
+                f".env {key} must be an explicit Docker image tag; "
+                "mutable latest aliases are forbidden."
             )
     if values["PGADMIN_ENABLED"] not in {"true", "false"}:
         raise ExecutableProfileError(

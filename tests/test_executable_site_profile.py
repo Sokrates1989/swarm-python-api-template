@@ -243,10 +243,10 @@ class ExecutableSiteProfileTests(unittest.TestCase):
         self.assertNotIn("WEB_PUSH_VAPID_PRIVATE_KEY:", stack)
         validate_rendered_stack(stack, profile)
 
-    def test_deployment_environment_accepts_only_exact_versioned_test_tags(
+    def test_deployment_environment_accepts_versioned_and_custom_tags(
         self,
     ) -> None:
-        """Allow test checkouts while rejecting mutable registry aliases.
+        """Allow explicit custom tags while rejecting mutable aliases.
 
         Returns:
             Nothing.
@@ -270,17 +270,36 @@ class ExecutableSiteProfileTests(unittest.TestCase):
             "sokrates1989/flutter-felix-web:1.1.0-test",
         )
 
+        custom_profile = self._configure(
+            "felix",
+            self.felix_config,
+            {
+                "IMAGE_VERSION": "release_candidate-7",
+                "WEB_IMAGE_VERSION": "feature-login_2",
+            },
+        )
+        self.assertEqual(
+            custom_profile.image_reference,
+            "sokrates1989/python-api-felix:release_candidate-7",
+        )
+        self.assertEqual(
+            custom_profile.web_image_reference,
+            "sokrates1989/flutter-felix-web:feature-login_2",
+        )
+
         self._write_config("felix", self.felix_config)
-        with self.assertRaisesRegex(
-            ExecutableProfileError,
-            "mutable latest aliases are forbidden",
-        ):
-            write_deployment_env(
-                self.root,
-                "felix",
-                {"WEB_IMAGE_VERSION": "latest-test"},
-                force=True,
-            )
+        for mutable_alias in ("latest", "latest-test"):
+            with self.subTest(mutable_alias=mutable_alias):
+                with self.assertRaisesRegex(
+                    ExecutableProfileError,
+                    "mutable latest aliases are forbidden",
+                ):
+                    write_deployment_env(
+                        self.root,
+                        "felix",
+                        {"WEB_IMAGE_VERSION": mutable_alias},
+                        force=True,
+                    )
 
     def test_infrastructure_digest_overrides_render_without_profile_mutation(
         self,

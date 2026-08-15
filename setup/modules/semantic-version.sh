@@ -35,6 +35,34 @@ semantic_version_is_valid() {
     [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
 }
 
+# Validate one Docker image tag without a repository or digest.
+image_tag_is_valid() {
+    [[ "$1" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]
+}
+
+# Accept explicit Docker tags while excluding mutable aliases reserved by the
+# release and test-channel workflows.
+image_tag_is_deployable() {
+    image_tag_is_valid "$1" || return 1
+    case "${1,,}" in
+        latest|latest-test) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Resolve the stable SemVer comparison base of a clean or versioned test tag.
+semantic_version_comparison_base() {
+    if semantic_version_is_valid "$1"; then
+        printf '%s' "$1"
+        return 0
+    fi
+    if [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-test$ ]]; then
+        printf '%s' "${1%-test}"
+        return 0
+    fi
+    return 1
+}
+
 # ------------------------------------------------------------------------------
 # compare_semantic_versions
 # ------------------------------------------------------------------------------
@@ -184,6 +212,24 @@ _semantic_version_prompt() {
     fi
 }
 
+# Read one exact registry tag using Docker's tag grammar and immutable-alias
+# policy. Registry existence and platform support are verified by the caller.
+prompt_exact_image_tag() {
+    local target_name="$1"
+    local default_value="${2:-}"
+    local value=""
+
+    while true; do
+        _semantic_version_prompt semver.exact_prompt value
+        value="${value:-$default_value}"
+        if image_tag_is_deployable "$value"; then
+            printf -v "$target_name" '%s' "$value"
+            return 0
+        fi
+        _semantic_version_say semver.invalid_tag
+    done
+}
+
 source "${_SEMANTIC_VERSION_DIR}/semantic-version-rollback-menu.sh"
 
 # ------------------------------------------------------------------------------
@@ -197,7 +243,7 @@ source "${_SEMANTIC_VERSION_DIR}/semantic-version-rollback-menu.sh"
 #   $1 - Target variable name.
 #   $2 - Human-readable service label.
 #   $3 - Docker repository without a tag.
-#   $4 - Current stable semantic version.
+#   $4 - Current image tag; clean SemVer and -test tags are comparable.
 #   Remaining arguments - Published stable versions for this service.
 #
 # Returns:
@@ -220,25 +266,31 @@ select_published_semver() {
     local prompt_key='semver.choice_keep'
     local show_highest=false
     local exact_requested=false
+    local comparison_base=""
+    local has_comparison_base=false
     local index=0
     local comparison=""
 
-    semantic_version_is_valid "$current" || {
-        _semantic_version_say semver.invalid_current "$label" "$current" >&2
-        return 1
-    }
+    if comparison_base="$(semantic_version_comparison_base "$current")"; then
+        has_comparison_base=true
+    else
+        _semantic_version_say semver.comparison_unavailable "$label" "$current"
+    fi
     mapfile -t ordered < <(sort_semantic_versions_desc "${published[@]}")
     highest_published="$(highest_semantic_version "${ordered[@]}")" ||
         highest_published=""
-    for candidate in "${ordered[@]}"; do
-        comparison="$(compare_semantic_versions "$candidate" "$current")"
-        case "$comparison" in
-            1) upgrades+=("$candidate") ;;
-            -1) rollbacks+=("$candidate") ;;
-        esac
-    done
+    if [ "$has_comparison_base" = true ]; then
+        for candidate in "${ordered[@]}"; do
+            comparison="$(compare_semantic_versions "$candidate" "$comparison_base")"
+            case "$comparison" in
+                1) upgrades+=("$candidate") ;;
+                -1) rollbacks+=("$candidate") ;;
+            esac
+        done
+    fi
     if [ -n "$highest_published" ] &&
-        [ "$(compare_semantic_versions "$highest_published" "$current")" != '-1' ]; then
+        { [ "$has_comparison_base" = false ] ||
+            [ "$(compare_semantic_versions "$highest_published" "$comparison_base")" != '-1' ]; }; then
         show_highest=true
         default_choice='h'
         prompt_key='semver.choice_highest'
@@ -272,7 +324,7 @@ select_published_semver() {
                 continue
                 ;;
             e|exact|manual)
-                _semantic_version_prompt semver.exact_prompt candidate
+                prompt_exact_image_tag candidate
                 exact_requested=true
                 ;;
             h|highest)
@@ -300,7 +352,7 @@ select_published_semver() {
             printf -v "$target_name" '%s' "$candidate"
             return 0
         fi
-        if [ "$exact_requested" = true ] && semantic_version_is_valid "$candidate" &&
+        if [ "$exact_requested" = true ] && image_tag_is_deployable "$candidate" &&
             registry_verify_tag "$repository" "$candidate" >/dev/null; then
             printf -v "$target_name" '%s' "$candidate"
             return 0

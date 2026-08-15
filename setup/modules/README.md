@@ -138,6 +138,10 @@ The stable selector keeps rollback versions behind `r/x`, groups them by
 `MAJOR.MINOR`, and shows nine entries before each cumulative ten-entry `m`
 expansion. Enter selects `h` when a highest non-rollback release is available.
 `OPERATOR_MENU_LOCALE=de` selects its German catalog; English is the default.
+Configured `MAJOR.MINOR.PATCH-test` tags use their clean SemVer base for
+ordering. A custom current tag keeps current/highest/exact selection available
+without claiming upgrade or rollback ordering. Exact custom Docker tags are
+supported after registry/platform proof, except mutable `latest` aliases.
 `scripts/registry_image_tool.py` enumerates real stable OCI tags and strict
 `MAJOR.MINOR.PATCH-test` tags. `menu-image-test-channel.sh` selects the highest
 exact test tag for each chosen repository and excludes `latest-test`. Selected

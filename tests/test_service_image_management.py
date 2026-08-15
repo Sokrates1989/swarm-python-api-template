@@ -441,7 +441,10 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         versions = SEMANTIC_VERSION.read_text(encoding="utf-8")
         self.assertIn("semver.show_rollbacks", versions)
         self.assertIn("semver.choice_highest", versions)
+        self.assertIn("semantic_version_comparison_base", versions)
+        self.assertIn("image_tag_is_deployable", versions)
         self.assertIn("default_strategy='h'", actions)
+        self.assertIn("prompt_exact_image_tag exact", actions)
         selector_start = actions.index("_select_one_published_tag()")
         selector_end = actions.index(
             "# _highest_common_published_tag",
@@ -474,6 +477,8 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertEqual(english_keys, german_keys)
         self.assertIn("semver.show_rollbacks", english_keys)
         self.assertIn("semver.show_more", english_keys)
+        self.assertIn("semver.comparison_unavailable", english_keys)
+        self.assertIn("semver.invalid_tag", english_keys)
 
     def test_quick_runtime_actions_reuse_the_deployment_transaction(
         self,

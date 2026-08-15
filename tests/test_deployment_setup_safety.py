@@ -366,8 +366,11 @@ source {bash_quote(DEPLOYMENT_PROMPTS_MODULE)}
 ! _deployment_value_is_valid path '/swarm/$(id)'
 ! _deployment_value_is_valid identifier 'user;id'
 ! _deployment_value_is_valid tag '1.0.0|next'
+! _deployment_value_is_valid tag 'latest'
+! _deployment_value_is_valid tag 'latest-test'
 _deployment_value_is_valid domain 'api.example.com'
 _deployment_value_is_valid path '/swarm/volumes/example'
+_deployment_value_is_valid tag 'feature-login_2'
 """
         completed = run_bash(script)
 

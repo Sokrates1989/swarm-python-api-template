@@ -101,7 +101,7 @@ _select_image_update_channel() {
         selection \
         'Application image channel' \
         'stable' \
-        'stable|Stable release images (unsuffixed MAJOR.MINOR.PATCH tags)' \
+        "stable|$(operator_menu_message semver.release_channel)" \
         'test|Newest test images (exact MAJOR.MINOR.PATCH-test tags)' \
         'cancel|Back without changes'
     case "$selection" in
@@ -206,15 +206,16 @@ _load_published_stable_tags() {
 _release_tag_is_not_older() {
     local candidate="$1"
     local current="$2"
+    local current_base=""
     local comparison=""
 
     if ! semantic_version_is_valid "$candidate"; then
         return 1
     fi
-    if ! semantic_version_is_valid "$current"; then
+    if ! current_base="$(semantic_version_comparison_base "$current")"; then
         return 0
     fi
-    comparison="$(compare_semantic_versions "$candidate" "$current")" ||
+    comparison="$(compare_semantic_versions "$candidate" "$current_base")" ||
         return 1
     [ "$comparison" != '-1' ]
 }
@@ -364,7 +365,7 @@ _select_release_image_versions() {
     fi
     choices=("k|Keep every service at its current version" "${choices[@]}")
     choices+=("i|Select a published version for each service")
-    choices+=("e|Enter one exact version and verify it in every repository")
+    choices+=("e|Enter one exact image tag and verify it in every repository")
     choices+=("q|Cancel")
     prompt_deployment_choice \
         selection \
@@ -411,13 +412,8 @@ _select_release_image_versions() {
             done
             ;;
         e)
-            prompt_deployment_value exact 'Exact shared published version' '' semver
+            prompt_exact_image_tag exact
             for index in "${!IMAGE_UPDATE_SELECTED_REPOSITORIES[@]}"; do
-                if ! _release_tag_is_not_older \
-                    "$exact" "${IMAGE_UPDATE_SELECTED_CURRENTS[$index]}"; then
-                    echo "[ERROR] ${exact} would downgrade ${IMAGE_UPDATE_SELECTED_LABELS[$index]}."
-                    return 1
-                fi
                 IMAGE_UPDATE_SELECTED_VERSIONS+=("$exact")
             done
             ;;
@@ -502,7 +498,7 @@ _show_release_image_update_plan() {
     if [ "${IMAGE_UPDATE_CHANNEL:-stable}" = "test" ]; then
         echo "Channel: test (exact versioned tags; latest-test is never deployed)"
     else
-        echo "Channel: stable (unsuffixed tags only)"
+        _semantic_version_say semver.release_plan
     fi
     for index in "${!IMAGE_UPDATE_SELECTED_RECORDS[@]}"; do
         record="${IMAGE_UPDATE_SELECTED_RECORDS[$index]}"
@@ -540,6 +536,7 @@ manage_service_images() {
     echo "Change service image configuration"
     echo "=================================="
     echo "Active profile: ${DEPLOYMENT_PROFILE_ID:-${BACKEND_APP_ID:-unknown}}"
+    _semantic_version_say semver.release_help
     echo "Stable and test channels are separate. Test mode installs each selected"
     echo "service's newest exact MAJOR.MINOR.PATCH-test tag; latest-test is never"
     echo "deployment evidence. Every choice is verified for linux/amd64 before"
