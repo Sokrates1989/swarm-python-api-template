@@ -290,20 +290,31 @@ mounts for both `WEB_PUSH_VAPID_PUBLIC_KEY_FILE` and
 `WEB_PUSH_VAPID_PRIVATE_KEY_FILE`. It generates one P-256 pair with the host's
 `openssl` and `python3`, validates its URL-safe encoding, and creates both
 Docker secrets from protected temporary files without logging key values. Once
-both writes succeed, the Enter-default recovery offer persists a mode-`0600`
-`secrets.env` fragment below the ignored `backup/secrets` directory. The file
-contains both exact-name values, is accepted by the saved-secret quick restore,
-and must be copied to encrypted off-server storage by the operator. Declining
-or losing that one-time recovery copy makes an existing opaque Swarm pair
-unrecoverable. Existing pair members are replaced together after the same
-running-stack safety gate used by other immutable Docker-secret changes.
+both writes succeed, the optional recovery offer passes a mode-`0600` handoff
+to the repository-wide secret viewer. The operator is told beforehand to copy
+both exact-name values to encrypted storage; the read-only editor file is
+deleted immediately on close/interruption and no plaintext recovery file is
+retained by the deployment repository. Declining or losing that one-time
+recovery opportunity makes an existing opaque Swarm pair unrecoverable.
+Existing pair members are replaced together after the same running-stack
+safety gate used by other immutable Docker-secret changes.
 
 ### `vapid-recovery.sh`
 
-Owns the explicit post-generation recovery decision and the protected
-`secrets.env` fragment lifecycle. It creates a mode-`0700` recovery directory,
-uses `mktemp` for a new mode-`0600` file, writes both exact-name values without
-terminal output, and returns only the resulting path to the caller.
+Adapts VAPID generation to `scripts/temporary_secret_viewer.py`. It creates a
+mode-`0600` source handoff without terminal output or secret-bearing command
+arguments. The shared helper consumes that handoff, offers installed
+nano/vim/vi editors plus a configured `$VISUAL`/`$EDITOR`, opens a mode-`0400`
+display file in a private mode-`0700` directory, and deletes the entire view
+immediately after editor close or an interruption.
+
+### `temporary_secret_viewer.py`
+
+Owns the only human secret-display flow for Keycloak and VAPID recovery. New
+features pass it a protected handoff or call its Python API with in-memory
+values; callers provide only non-secret presentation text and a safe display
+file name. Direct terminal printing and caller-specific editor/cleanup logic
+must not be added.
 
 ### `docker-secrets-menu.sh`
 

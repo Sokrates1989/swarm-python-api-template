@@ -197,6 +197,7 @@ class ReleaseOrchestrationContractTests(unittest.TestCase):
             "scripts/keycloak_profile_roles.py",
             "scripts/keycloak_profile_secret_bridge.py",
             "scripts/keycloak_profile_secret_viewer.py",
+            "scripts/temporary_secret_viewer.py",
             "scripts/keycloak_profile_verification.py",
             "setup/setup-wizard.sh",
             "setup/modules/site_helpers.sh",

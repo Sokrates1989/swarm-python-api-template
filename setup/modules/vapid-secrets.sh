@@ -6,7 +6,7 @@
 # A VAPID public key and private key are one cryptographic pair. This module
 # discovers their exact Docker-secret names from enabled profile secret mounts,
 # generates one P-256 pair locally, creates both secrets without printing either
-# value, and offers an explicit protected recovery file for off-server backup.
+# value, and offers an explicit self-deleting recovery view for manual backup.
 # ==============================================================================
 
 _VAPID_SECRETS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -372,13 +372,13 @@ run_profile_vapid_secret_setup() {
         return 1
     fi
     echo "[OK] Matching Web Push VAPID Docker secrets are ready."
-    if ! _offer_vapid_recovery_file \
+    if ! _offer_vapid_recovery_view \
         "$public_name" \
         "$private_name" \
         "$public_key" \
         "$private_key"; then
         printf '%s\n' \
-            "$(operator_menu_message vapid.recovery_not_saved)" >&2
+            "$(operator_menu_message vapid.recovery_not_viewed)" >&2
     fi
     public_key=""
     private_key=""
