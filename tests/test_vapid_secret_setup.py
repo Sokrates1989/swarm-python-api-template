@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import json
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -17,6 +19,12 @@ SECRET_MENU = (
     REPOSITORY_ROOT / "setup" / "modules" / "docker-secrets-menu.sh"
 )
 MENU_HANDLERS = REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
+ENGLISH_LOCALE = (
+    REPOSITORY_ROOT / "setup" / "locales" / "operator-menu.en.sh"
+)
+GERMAN_LOCALE = (
+    REPOSITORY_ROOT / "setup" / "locales" / "operator-menu.de.sh"
+)
 NATIVE_BASH_AVAILABLE = (
     not sys.platform.startswith("win") and shutil.which("bash") is not None
 )
@@ -101,6 +109,24 @@ class VapidSecretSetupStaticTests(unittest.TestCase):
             'docker secret create "$private_name" "$private_file"',
             source,
         )
+        setup_flow = source[source.index("run_profile_vapid_secret_setup()") :]
+        self.assertIn("_offer_vapid_recovery_file", setup_flow)
+
+    def test_recovery_prompts_are_localized_in_english_and_german(self) -> None:
+        """Keep the new recovery decision complete in both operator locales."""
+
+        english = ENGLISH_LOCALE.read_text(encoding="utf-8")
+        german = GERMAN_LOCALE.read_text(encoding="utf-8")
+
+        for key in (
+            "vapid.recovery_prompt",
+            "vapid.recovery_saved",
+            "vapid.recovery_not_saved",
+            "vapid.recovery_file_restore",
+        ):
+            with self.subTest(key=key):
+                self.assertIn(f"[{key}]", english)
+                self.assertIn(f"[{key}]", german)
 
 
 @unittest.skipUnless(
@@ -139,6 +165,130 @@ class VapidSecretGenerationLinuxTests(unittest.TestCase):
 )
 class VapidSecretMenuLinuxTests(unittest.TestCase):
     """Exercise VAPID-specific secret-menu control flow."""
+
+    def test_successful_pair_setup_offers_recoverable_exact_values(self) -> None:
+        """Connect Docker-secret creation to the Enter-default recovery save."""
+
+        public_key = "A" * 87
+        private_key = "B" * 43
+        with tempfile.TemporaryDirectory() as temporary:
+            project_root = Path(temporary)
+            script = f"""
+source {bash_quote(VAPID_MODULE)}
+PROJECT_ROOT={bash_quote(project_root)}
+profile_supports_vapid_secret_setup() {{ return 0; }}
+_profile_vapid_secret_name_for_env_key() {{
+    case "$1" in
+        WEB_PUSH_VAPID_PUBLIC_KEY_FILE)
+            printf '%s\n' FELIX_WEB_PUSH_VAPID_PUBLIC_KEY
+            ;;
+        WEB_PUSH_VAPID_PRIVATE_KEY_FILE)
+            printf '%s\n' FELIX_WEB_PUSH_VAPID_PRIVATE_KEY
+            ;;
+    esac
+}}
+docker() {{ return 1; }}
+_generate_vapid_key_pair() {{
+    printf 'PUBLIC_KEY=%s\n' {public_key}
+    printf 'PRIVATE_KEY=%s\n' {private_key}
+}}
+_create_vapid_docker_secret_pair() {{ return 0; }}
+run_profile_vapid_secret_setup <<< ''
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            recovery_files = tuple(
+                (project_root / "backup" / "secrets").glob(
+                    "vapid-secrets.*"
+                )
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(len(recovery_files), 1)
+            recovery_text = recovery_files[0].read_text(encoding="utf-8")
+            self.assertIn(
+                f"FELIX_WEB_PUSH_VAPID_PUBLIC_KEY={public_key}",
+                recovery_text,
+            )
+            self.assertIn(
+                f"FELIX_WEB_PUSH_VAPID_PRIVATE_KEY={private_key}",
+                recovery_text,
+            )
+            self.assertNotIn(public_key, completed.stdout + completed.stderr)
+            self.assertNotIn(private_key, completed.stdout + completed.stderr)
+
+    def test_recovery_offer_defaults_to_mode_0600_restore_file(self) -> None:
+        """Persist both exact-name values without exposing them in output."""
+
+        public_key = "A" * 87
+        private_key = "B" * 43
+        with tempfile.TemporaryDirectory() as temporary:
+            recovery_directory = Path(temporary) / "recovery"
+            script = f"""
+source {bash_quote(VAPID_MODULE)}
+_offer_vapid_recovery_file \\
+    FELIX_WEB_PUSH_VAPID_PUBLIC_KEY \\
+    FELIX_WEB_PUSH_VAPID_PRIVATE_KEY \\
+    {public_key} \\
+    {private_key} \\
+    {bash_quote(recovery_directory)} <<< ''
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            recovery_files = tuple(recovery_directory.glob("vapid-secrets.*"))
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(len(recovery_files), 1)
+            self.assertEqual(
+                stat.S_IMODE(recovery_directory.stat().st_mode),
+                0o700,
+            )
+            recovery_file = recovery_files[0]
+            self.assertEqual(stat.S_IMODE(recovery_file.stat().st_mode), 0o600)
+            self.assertEqual(
+                recovery_file.read_text(encoding="utf-8").splitlines()[-2:],
+                [
+                    f"FELIX_WEB_PUSH_VAPID_PUBLIC_KEY={public_key}",
+                    f"FELIX_WEB_PUSH_VAPID_PRIVATE_KEY={private_key}",
+                ],
+            )
+            self.assertIn("Protected VAPID recovery file saved", completed.stdout)
+            self.assertNotIn(public_key, completed.stdout + completed.stderr)
+            self.assertNotIn(private_key, completed.stdout + completed.stderr)
+
+    def test_recovery_offer_can_be_skipped_without_writing_keys(self) -> None:
+        """Honor an explicit skip while warning that the pair is unrecoverable."""
+
+        public_key = "A" * 87
+        private_key = "B" * 43
+        with tempfile.TemporaryDirectory() as temporary:
+            recovery_directory = Path(temporary) / "recovery"
+            script = f"""
+source {bash_quote(VAPID_MODULE)}
+_offer_vapid_recovery_file \\
+    VAPID_PUBLIC VAPID_PRIVATE {public_key} {private_key} \\
+    {bash_quote(recovery_directory)} <<< 'n'
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(recovery_directory.exists())
+            self.assertIn("Recovery save skipped", completed.stdout)
+            self.assertNotIn(public_key, completed.stdout + completed.stderr)
+            self.assertNotIn(private_key, completed.stdout + completed.stderr)
 
     def test_pair_writer_creates_both_protected_docker_secrets(self) -> None:
         """Pass both values through mode-0600 files to exact secret names."""

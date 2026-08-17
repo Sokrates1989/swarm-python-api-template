@@ -5,9 +5,13 @@
 #
 # A VAPID public key and private key are one cryptographic pair. This module
 # discovers their exact Docker-secret names from enabled profile secret mounts,
-# generates one P-256 pair locally, and creates both secrets without printing
-# either value or persisting key material in repository files.
+# generates one P-256 pair locally, creates both secrets without printing either
+# value, and offers an explicit protected recovery file for off-server backup.
 # ==============================================================================
+
+_VAPID_SECRETS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${_VAPID_SECRETS_DIR}/operator-menu-localization.sh"
+source "${_VAPID_SECRETS_DIR}/vapid-recovery.sh"
 
 # _profile_vapid_secret_name_for_env_key
 # Resolves one VAPID Docker-secret name from the active profile.
@@ -316,7 +320,7 @@ run_profile_vapid_secret_setup() {
     echo "This creates one matching P-256 pair in these Docker secrets:"
     echo "  - ${public_name}"
     echo "  - ${private_name}"
-    echo "Neither key value will be displayed or written to the repository."
+    printf '%s\n' "$(operator_menu_message vapid.setup_storage_notice)"
     if [ "$public_exists" = "true" ] || [ "$private_exists" = "true" ]; then
         echo ""
         echo "[WARN] At least one VAPID pair member already exists."
@@ -367,10 +371,18 @@ run_profile_vapid_secret_setup() {
         private_key=""
         return 1
     fi
+    echo "[OK] Matching Web Push VAPID Docker secrets are ready."
+    if ! _offer_vapid_recovery_file \
+        "$public_name" \
+        "$private_name" \
+        "$public_key" \
+        "$private_key"; then
+        printf '%s\n' \
+            "$(operator_menu_message vapid.recovery_not_saved)" >&2
+    fi
     public_key=""
     private_key=""
 
-    echo "[OK] Matching Web Push VAPID Docker secrets are ready."
     echo "[INFO] Deploy the stack to apply the new pair. Existing browser"
     echo "       subscriptions may need to subscribe again after key rotation."
     return 0

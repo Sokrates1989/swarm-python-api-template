@@ -97,11 +97,22 @@ Run `./quick-start.sh` and select the dedicated Web Push VAPID setup action,
 or open `s) Manage Docker secrets` and select the VAPID key-pair action. The
 shared helper uses the host's `openssl` and `python3` to generate one P-256
 pair, then creates the exact-name public and private Docker secrets without
-displaying either value. Selecting either VAPID secret through the individual
-secret editor redirects to the same paired workflow so mismatched keys cannot
-be entered accidentally. Never write either value to `.env` or commit it.
-Re-rendering the stack after the secrets exist includes the mounts
+displaying either value. Immediately after successful creation it offers, with
+Enter accepting the recommended default, to write both exact-name entries to a
+mode-`0600` recovery fragment below the gitignored `backup/secrets` directory.
+Copy that file to encrypted off-server storage; it can later be selected by
+**Quick restore from saved secrets.env** on a new Swarm. The restore workflow
+adds any newly required profile entries and opens the file for completion
+before changing Docker secrets. Selecting either VAPID secret through the
+individual secret editor redirects to the same paired workflow so mismatched
+keys cannot be entered accidentally. Never write either value to `.env` or
+commit it. Re-rendering the stack after the secrets exist includes the mounts
 automatically. Deploying remains an explicit operator action.
+
+Docker Swarm cannot reveal the existing private key later. If the recovery
+offer is skipped or the protected file is lost, restoring the same pair is
+impossible; run the paired replacement action, save its newly generated pair,
+and expect existing browser subscriptions to require renewal.
 
 Browser activation is still user-controlled. The authenticated Felix PWA asks
 for notification permission, subscribes the active service worker with the

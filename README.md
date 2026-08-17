@@ -473,6 +473,16 @@ copying to an operator-owned recovery store. It is never written to `.env`, a
 site config, logs, summaries, or command arguments, and an already-existing
 opaque Docker secret cannot be recovered this way.
 
+VAPID generation similarly offers a recovery action while the newly generated
+matching pair is still in process memory. Pressing Enter at the save prompt
+creates a mode-`0600` `secrets.env` fragment in the gitignored
+`backup/secrets` directory containing the exact public/private Docker-secret
+names. Neither value is printed. Copy the file to encrypted off-server storage;
+**Quick restore from saved secrets.env** accepts it on a new Swarm and adds any
+other currently required profile entries for completion before import. Docker
+Swarm cannot export an existing opaque VAPID pair, so skipping or losing this
+file means the pair must be rotated and browser subscriptions may need renewal.
+
 ### Admin UI Credentials
 
 When using **local database mode**, the wizard prompts for admin UI credentials:
@@ -501,6 +511,8 @@ cp .env /backup/myapp.env
 
 # Back up secret values separately when they are originally issued.
 # Docker Swarm cannot reveal an existing Docker secret value for export.
+# VAPID setup offers a protected secrets.env fragment in backup/secrets;
+# move it to encrypted off-server storage before relying on it for recovery.
 ```
 
 ### 2. Restore (on target server)

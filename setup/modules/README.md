@@ -289,9 +289,21 @@ Exposes Web Push key setup only when an exact-name profile has enabled secret
 mounts for both `WEB_PUSH_VAPID_PUBLIC_KEY_FILE` and
 `WEB_PUSH_VAPID_PRIVATE_KEY_FILE`. It generates one P-256 pair with the host's
 `openssl` and `python3`, validates its URL-safe encoding, and creates both
-Docker secrets from protected temporary files without logging key values.
-Existing pair members are replaced together after the same running-stack
-safety gate used by other immutable Docker-secret changes.
+Docker secrets from protected temporary files without logging key values. Once
+both writes succeed, the Enter-default recovery offer persists a mode-`0600`
+`secrets.env` fragment below the ignored `backup/secrets` directory. The file
+contains both exact-name values, is accepted by the saved-secret quick restore,
+and must be copied to encrypted off-server storage by the operator. Declining
+or losing that one-time recovery copy makes an existing opaque Swarm pair
+unrecoverable. Existing pair members are replaced together after the same
+running-stack safety gate used by other immutable Docker-secret changes.
+
+### `vapid-recovery.sh`
+
+Owns the explicit post-generation recovery decision and the protected
+`secrets.env` fragment lifecycle. It creates a mode-`0700` recovery directory,
+uses `mktemp` for a new mode-`0600` file, writes both exact-name values without
+terminal output, and returns only the resulting path to the caller.
 
 ### `docker-secrets-menu.sh`
 
