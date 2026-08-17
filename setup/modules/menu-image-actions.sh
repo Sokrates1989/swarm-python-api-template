@@ -243,7 +243,7 @@ _verify_release_tag() {
     evidence="$(registry_verify_tag "$repository" "$tag")" || {
         echo "[ERROR] ${label} image is not deployable as selected:"
         echo "        ${repository}:${tag}"
-        echo "        The tag must exist and declare linux/amd64 support."
+        echo "        The tag must resolve to a digest with linux/amd64 proof."
         return 1
     }
     IMAGE_UPDATE_VERIFICATION_EVIDENCE+=("${label}|${evidence}")

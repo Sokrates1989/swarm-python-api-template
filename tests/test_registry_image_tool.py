@@ -31,8 +31,11 @@ if str(SCRIPTS_DIRECTORY) not in sys.path:
 from registry_image_tool import (  # noqa: E402
     AuditRecord,
     ManifestEvidence,
+    RegistryToolError,
+    _docker_manifest_fallback,
     audit_records,
     cache_summary,
+    inspect_tag,
     normalize_repository,
     stable_tags,
     versioned_test_tags,
@@ -167,6 +170,103 @@ class RegistryImageToolTests(unittest.TestCase):
         self.assertEqual(official.registry, "docker.io")
         self.assertEqual(official.repository, "library/postgres")
         self.assertEqual(owned.repository, "sokrates1989/python-api-felix")
+
+    @patch("registry_image_tool.subprocess.run")
+    def test_buildx_fallback_proves_single_manifest_platform(
+        self,
+        run_mock,
+    ) -> None:
+        """Read the image config when single-manifest output omits Platform.
+
+        Args:
+            run_mock: Docker Buildx subprocess mock.
+
+        Returns:
+            Nothing.
+        """
+
+        digest = "sha256:" + "a" * 64
+        run_mock.side_effect = [
+            Mock(
+                returncode=0,
+                stdout=(
+                    "Name: owner/api:1.1.3-test\n"
+                    "MediaType: application/vnd.docker.distribution."
+                    "manifest.v2+json\n"
+                    f"Digest: {digest}\n"
+                ),
+                stderr="",
+            ),
+            Mock(returncode=0, stdout=f"{digest}|linux/amd64\n", stderr=""),
+        ]
+
+        evidence = _docker_manifest_fallback("owner/api", "1.1.3-test")
+
+        self.assertEqual(evidence.digest, digest)
+        self.assertEqual(evidence.platforms, ("linux/amd64",))
+        self.assertEqual(evidence.source, "docker-buildx")
+        self.assertIn("--format", run_mock.call_args_list[1].args[0])
+
+    @patch("registry_image_tool.subprocess.run")
+    def test_buildx_fallback_rejects_inconsistent_platform_digest(
+        self,
+        run_mock,
+    ) -> None:
+        """Reject platform metadata that belongs to another manifest digest.
+
+        Args:
+            run_mock: Docker Buildx subprocess mock.
+
+        Returns:
+            Nothing.
+        """
+
+        digest = "sha256:" + "a" * 64
+        other_digest = "sha256:" + "b" * 64
+        run_mock.side_effect = [
+            Mock(returncode=0, stdout=f"Digest: {digest}\n", stderr=""),
+            Mock(
+                returncode=0,
+                stdout=f"{other_digest}|linux/amd64\n",
+                stderr="",
+            ),
+        ]
+
+        with self.assertRaisesRegex(
+            RegistryToolError,
+            "inconsistent digest evidence",
+        ):
+            _docker_manifest_fallback("owner/api", "1.1.3-test")
+
+    @patch("registry_image_tool._docker_manifest_fallback")
+    @patch("registry_image_tool.DistributionClient.manifest")
+    def test_registry_rate_limit_uses_credential_aware_buildx_fallback(
+        self,
+        manifest_mock,
+        fallback_mock,
+    ) -> None:
+        """Use Docker credentials when anonymous manifest inspection is limited.
+
+        Args:
+            manifest_mock: Anonymous Distribution API manifest mock.
+            fallback_mock: Credential-aware Docker Buildx fallback mock.
+
+        Returns:
+            Nothing.
+        """
+
+        expected = ManifestEvidence(
+            "sha256:" + "a" * 64,
+            ("linux/amd64",),
+            "docker-buildx",
+        )
+        manifest_mock.side_effect = RegistryToolError("Registry HTTP 429")
+        fallback_mock.return_value = expected
+
+        evidence = inspect_tag("owner/api", "1.1.3-test")
+
+        self.assertEqual(evidence, expected)
+        fallback_mock.assert_called_once_with("owner/api", "1.1.3-test")
 
     @patch("registry_image_tool.inspect_tag")
     @patch("registry_image_tool.enumerate_stable_tags")

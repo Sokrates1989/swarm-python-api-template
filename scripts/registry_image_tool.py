@@ -483,8 +483,60 @@ def _docker_manifest_fallback(repository: str, tag: str) -> ManifestEvidence:
     digest_match = DIGEST_PATTERN.search(completed.stdout)
     if digest_match is None:
         raise RegistryToolError(f"Docker returned no digest for {reference}.")
-    platforms = tuple(sorted(set(re.findall(r"linux/[a-z0-9_]+(?:/[a-z0-9]+)?", completed.stdout))))
-    return ManifestEvidence(digest_match.group(0), platforms, "docker-buildx")
+    digest = digest_match.group(0)
+    platforms = tuple(
+        sorted(
+            set(
+                re.findall(
+                    r"linux/[a-z0-9_]+(?:/[a-z0-9]+)?",
+                    completed.stdout,
+                )
+            )
+        )
+    )
+    if not platforms:
+        platform_completed = subprocess.run(
+            [
+                "docker",
+                "buildx",
+                "imagetools",
+                "inspect",
+                reference,
+                "--format",
+                (
+                    "{{.Manifest.Digest}}|"
+                    "{{.Image.OS}}/{{.Image.Architecture}}"
+                    "{{if .Image.Variant}}/{{.Image.Variant}}{{end}}"
+                ),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        if platform_completed.returncode != 0:
+            detail = (
+                platform_completed.stderr or platform_completed.stdout
+            ).strip()
+            raise RegistryToolError(
+                f"Docker returned no platform proof for {reference}: {detail}"
+            )
+        platform_match = re.fullmatch(
+            r"(?P<digest>sha256:[0-9a-f]{64})\|"
+            r"(?P<platform>[a-z0-9][a-z0-9_.-]*/[a-z0-9_]+"
+            r"(?:/[a-z0-9_.-]+)?)",
+            platform_completed.stdout.strip(),
+        )
+        if platform_match is None:
+            raise RegistryToolError(
+                f"Docker returned malformed platform proof for {reference}."
+            )
+        if platform_match.group("digest") != digest:
+            raise RegistryToolError(
+                f"Docker returned inconsistent digest evidence for {reference}."
+            )
+        platforms = (platform_match.group("platform"),)
+    return ManifestEvidence(digest, platforms, "docker-buildx")
 
 
 def inspect_tag(repository: str, tag: str) -> ManifestEvidence:
@@ -502,15 +554,27 @@ def inspect_tag(repository: str, tag: str) -> ManifestEvidence:
     """
 
     location = normalize_repository(repository)
+    registry_failure: RegistryToolError
     try:
-        return DistributionClient(location).manifest(tag)
-    except RegistryToolError as registry_error:
-        try:
-            return _docker_manifest_fallback(repository, tag)
-        except (RegistryToolError, OSError, subprocess.SubprocessError) as docker_error:
-            raise RegistryToolError(
-                f"{registry_error} Docker credential fallback also failed: {docker_error}"
-            ) from docker_error
+        registry_evidence = DistributionClient(location).manifest(tag)
+        if registry_evidence.platforms:
+            return registry_evidence
+        registry_failure = RegistryToolError(
+            "Registry manifest did not expose platform metadata."
+        )
+    except RegistryToolError as error:
+        registry_failure = error
+    try:
+        return _docker_manifest_fallback(repository, tag)
+    except (
+        RegistryToolError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as docker_error:
+        raise RegistryToolError(
+            f"{registry_failure} Docker credential fallback also failed: "
+            f"{docker_error}"
+        ) from docker_error
 
 
 def enumerate_stable_tags(repository: str) -> list[str]:
@@ -890,6 +954,14 @@ def _command_verify(arguments: argparse.Namespace) -> int:
         "source": evidence.source,
     }
     print(json.dumps(payload, sort_keys=True))
+    if not payload["platformVerified"]:
+        declared = ", ".join(evidence.platforms) or "none"
+        print(
+            f"[ERROR] {arguments.repository}:{arguments.tag} resolved to "
+            f"{evidence.digest}, but {arguments.platform} was not declared "
+            f"(declared platforms: {declared}).",
+            file=sys.stderr,
+        )
     return 0 if payload["platformVerified"] else 2
 
 
