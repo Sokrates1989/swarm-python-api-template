@@ -176,33 +176,39 @@ version line:
     "legacy-webapp": "1.0.0",
     "web": "1.0.0"
   },
+  "componentVersionTracks": {
+    "application": ["api", "web", "android", "ios"],
+    "legacy": ["legacy-webapp"]
+  },
   "components": ["api", "web", "android", "ios", "legacy-webapp"]
 }
 ```
 
-`stackId` and component IDs are safe identifiers. `componentVersionFloors`
-stores the stable `MAJOR.MINOR.PATCH` minimum for each independently published
-component. Releasing Web therefore advances only `web`; Android and iOS can
-still publish the same release-line version later. `versionFloor` remains the
-required compatibility fallback for older profiles and component IDs without
-an override. Source repositories store only stack/component membership and
+`stackId`, track IDs, and component IDs are safe identifiers.
+`componentVersionFloors` stores each component's last recorded stable build.
+`componentVersionTracks` partitions components into shared release lines. A
+lagging member catches up to its track's highest version; a member already at
+that baseline advances to its next patch. Updating the history still changes
+only the component actually built. `versionFloor` remains the required
+compatibility fallback for older profiles and components without a recorded
+version. Source repositories store only stack/component membership and
 discover this single deployment authority automatically in the standard
 sibling workspace layout. `RELEASE_STACK_PROFILE_PATH` can select the exact
 profile, or `RELEASE_STACK_DEPLOYMENT_ROOT` can select its Swarm repository.
 
 `components` must include `api` plus `web` when `services.web` is enabled, and
-every override key must occur in that catalog. A component minimum is not a
+every history key and track member must occur in that catalog, and tracks must
+partition it without overlap. A recorded version is not a
 desired deployed version and does not make an older deployed image stale. A
-source release equal to its own minimum continues without another prompt. A
-lower candidate is raised through the owning quick-start menu. Guided keep,
-patch, minor, and major choices for both stable and `-test` artifacts start at
-that component's minimum; a higher confirmed build or publication atomically
-advances only that component before building. An image-only exact override may
-be lower without lowering its minimum. The deployment menu derives freshness and update
-choices from real registry tags, offers each repository's highest stable tag
-or their highest common stable tag, and verifies exact manual input. This
-metadata is application-neutral and `_template.json` demonstrates the contract
-for new stacks.
+source rebuild equal to the track baseline continues without another prompt.
+Guided keep catches up/rebuilds the baseline, while patch uses the computed
+next component version for both stable and `-test` artifacts; a confirmed build
+atomically advances only that component. An image-only exact override may be
+lower without lowering the track baseline. The deployment menu derives
+freshness and update choices from real registry tags, offers each repository's
+highest stable tag or their highest common stable tag, and verifies exact
+manual input. This metadata is application-neutral and `_template.json`
+demonstrates the contract for new stacks.
 
 The deployment-instance root `.env` may select either an unsuffixed stable
 `MAJOR.MINOR.PATCH` application image or an exact

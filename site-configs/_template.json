@@ -23,8 +23,15 @@
       "android": "0.1.0",
       "api": "0.1.0",
       "ios": "0.1.0",
-      "legacy-webapp": "0.1.0",
       "web": "0.1.0"
+    },
+    "componentVersionTracks": {
+      "application": [
+        "api",
+        "web",
+        "android",
+        "ios"
+      ]
     },
     "components": [
       "api",

@@ -101,6 +101,52 @@ def validate_release_coordination(
                     f"release.componentVersionFloors.{component_id} must be "
                     "stable semantic version."
                 )
+    if "componentVersionTracks" in release:
+        version_tracks = mapping(
+            release["componentVersionTracks"],
+            "release.componentVersionTracks",
+        )
+        if not version_tracks:
+            raise ExecutableProfileError(
+                "release.componentVersionTracks must not be empty."
+            )
+        assigned: set[str] = set()
+        for track_id, raw_members in version_tracks.items():
+            if not NAME_PATTERN.fullmatch(track_id):
+                raise ExecutableProfileError(
+                    "release.componentVersionTracks contains an unsafe track ID."
+                )
+            members = [
+                text(
+                    component,
+                    f"release.componentVersionTracks.{track_id}[{index}]",
+                )
+                for index, component in enumerate(
+                    sequence(
+                        raw_members,
+                        f"release.componentVersionTracks.{track_id}",
+                    )
+                )
+            ]
+            if not members or len(members) != len(set(members)):
+                raise ExecutableProfileError(
+                    f"release.componentVersionTracks.{track_id} must contain "
+                    "unique component IDs."
+                )
+            unknown = sorted(set(members).difference(components))
+            duplicated = sorted(set(members).intersection(assigned))
+            if unknown or duplicated:
+                raise ExecutableProfileError(
+                    f"release.componentVersionTracks.{track_id} contains unknown "
+                    "or multiply assigned components."
+                )
+            assigned.update(members)
+        missing = sorted(set(components).difference(assigned))
+        if missing:
+            raise ExecutableProfileError(
+                "release.componentVersionTracks omits components: "
+                + ", ".join(missing)
+            )
     required = {"api"}
     if services.get("web") is True:
         required.add("web")

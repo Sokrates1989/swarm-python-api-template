@@ -18,11 +18,24 @@
   "release": {
     "stackId": "felix",
     "versionPolicy": "monotonic-floor",
-    "versionFloor": "1.0.15",
+    "versionFloor": "1.1.1",
     "componentVersionFloors": {
       "android": "1.1.0",
       "ios": "1.1.0",
-      "web": "1.1.1"
+      "web": "1.1.2",
+      "legacy-webapp": "1.1.2",
+      "api": "1.1.2"
+    },
+    "componentVersionTracks": {
+      "flutter-app": [
+        "api",
+        "web",
+        "android",
+        "ios"
+      ],
+      "legacy-webapp": [
+        "legacy-webapp"
+      ]
     },
     "components": [
       "api",

@@ -369,14 +369,14 @@ change either default to another safe absolute host path.
 The root `.env` also persists `DEPLOYMENT_PROFILE_ID`. Subsequent setup and
 management actions reuse that exact profile instead of asking the operator to
 select the installation identity again. A profile's
-`release.versionPolicy: monotonic-floor` is a build/publish rule. When
-`release.componentVersionFloors` is present, every listed publisher owns an
-independent minimum; the legacy `release.versionFloor` remains the fallback.
-This lets Web, Android, and iOS publish the same release-line version at
-different times without one platform forcing an artificial patch bump on the
-others. These values are not deployed-state targets, and deployed components
-below them are not stale merely because of a floor. Deployment freshness comes
-only from registry evidence.
+`release.versionPolicy: monotonic-floor` is a build/publish rule.
+`release.componentVersionFloors` records each publisher's latest build, and
+optional `release.componentVersionTracks` groups publishers that represent one
+repository/product state. Lagging members catch up to the track high-water;
+members already there advance by patch. The legacy `release.versionFloor`
+remains the fallback. These values are not deployed-state targets, and deployed
+components below them are not stale merely because of a floor. Deployment
+freshness comes only from registry evidence.
 
 The image menu therefore never invents patch/minor/major tags; it offers real
 published stable tags and verifies every chosen tag before deployment. Older

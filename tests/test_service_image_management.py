@@ -159,8 +159,17 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         self.assertEqual(release["versionPolicy"], "monotonic-floor")
         self.assertRegex(release["versionFloor"], r"^\d+\.\d+\.\d+$")
         self.assertEqual(
-            release["componentVersionFloors"],
-            {"android": "1.1.0", "ios": "1.1.0", "web": "1.1.1"},
+            set(release["componentVersionFloors"]),
+            {"android", "api", "ios", "legacy-webapp", "web"},
+        )
+        for component_version in release["componentVersionFloors"].values():
+            self.assertRegex(component_version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(
+            release["componentVersionTracks"],
+            {
+                "flutter-app": ["api", "web", "android", "ios"],
+                "legacy-webapp": ["legacy-webapp"],
+            },
         )
         self.assertEqual(
             release["components"],
@@ -200,6 +209,13 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
         missing_web = copy.deepcopy(source_profile)
         missing_web["release"]["components"].remove("web")
         missing_web["release"]["componentVersionFloors"].pop("web")
+        missing_web["release"]["componentVersionTracks"]["flutter-app"].remove(
+            "web"
+        )
+        duplicated_track_component = copy.deepcopy(source_profile)
+        duplicated_track_component["release"]["componentVersionTracks"][
+            "legacy-webapp"
+        ].append("web")
         missing_database_track = copy.deepcopy(source_profile)
         del missing_database_track["database"]["imageTrackTag"]
         cases = (
@@ -214,6 +230,10 @@ class ServiceImageManagementStaticTests(unittest.TestCase):
             ),
             (invalid_policy, "release.versionPolicy"),
             (duplicate_component, "release.components must contain unique"),
+            (
+                duplicated_track_component,
+                "contains unknown or multiply assigned components",
+            ),
             (missing_web, "release.components omits managed services: web"),
             (
                 missing_database_track,
