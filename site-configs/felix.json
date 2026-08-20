@@ -20,11 +20,11 @@
     "versionPolicy": "monotonic-floor",
     "versionFloor": "1.1.1",
     "componentVersionFloors": {
-      "android": "1.1.0",
+      "android": "1.1.4",
       "ios": "1.1.0",
-      "web": "1.1.2",
+      "web": "1.1.4",
       "legacy-webapp": "1.1.2",
-      "api": "1.1.2"
+      "api": "1.1.3"
     },
     "componentVersionTracks": {
       "flutter-app": [
